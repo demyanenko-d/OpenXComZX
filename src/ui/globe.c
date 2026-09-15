@@ -50,6 +50,8 @@
 #define VSRC      0x2390                //   блок ячейки (DMA из ресурса): вершины, рёбра (по 6 байт)
 #define STG       0x2AA0                //   записи рёбер ячейки (globe_s.s), затем DMA в страницу рёбер
 #define WB_BUCKET 0x3080                //   корзины строк (адреса записей в странице рёбер)
+#define WB_COV    0x3300                //   покрытие строк рёбрами: разности (e_store)
+#define EP_BT     0x0000                // страница рёбер: текстура полосы строк без рёбер (#FE — нет)
 #define MAXCV     150                   // вершин / рёбер в ячейке (конвертер: до 144)
 #define EP_BUCKET 0x1500                // страница рёбер: корзины (копия из рабочей),
 #define EP_POOL   0x1700                //   записи рёбер
@@ -88,6 +90,8 @@ uint8_t gl_ec, gl_wpg, gl_epg, gl_limb, gl_gtex;
 uint16_t gl_res, gl_eptr, gl_sptr, gl_nedge;
 void gl_edges(void);
 void gl_rows(void);
+uint8_t gl_nb, gl_bl[32];               // полосы строк без рёбер (gl_bands): число, (y0, y1)
+void gl_bands(void);
 // Проекция (globe_s.s): gl_pn векторов (по 2 байта на X, Y, Z: v & 127, v >> 7) с gl_pv
 // -> {x, y (Q2), z (Q12)} с gl_pd (6 байт)
 const uint8_t *gl_pv;
@@ -214,6 +218,62 @@ static void tables(uint16_t lon, int16_t lat)
 	gl_k = (int32_t)sc << 10;                 gl_kpg = (uint8_t)(0xC0 + 28); gl_ktab();   //    sinC · Z
 }
 
+// Полосы строк без рёбер: строка без рёбер — одна область, её текстура — в любой точке строки.
+// Точка посередине полосы -> долгота/широта -> сетка 5° конвертера; однородная клетка — текстура
+// полосы (надёжнее событий левого края: у края диска вершины почти на горизонте дают точки
+// края в пределах единиц Q2 с несогласованным порядком). До 3 точек; иначе #FE (по событиям).
+// Win3 = страница рёбер; в EP_BT — разности покрытия (e_store).
+static int16_t ev[9];                   // оси экрана в мировых координатах (Q14): e_x, e_y, e_z
+static uint16_t kr;                     // 2^21 / R: пиксель -> доля радиуса Q14 (>> 8)
+
+// Пиксель окна -> номер клетки сетки 5° (gy * 72 + gx; #FFFF — вне диска): z — таблицей
+// sqrt(1 - r^2), мировой вектор — умножениями на оси вида, широта и долгота — двоичным поиском
+// по границам клеток (sin 5k°, tan 5k° перекрёстным умножением)
+static uint16_t cell_of(uint8_t x, uint8_t y)
+{
+	int16_t px = (int16_t)(MUL(2 * x + 1 - GLOBE_W, kr) >> 8), py = (int16_t)(MUL(2 * y + 1 - GLOBE_H, kr) >> 8);
+	uint32_t rr = (uint32_t)MUL(px, px) + (uint32_t)MUL(py, py);
+	if (rr >= 0x10000000ul) return 0xFFFF;
+	uint8_t i = (uint8_t)(rr >> 20), f = (uint8_t)(rr >> 12);
+	int16_t pz = sqz_q14[i] - (int16_t)((MUL(sqz_q14[i] - sqz_q14[i + 1], f)) >> 8);
+	int16_t q0 = SHR14(MUL(px, ev[0]) + MUL(py, ev[3]) + MUL(pz, ev[6]));
+	int16_t q1 = SHR14(MUL(px, ev[1]) + MUL(py, ev[4]) + MUL(pz, ev[7]));
+	int16_t q2 = SHR14(MUL(py, ev[5]) + MUL(pz, ev[8]));
+	uint8_t lo = 0, hi = 36, m;                // широта: число границ sin(5k - 90°) <= q2
+	while (hi - lo > 1) { m = (lo + hi) >> 1; if (sin5_q14[m] <= q2) lo = m; else hi = m; }
+	uint16_t g = (uint16_t)lo * 72;
+	int16_t ax = q0 < 0 ? -q0 : q0, ay = q1 < 0 ? -q1 : q1;
+	lo = 0; hi = 18;                           // угол в четверти: число k с 5k° <= atan(ay / ax)
+	while (hi - lo > 1) { m = (lo + hi) >> 1; if (MUL(ay, cos5k_q14[m]) >= MUL(ax, sin5k_q14[m])) lo = m; else hi = m; }
+	if (q0 < 0) lo = q1 >= 0 ? 35 - lo : 36 + lo;
+	else if (q1 < 0) lo = 71 - lo;
+	return g + lo;
+}
+
+// Полосы строк без рёбер (_gl_bands: #FD в EP_BT, список _gl_bl) -> текстура точки посередине
+// (до 3 точек, пока клетка не однородна) или #FE. Win3 = страница рёбер.
+static void bands(far_t gt, uint16_t lon, int16_t lat)
+{
+	gl_bands();
+	if (!gl_nb) return;
+	int16_t cl = cos16(lon), sl = sin16(lon), cc = cos16((uint16_t)lat), sc = sin16((uint16_t)lat);
+	ev[0] = -sl; ev[1] = cl; ev[2] = 0;
+	ev[3] = -SHR14(MUL(sc, cl)); ev[4] = -SHR14(MUL(sc, sl)); ev[5] = cc;
+	ev[6] = SHR14(MUL(cc, cl)); ev[7] = SHR14(MUL(cc, sl)); ev[8] = sc;
+	kr = (uint16_t)(0x200000ul / R);
+	for (uint8_t n = 0; n < gl_nb; n++) {
+		uint8_t y0 = gl_bl[n * 2], y1 = gl_bl[n * 2 + 1], ym = (uint8_t)((y0 + y1) >> 1);
+		const uint8_t *q = (const uint8_t *)(0xC000 + EP_ROW) + (uint16_t)ym * 6;
+		uint8_t a = q[0], b = q[1], t = 0xFE, p[3];
+		p[0] = (uint8_t)((a + b) >> 1); p[1] = a + ((b - a) >> 2); p[2] = b - ((b - a) >> 2);
+		for (uint8_t k = 0; k < 3 && t == 0xFE; k++) {
+			uint16_t c = cell_of(p[k] << 1, ym);
+			if (c != 0xFFFF) t = far_byte(gt + c);
+		}
+		memset((void *)(0xC000 + EP_BT + y0), t, y1 - y0 + 1);
+	}
+}
+
 // ---------------------------------------------------------------- кадр
 
 extern volatile uint16_t frames;
@@ -240,6 +300,7 @@ static void render(uint16_t lon, int16_t lat, uint8_t z)
 	gl_nedge = 0;
 	pg_map3(work);
 	memset((void *)(0xC000 + WB_BUCKET), 0, GLOBE_H * 2);
+	memset((void *)(0xC000 + WB_COV), 0, 256);
 	if (z >= 2) bg_zoom = 0xFF;                // диск закрывает окно — фон затёрт
 	else if (bz != z) { bg_restore(); bg_zoom = z; }
 	v_lon = lon; v_lat = lat; v_zoom = z;
@@ -294,7 +355,9 @@ static void render(uint16_t lon, int16_t lat, uint8_t z)
 	// корзины и рёбра -> страница рёбер (те же смещения); строки: активные рёбра -> отрезки
 	// DMA в задний буфер
 	far_copy(FAR(epage, EP_BUCKET), FAR(work, WB_BUCKET), GLOBE_H * 2);
+	far_copy(FAR(epage, EP_BT), FAR(work, WB_COV), 256);
 	pg_map3(epage);
+	bands(gt, lon, lat);
 	gl_rows();
 	pg_map3(work);
 	dma_wait();

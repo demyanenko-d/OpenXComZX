@@ -253,7 +253,12 @@ selftest 22, ui_geoscape 2816, campaign 2676 (добавлены графики,
 WORLD.DAT» (PNG кадра, эталона и расхождений в `tmp/`; `SWEEP=1` — сетка видов, счёт
 расхождений и «грубых» — вне 2 пар от границы; `GAME=UFO`); `node tools\globe_emucmp.js
 снимок.png lon16 lat16 zoom [out.png]` — снимок эмулятора против эталона (углы вида —
-`peek 0x56E8 4`, `ctx.globe_lon/lat`; сценарий — `tests/globe_cmp.oxs`).
+`peek _ctx+6 4`, `ctx.globe_lon/lat`; сценарий — `tests/globe_cmp.oxs`). Плотный обход:
+`node tools\globe_sweep.js [шагов] [зумы 0,1,..] [RIGHT|DOWN|MIX]` — сценарий шагов
+клавишами со снимком и углами после каждого, прогон, сверка всех снимков (худшие — карты
+расхождений в `tmp/shots/globe_sweep/`); `VIEWS="lon,lat,zoom;..."` — заданные виды
+(pokew центра за шаг RIGHT до цели; шаг зависит от зума), `GAME=UFO` — для сборки UFO.
+Лог прогона — `tmp/globe_sweep.log` (строки `globe:` — кадров на рендер).
 Скрипты `tools/*.ps1` читает PowerShell 5.1 без BOM как ANSI: строки вывода в них —
 латиницей (комментарии можно по-русски).
 

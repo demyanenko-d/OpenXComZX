@@ -16,6 +16,8 @@
 ;; словами): u = x / 2 + 0.75 (8.8), пара floor(u) и правее — справа от ребра.
 ;;
 ;; Страница рёбер (Win3 на время _gl_rows и записи рёбер):
+;;   EP_BT      [200] — текстура полосы строк без рёбер по сетке 5° (#FE — нет; globe.c bands)
+;;   EP_INS     [127] — новые слоты строки (зумы 0–1: место по текстурам — ai_redo)
 ;;   EP_ROW     [200] x 6: pl, pr (пары диска; pl > pr — строки нет), DAH, DAX (строка
 ;;              280 + y заднего буфера), блок узора строки без текстуры ((y & 3) * 14),
 ;;              страница узоров
@@ -34,6 +36,7 @@
 	.optsdcc -mz80 sdcccall(1)
 
 	.globl	_gl_edges, edge1, edge1s, e_rows, e_fast, hclip, lerpz, xclip, lerpx, div32, eslope, bord_ev, e_store
+	.globl	_gl_bands, _gl_nb, _gl_bl, gb_end, ai_put, ai_redo
 	.globl	_gl_rows, ael_ins, ai_fix2, f2_near, f2_score, ai_cmp, ael_fix, fx_pair, rw_emit, rw_band, rw_pfill, rw_flush, ael_step, ael_sort
 	.globl	_gl_eb
 	.globl	_gl_ec
@@ -56,6 +59,8 @@
 	.globl	_gl_kpg
 	.globl	_gl_sq
 
+EP_BT		= 0xC000 + 0x0000	; текстура полосы строк без рёбер по сетке (globe.c)
+EP_INS		= 0xC000 + 0x0100	; новые слоты строки (ai_redo)
 EP_ROW		= 0xC000 + 0x0200
 EP_EVB		= 0xC000 + 0x0700
 EP_EVA		= 0xC000 + 0x0800
@@ -74,6 +79,7 @@ EP_FREE		= 0xC000 + 0x1400	; свободные слоты
 EP_BUCKET	= 0xC000 + 0x1500	; корзины (копия из рабочей страницы после рёбер)
 EP_POOL		= 0xC000 + 0x1700	; записи рёбер (копии буфера рабочей страницы по ячейкам)
 WB_BUCKET	= 0xC000 + 0x3080	; рабочая страница: корзины на время рёбер
+WB_COV		= 0xC000 + 0x3300	;   покрытие строк рёбрами (разности, globe.c)
 EP_END		= 0xC000 + 0x4000 - 10
 AEL_MAX		= 127
 PAGE3_PORT	= 0x13AF
@@ -144,6 +150,12 @@ fx_k:	.ds	1			; починка: место p
 f2_bs:	.ds	1			; вставка в кучку: лучшая оценка, место, границы
 f2_bk:	.ds	1
 f2_hi:	.ds	1
+rw_ni:	.ds	1			; новых рёбер в строке (EP_INS; зумы 0–1)
+ar_k0:	.ds	1			; ai_redo: прежнее место, 1 — что-то сдвинулось
+ar_mv:	.ds	1
+fx_def:	.ds	1			; ael_fix: 1 — левая текстура неизвестна (первая пара — последней)
+gb_in:	.ds	1			; _gl_bands: 1 — внутри полосы, её первая строка
+gb_y0:	.ds	1
 
 	.area	_BANK24
 
@@ -732,6 +744,14 @@ e_store:
 	ld	hl, (_gl_nedge)
 	inc	hl
 	ld	(_gl_nedge), hl
+	ld	a, (e_r0)		; покрытие строк: +1 в первой, -1 за последней (globe.c: полосы
+	ld	l, a			; строк без рёбер)
+	ld	h, #>WB_COV
+	inc	(hl)
+	ld	a, (e_r1)
+	inc	a
+	ld	l, a
+	dec	(hl)
 	ret
 
 ;; Событие левого края: точка края y = HL (Q2) — ниже неё текстура D, выше E; порядок C
@@ -1176,6 +1196,7 @@ _gl_rows::
 rw_row:
 	call	ael_ins
 	call	ael_fix
+	call	ai_redo
 	call	rw_emit
 	call	ael_step
 	ld	de, #6
@@ -1221,9 +1242,85 @@ rw_row:
 	pop	ix
 	ret
 
+;; Полосы строк без рёбер (globe.c bands): EP_BT — разности покрытия (e_store) -> #FD у строки
+;; диска без рёбер, #FE у остальных; полосы подряд идущих #FD -> _gl_bl (y0, y1; до 16),
+;; число — _gl_nb. Win3 = страница рёбер.
+_gl_bands::
+	xor	a, a
+	ld	(_gl_nb), a
+	ld	(gb_in), a
+	ld	hl, #EP_BT
+	ld	de, #EP_ROW
+	ld	bc, #(GH << 8)		; B — строк, C — покрытие
+1$:	ld	a, (hl)
+	add	a, c
+	ld	c, a
+	jr	nz, 3$			; есть рёбра
+	ld	a, (de)			; pl <= pr — строка диска
+	inc	de
+	ex	de, hl
+	cp	a, (hl)
+	ex	de, hl
+	dec	de
+	jr	z, 2$
+	jr	nc, 3$
+2$:	ld	(hl), #0xFD
+	ld	a, (gb_in)
+	or	a, a
+	jr	nz, 4$
+	inc	a			; начало полосы
+	ld	(gb_in), a
+	ld	a, l
+	ld	(gb_y0), a
+	jr	4$
+3$:	ld	(hl), #0xFE
+	ld	a, (gb_in)
+	or	a, a
+	call	nz, gb_end
+4$:	inc	l
+	push	hl
+	ld	hl, #6
+	add	hl, de
+	ex	de, hl
+	pop	hl
+	djnz	1$
+	ld	a, (gb_in)
+	or	a, a
+	ret	z
+;; Полоса gb_y0 .. L - 1 -> в список (сохраняет BC, DE, HL)
+gb_end:
+	xor	a, a
+	ld	(gb_in), a
+	ld	a, (_gl_nb)
+	cp	a, #16
+	ret	nc
+	push	hl
+	push	de
+	ld	d, l
+	dec	d			; y1
+	inc	a
+	ld	(_gl_nb), a
+	dec	a
+	add	a, a
+	ld	e, a
+	push	de
+	ld	d, #0
+	ld	hl, #_gl_bl
+	add	hl, de
+	pop	de
+	ld	a, (gb_y0)
+	ld	(hl), a
+	inc	hl
+	ld	(hl), d
+	pop	de
+	pop	hl
+	ret
+
 ;; Рёбра корзины строки -> в свободные слоты и в порядок: место — после всех с (u, шаг)
 ;; <= нового
 ael_ins:
+	xor	a, a
+	ld	(rw_ni), a
 	ld	hl, (rw_bk)
 	ld	e, (hl)
 	inc	hl
@@ -1297,14 +1394,44 @@ ael_ins:
 	djnz	2$
 5$:	ld	a, l			; k
 	ld	(ai_k), a
-	ld	a, (_gl_limb)
+	ld	a, (_gl_limb)		; зумы 0–1: (слот, место) — в список новых (место по
+	or	a, a			; текстурам — ai_redo, когда в строке уже все новые рёбра);
+	jr	z, 6$			; места прежних новых на k и правее — +1
+	ld	a, (ai_k)
+	ld	c, a
+	ld	a, (rw_ni)
 	or	a, a
-	call	nz, ai_fix2
+	jr	z, 52$
+	ld	b, a
+	ld	hl, #EP_INS + 1
+51$:	ld	a, (hl)
+	cp	a, c
+	jr	c, 53$
+	inc	(hl)
+53$:	inc	l
+	inc	l
+	djnz	51$
+52$:	ld	a, (rw_ni)
+	add	a, a
+	ld	l, a
+	ld	h, #>EP_INS
+	ld	a, (ai_sl)
+	ld	(hl), a
+	inc	l
+	ld	(hl), c
+	ld	hl, #rw_ni
+	inc	(hl)
+6$:	call	ai_put
+	pop	de
+	jp	1$
+
+;; Вставить слот ai_sl (старший байт u — ai_uh) на место ai_k: сдвиг [k, n) вправо в ORD и OUH
+ai_put:
 	ld	a, (ai_k)
 	ld	l, a
-	ld	a, (rw_n)		; сдвиг [k, n) вправо в ORD и OUH
+	ld	a, (rw_n)
 	sub	a, l
-	jr	z, 6$
+	jr	z, 1$
 	ld	c, a
 	ld	b, #0
 	push	bc
@@ -1323,7 +1450,7 @@ ael_ins:
 	dec	l
 	ld	h, d
 	lddr
-6$:	ld	a, (ai_k)
+1$:	ld	a, (ai_k)
 	ld	l, a
 	ld	h, #>EP_ORD
 	ld	a, (ai_sl)
@@ -1333,8 +1460,170 @@ ael_ins:
 	ld	(hl), a
 	ld	hl, #rw_n
 	inc	(hl)
-	pop	de
-	jp	1$
+	ret
+
+;; Зумы 0–1, после вставки всех новых рёбер строки и починки пар: новое ребро, всё ещё
+;; несогласованное с соседями по текстурам, — на лучшее место в своей кучке (ai_fix2; соседи —
+;; уже со всеми новыми); если что-то сдвинулось — починка ещё раз. Порядок — как в корзине.
+ai_redo:
+	ld	a, (rw_ni)
+	or	a, a
+	ret	z
+	ld	b, a
+	xor	a, a
+	ld	(ar_mv), a
+	ld	hl, #EP_INS
+1$:	push	bc
+	push	hl
+	ld	c, (hl)			; слот
+	inc	l
+	ld	e, (hl)			; место при вставке
+	ld	a, c
+	ld	(ai_sl), a
+	call	ar_find
+	cp	a, #0xFF
+	jr	z, 9$
+	ld	(ai_k), a
+	ld	(ar_k0), a
+	call	ar_ok
+	jr	z, 9$			; на месте согласовано
+	ld	a, (ai_k)
+	ld	l, a
+	ld	h, #>EP_ORD
+	inc	h
+	ld	a, (hl)
+	ld	(ai_uh), a
+	dec	h
+	ld	a, (rw_n)		; убрать: сдвиг [k + 1, n) влево
+	dec	a
+	ld	(rw_n), a
+	sub	a, l
+	jr	z, 4$
+	ld	c, a
+	ld	b, #0
+	push	bc
+	ld	e, l
+	ld	d, h
+	inc	l
+	ldir
+	pop	bc
+	ld	a, (ai_k)
+	ld	e, a
+	ld	d, #>EP_OUH
+	ld	l, a
+	inc	l
+	ld	h, d
+	ldir
+4$:	call	ai_fix2
+	ld	a, (ai_k)
+	ld	hl, #ar_k0
+	cp	a, (hl)
+	jr	z, 5$
+	ld	a, #1
+	ld	(ar_mv), a
+5$:	call	ai_put
+9$:	pop	hl
+	pop	bc
+	inc	l
+	inc	l
+	djnz	1$
+	ld	a, (ar_mv)
+	or	a, a
+	ret	z
+	ld	a, #1
+	ld	(rw_dirty), a
+	jp	ael_fix
+
+;; Место слота C в ORD: запомненное E (починка пар могла сдвинуть на 1) — E, E + 1, E - 1,
+;; иначе поиск по всем; A = место или #FF
+ar_find:
+	ld	a, (rw_n)
+	ld	d, a
+	ld	h, #>EP_ORD
+	ld	l, e
+	ld	a, e
+	cp	a, d
+	jr	nc, 2$
+	ld	a, (hl)
+	cp	a, c
+	ld	a, l
+	ret	z
+	inc	l
+	ld	a, l
+	cp	a, d
+	jr	nc, 2$
+	ld	a, (hl)
+	cp	a, c
+	ld	a, l
+	ret	z
+2$:	ld	a, e
+	or	a, a
+	jr	z, 3$
+	dec	a
+	cp	a, d
+	jr	nc, 3$
+	ld	l, a
+	ld	a, (hl)
+	cp	a, c
+	ld	a, l
+	ret	z
+3$:	ld	l, #0
+	ld	a, d
+	or	a, a
+	jr	z, 5$
+	ld	b, d
+4$:	ld	a, (hl)
+	cp	a, c
+	ld	a, l
+	ret	z
+	inc	l
+	djnz	4$
+5$:	ld	a, #0xFF
+	ret
+
+;; Z — слот ai_sl на месте ai_k согласован с соседями: слева «справа» левого соседа (у первого —
+;; текстура края строки, #FE — любая) == его «слева», справа — нет соседа или «слева» соседа ==
+;; его «справа» (как f2_score на том же месте без него)
+ar_ok:
+	ld	a, (ai_sl)
+	ld	e, a
+	ld	a, (ai_k)
+	or	a, a
+	jr	nz, 1$
+	ld	a, (rw_y)
+	ld	l, a
+	ld	h, #>EP_EVB
+	ld	a, (hl)
+	cp	a, #0xFE
+	jr	nz, 2$
+	ld	a, (rw_lt)
+	cp	a, #0xFE
+	jr	z, 3$
+	jr	2$
+1$:	dec	a
+	ld	l, a
+	ld	h, #>EP_ORD
+	ld	l, (hl)
+	ld	h, #>EP_STR
+	ld	a, (hl)
+2$:	ld	l, e
+	ld	h, #>EP_STL
+	cp	a, (hl)
+	ret	nz
+3$:	ld	a, (ai_k)
+	inc	a
+	ld	hl, #rw_n
+	cp	a, (hl)
+	ret	z
+	ld	l, a
+	ld	h, #>EP_ORD
+	ld	l, (hl)
+	ld	h, #>EP_STL
+	ld	a, (hl)
+	ld	l, e
+	ld	h, #>EP_STR
+	cp	a, (hl)
+	ret
 
 ;; Зумы 0–1: место ai_k не согласовано по текстурам (слева — «справа» левого соседа или
 ;; текстура края строки; справа — «слева» правого) — лучшее место среди соседей ближе
@@ -1539,12 +1828,27 @@ ael_fix:
 	ret	z			; порядок не сдвигался, событий края нет
 0$:	xor	a, a
 	ld	(rw_dirty), a
+	ld	(fx_def), a
 	ld	a, (rw_n)
 	cp	a, #2
 	ret	c
 	dec	a
 	ld	b, a
 	ld	hl, #EP_OUH
+	ld	a, (rw_y)		; левая текстура неизвестна (первая строка с рёбрами после
+	ld	e, a			; ждущих): у первой пары нет левого контекста — её последней
+	ld	d, #>EP_EVB
+	ld	a, (de)
+	cp	a, #0xFE
+	jr	nz, 1$
+	ld	a, (rw_lt)
+	cp	a, #0xFE
+	jr	nz, 1$
+	ld	a, #1
+	ld	(fx_def), a
+	inc	l
+	dec	b
+	jr	z, 4$
 1$:	ld	c, (hl)
 	inc	l
 	ld	a, (hl)
@@ -1553,7 +1857,19 @@ ael_fix:
 	cp	a, #3
 	jr	c, 3$
 2$:	djnz	1$
-	ret
+4$:	ld	a, (fx_def)		; отложенная первая пара
+	or	a, a
+	ret	z
+	ld	hl, #EP_OUH
+	ld	c, (hl)
+	inc	l
+	ld	a, (hl)
+	sub	a, c
+	inc	a
+	cp	a, #3
+	ret	nc
+	ld	l, #0
+	jp	fx_pair
 3$:	push	bc
 	push	hl
 	dec	l
@@ -1846,7 +2162,12 @@ rw_band:
 	cp	a, #0xFE
 	jr	z, 1$
 	ld	(rw_lt), a
-1$:	ld	a, (rw_lt)
+1$:	ld	h, #>EP_BT		; текстура полосы по сетке 5° (globe.c) — надёжнее событий
+	ld	a, (hl)
+	cp	a, #0xFE
+	jr	z, 11$
+	ld	(rw_lt), a
+11$:	ld	a, (rw_lt)
 	cp	a, #0xFE
 	jr	nz, 2$
 	ld	a, (rw_pend)
@@ -1970,7 +2291,7 @@ ael_step:
 	ld	a, (hl)
 	cp	a, c
 	jr	z, 4$			; последняя строка — удалить
-	ld	a, l
+7$:	ld	a, l
 	exx
 	ld	(de), a			; ORD[w]
 	exx
@@ -2013,7 +2334,38 @@ ael_step:
 	ld	hl, #rw_nf
 	inc	(hl)
 	pop	de
-	djnz	1$
+	djnz	6$
+	jr	5$
+6$:	ld	a, (de)			; следующее после удалённого: новые соседи несогласованы
+	inc	e			; (tr оставленного левее или текстура края != tl) — в
+	ld	l, a			; следующей строке полная починка
+	ld	h, #>EP_SLAST
+	ld	a, (hl)
+	cp	a, c
+	jr	z, 4$
+	exx
+	ld	a, e			; оставлено левее (ORD записи)
+	exx
+	or	a, a
+	jr	z, 61$
+	dec	a
+	push	hl
+	ld	l, a
+	ld	h, #>EP_ORD
+	ld	l, (hl)
+	ld	h, #>EP_STR
+	ld	a, (hl)
+	pop	hl
+	jr	62$
+61$:	ld	a, (rw_lt)
+62$:	cp	a, #0xFE
+	jr	z, 7$
+	ld	h, #>EP_STL
+	cp	a, (hl)
+	jr	z, 7$
+	ld	a, #1
+	ld	(rw_dirty), a
+	jr	7$
 5$:	exx
 	ld	a, b
 	exx

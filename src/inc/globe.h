@@ -23,8 +23,7 @@ void globe_draw(void) __banked;
 // Win3 не трогает: p может указывать в ST.
 uint8_t globe_xy(const geo_t *p, int16_t *x, int16_t *y) __banked;
 // Пиксель окна -> точка (за краем диска — ближайшая точка края). Win3 не трогает.
-void globe_lonlat(int16_t x, int16_t y, geo_t *p) __banked;
-// Забыть нарисованное (палитра, фон окна): следующий globe_draw рисует заново.
+void globe_lonlat(int16_t x, int16_t y, geo_t *p) __banked;// Забыть нарисованное (палитра, фон окна): следующий globe_draw рисует заново.
 void globe_invalidate(void) __banked;
 // sin 16-битного угла (65536 = 360°) в Q14 (банк 2, src/ui/globe_ui.c)
 int16_t globe_sin(uint16_t a) __banked;

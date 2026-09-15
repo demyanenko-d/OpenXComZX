@@ -37,11 +37,11 @@ const GATE = flag('GATE', ENG);             // полная починка то�
 const CHAIN = flag('CHAIN', false);         // починка кучек цепочкой по текстурам (опыт)
 const NOLC = flag('NOLC', false), ITH = +(process.env.ITH || (ENG ? 128 : 256)), INSLIMB = flag('INSLIMB', ENG);
 const INSFIX2 = flag('INSFIX2', ENG);       // вставка в кучку (соседи ближе ITH) на место, согласованное по текстурам; INSLIMB — только зумы 0–1
-const INS2P = flag('INS2P', false);         // INSFIX2 после вставки всех новых рёбер строки и починки пар (опыт)
-const LDEFER = flag('LDEFER', false);       // левая текстура неизвестна — первую пару чинить последней (опыт)
-const DELGATE = flag('DELGATE', false);     // починка и после удаления ребра, если новые соседи несогласованы (опыт)
+const INS2P = flag('INS2P', ENG);           // INSFIX2 после вставки всех новых рёбер строки и починки пар (ai_redo)
+const LDEFER = flag('LDEFER', ENG);         // левая текстура неизвестна — первую пару чинить последней (ael_fix)
+const DELGATE = flag('DELGATE', ENG);       // починка и после удаления ребра, если новые соседи несогласованы (ael_step)
 const LIMBKEY = flag('LIMBKEY', false);     // события края диска в строке — по ходу вдоль края (опыт)
-const BANDGRID = flag('BANDGRID', false);   // полосы строк без рёбер — текстура по сетке 5° в точке полосы (опыт)
+const BANDGRID = flag('BANDGRID', ENG);     // полосы строк без рёбер — текстура по сетке 5° в точке полосы (globe.c bands)
 const bandStat = { n: 0, ok: 0 };
 const INSFIX = flag('INSFIX', false);       // вставка ищет согласованное место среди близких (опыт)
 const Z16 = flag('Z16', ENG);               // z вершин в Q12 (16 бит), иначе Q6
@@ -234,7 +234,7 @@ function render(lonD, latD, zoom, wantTruth) {
 			}
 			if (r1 > 199) r1 = 199;
 			if (r1 < r0) continue;
-			buckets[r0].push({ u, s, last: r1, tl, tr, top: r0, lt: A.lb, lbt: B.lb });
+			buckets[r0].push({ u, s, last: r1, tl, tr, top: r0, lt: A.lb, lbt: B.lb, id: nE });
 			nE++;
 		}
 	}
@@ -369,7 +369,7 @@ function render(lonD, latD, zoom, wantTruth) {
 			// всё ещё несогласованное с соседями, — на лучшее место в своей кучке, потом починка снова
 			if (INSFIX2 && INS2P && (!INSLIMB || zoom < 2)) {
 				let moved = false;
-				for (const e of insNew) {
+				for (const e of [...insNew].sort((a, b) => b.id - a.id)) {         // порядок корзины движка (новые записи — в начало списка)
 					let k = ael.indexOf(e);
 					const okL = j => j > 0 ? ael[j - 1].tr === e.tl : (NOLC || lc < 0 || lc === e.tl);
 					const okR = j => j >= ael.length || ael[j].tl === e.tr;

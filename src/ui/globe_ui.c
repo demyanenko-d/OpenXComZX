@@ -78,9 +78,8 @@ static uint16_t atan2_16(int32_t y, int32_t x)
 
 // Globe::cartToPolar: точка сферы (X, Y, Z) в долях радиуса Q14, обратный поворот на
 // наклон C: sinφ = cosC·Y + sinC·Z, cosφ·cosΔ = cosC·Z − sinC·Y, cosφ·sinΔ = X.
-void globe_lonlat(int16_t x, int16_t y, geo_t *p) __banked
+static void lonlat(int16_t x, int16_t y, int16_t r, uint16_t vlon, int16_t vlat, geo_t *p)
 {
-	int16_t r = zoom_r[ST->zoom < GLOBE_ZOOMS ? ST->zoom : GLOBE_ZOOMS - 1];
 	int32_t X = ((int32_t)(x - GLOBE_CX) << 14) / r, Y = ((int32_t)(y - GLOBE_CY) << 14) / r;
 	int32_t rr = X * X + Y * Y;
 	if (rr > 16384l * 16384) {                 // за краем — на край
@@ -89,10 +88,15 @@ void globe_lonlat(int16_t x, int16_t y, geo_t *p) __banked
 		rr = 16384l * 16384;
 	}
 	int32_t Z = isqrt32(16384ul * 16384 - (uint32_t)rr);
-	int16_t sc = sin16((uint16_t)ctx.globe_lat), cc = cos16((uint16_t)ctx.globe_lat);
+	int16_t sc = sin16((uint16_t)vlat), cc = cos16((uint16_t)vlat);
 	int32_t s = (cc * Y + sc * Z) >> 14, pc = (cc * Z - sc * Y) >> 14;
 	uint16_t h = isqrt32((uint32_t)(pc * pc + X * X));
 	uint16_t lat = atan2_16(s, h), d = atan2_16(X, pc);
 	p->lat = (int32_t)((uint32_t)lat << 16);
-	p->lon = (int32_t)((uint32_t)(uint16_t)(ctx.globe_lon + d) << 16);
+	p->lon = (int32_t)((uint32_t)(uint16_t)(vlon + d) << 16);
+}
+
+void globe_lonlat(int16_t x, int16_t y, geo_t *p) __banked
+{
+	lonlat(x, y, zoom_r[ST->zoom < GLOBE_ZOOMS ? ST->zoom : GLOBE_ZOOMS - 1], ctx.globe_lon, ctx.globe_lat, p);
 }

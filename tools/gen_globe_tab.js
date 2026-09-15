@@ -20,6 +20,12 @@ const atan = [];
 for (let i = 0; i <= 256; i++) atan.push(Math.round(Math.atan(i / 256) / (2 * Math.PI) * 65536));
 const recip = [0, 0];
 for (let d = 2; d < 512; d++) recip.push(Math.round(65536 / d));
+// выборка клетки сетки 5° (globe.c cell_of): z = sqrt(1 - i/256) Q14, i = 0..256; границы широт
+// sin(5k - 90°) Q14, k = 0..36; cos / sin 5k° Q14, k = 0..18
+const sqz = [], sin5 = [], cos5k = [], sin5k = [];
+for (let i = 0; i <= 256; i++) sqz.push(Math.round(Math.sqrt(1 - i / 256) * 16384));
+for (let k = 0; k <= 36; k++) sin5.push(Math.round(Math.sin((5 * k - 90) * Math.PI / 180) * 16384));
+for (let k = 0; k <= 18; k++) { cos5k.push(Math.round(Math.cos(5 * k * Math.PI / 180) * 16384)); sin5k.push(Math.round(Math.sin(5 * k * Math.PI / 180) * 16384)); }
 
 fs.writeFileSync(path.join(__dirname, '..', 'src', 'ui', 'globe_tab.h'), `// Сгенерировано tools/gen_globe_tab.js — не править вручную.
 // Таблица рендера глобуса (src/ui/globe.c, банк 24).
@@ -32,6 +38,22 @@ fs.writeFileSync(path.join(__dirname, '..', 'src', 'ui', 'globe_tab.h'), `// С�
 // src/ui/globe_s.s (dy >= 512 — делится на 2)
 const uint16_t recip_tab[512] = {
 ${rows(recip, 16)}
+};
+
+// Клетка сетки 5° по пикселю (globe.c cell_of): sqrt(1 - i/256) Q14, i = 0..256
+static const int16_t sqz_q14[257] = {
+${rows(sqz, 16)}
+};
+// sin(5k - 90°) Q14, k = 0..36 — границы широт клеток
+static const int16_t sin5_q14[37] = {
+${rows(sin5, 16)}
+};
+// cos 5k°, sin 5k° Q14, k = 0..18 — границы долгот в четверти
+static const int16_t cos5k_q14[19] = {
+${rows(cos5k, 16)}
+};
+static const int16_t sin5k_q14[19] = {
+${rows(sin5k, 16)}
 };
 
 #endif
@@ -73,4 +95,4 @@ const asm = [
 for (const tab of [lo, hi])
 	for (let i = 0; i < 512; i += 16) asm.push('\t.db\t' + tab.slice(i, i + 16).join(', '));
 fs.writeFileSync(path.join(__dirname, '..', 'src', 'ui', 'globe_sq.s'), asm.join('\n') + '\n');
-console.log('globe_tab.h: recip 512; globe_ui_tab.h: sin 1025, atan 257; globe_sq.s: squares 512');
+console.log('globe_tab.h: recip 512, cell tables; globe_ui_tab.h: sin 1025, atan 257; globe_sq.s: squares 512');
