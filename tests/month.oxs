@@ -1,0 +1,66 @@
+# Конец месяца (TFTD): отчёт с недовольной, довольной страной и новым пактом, долг
+# (предупреждение), второй месяц в долгу -> поражение («You have failed») -> заставка
+# поражения -> статистика -> меню.
+# month.c, 14_todo §3.13. Смещения state_t (как в campaign.oxs): ending #002E,
+# warned #002F, funds #004A, country[i] #0176 + 73*i (funding[12] +0, act_xcom +24,
+# act_alien +48, flags +72), region[r] #0606 + 48*r.
+# Запуск: powershell -File tools\run.ps1 -Script tests\month.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 600
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 300
+type atlantis
+key ENTER
+waitmark 32 300
+
+# деньги -$10,000,000; страна 0 — активность пришельцев, 1 — X-COM, 2 — новый пакт
+pokew 06:004A 0x6980
+pokew 06:004C 0xFF67
+pokew 06:01A6 500
+pokew 06:01D7 500
+poke 06:0250 2
+
+# 1 день за тик до отчёта
+key 6
+waitmark 40 3000
+shot tmp/shots/month/01_report_debts.png
+expect 06:002F 1
+expect 06:002E 0
+# у страны 2 — пакт: финансирование нового месяца 0; pactScore (очки INFILTRATION, 150)
+# пришельцам в закрытый месяц: act_alien[0] (#0208 + 48)
+expect 06:0250 1
+expectw 06:0238 150
+key SPACE
+waitmark 32 300
+key 6
+waitmark 40 3000
+shot tmp/shots/month/02_report_not_succeeded.png
+expect 06:002E 2
+key SPACE
+waitmark 51 300
+shot tmp/shots/month/03_failed.png
+# заставка поражения (CutsceneState LOSE_GAME, слайды с SD): два слайда, пропуск (Esc)
+key SPACE
+waitmark 24 600
+shot tmp/shots/month/04_lose_slide1.png
+key ENTER
+wait 60
+shot tmp/shots/month/05_lose_slide2.png
+key BREAK
+# статистика (StatisticsState): «Поражение», OK -> главное меню
+waitmark 25 300
+shot tmp/shots/month/06_statistics.png
+key ENTER
+waitmark 1 300
+exit 0

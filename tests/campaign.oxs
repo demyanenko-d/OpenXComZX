@@ -1,0 +1,362 @@
+# Автотест кампании (TFTD): новая игра -> первая база (место на глобусе, имя с
+# клавиатуры) -> база: постройка, покупка, переименование солдата -> ход времени
+# (поставки, персонал, конец постройки, отчёт месяца) -> сохранение в слот 2
+# с именем -> продажа -> загрузка слота 2 (изменения после сохранения исчезли).
+#
+# Состояние проверяется прямо в памяти (expect PP:AAAA — физический адрес):
+# STATE_PAGE #06 — state_t, #07 — soldier_t[] (src/inc/state.h). Смещения
+# state_t (SDCC offsetof): months #0030 (i16), day #003A, month #003B,
+# funds #004A (i32), base[0] #0A25 (base_t 457 байт: name +0, pos +#10, fac +#18
+# по 3 байта), transfer[] #22CD (6 байт: base, hours, kind, item, qty),
+# nsoldiers #2DD5. Стартовые деньги зависят от RNG (выравнивание финансирования
+# стран), поэтому funds задаётся poke, а проверяются разницы.
+# Файл слота — tmp/saves/TFTD/SLOT01.SAV (служба BIOS эмулятора).
+# Снимки — tmp/shots/campaign/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\campaign.oxs -Headless
+
+waitmark 1 600
+# пришельцы не начинают миссий (их проверяет aliens.oxs)
+poke _alien_off 1
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+# геоскейп и сразу выбор места первой базы; кампания ещё не началась
+waitmark 43 600
+shot tmp/shots/campaign/01_first_base_site.png
+expectw 06:0030 0xFFFF
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 300
+type atlantis
+wait 10
+shot tmp/shots/campaign/02_base_name.png
+key ENTER
+waitmark 32 300
+shot tmp/shots/campaign/03_geoscape.png
+# months = 0, имя, место (клик (120, 110) — обратная проекция глобуса globe_lonlat):
+# долгота #FC5A (-5.2 гр.), широта #0489 (6.4 гр. ю.ш.) — asin(8/90), asin(10/90)
+expectw 06:0030 0
+expect 06:0A25 0x61
+expectw 06:0A37 0xFC5A
+expectw 06:0A3B 0x0489
+# деньги: $1,000,000
+pokew 06:004A 0x4240
+pokew 06:004C 0x000F
+
+key B
+waitmark 96 300
+shot tmp/shots/campaign/04_basescape.png
+# подсказка над видом базы: постройка под курсором (и корабль ангара)
+pokew _cursor_x 96
+pokew _cursor_y 40
+wait 4
+shot tmp/shots/campaign/04a_hover.png
+
+# --- постройка: список -> Living Quarters -> клетка (1,2) рядом с лифтом
+key F
+waitmark 100 300
+shot tmp/shots/campaign/05_build_list.png
+pokew _cursor_x 250
+pokew _cursor_y 67
+click L
+waitmark 101 300
+shot tmp/shots/campaign/06_place.png
+pokew _cursor_x 48
+pokew _cursor_y 88
+# рамка габаритов постройки под курсором (BaseView selector), мигает раз в 5 кадров
+wait 3
+shot tmp/shots/campaign/06a_place_frame.png
+wait 5
+shot tmp/shots/campaign/06b_place_frame.png
+click L
+# как PlaceFacilityState: назад в список построек, под ним — база с новой постройкой
+waitmark 100 300
+shot tmp/shots/campaign/07_built.png
+key SPACE
+waitmark 96 300
+# fac[9] = {тип 1, x 1 | y 2 << 4, 16 дней}; $1,000,000 - $400,000
+expect 06:0A58 1
+expect 06:0A59 0x21
+expect 06:0A5A 16
+expectw 06:004A 0x27C0
+expectw 06:004C 0x0009
+
+# --- покупка: стрелки у строк (левая +1, правая -1): 2-1 акванавта,
+# учёный, техник, 3 торпеды Ajax (строка 6)
+key P
+waitmark 128 300
+shot tmp/shots/campaign/08_purchase.png
+pokew _cursor_x 240
+pokew _cursor_y 57
+click L
+waitmark 128 100
+click L
+waitmark 128 100
+pokew _cursor_x 252
+click L
+waitmark 128 100
+pokew _cursor_x 240
+pokew _cursor_y 65
+click L
+waitmark 128 100
+pokew _cursor_y 73
+click L
+waitmark 128 100
+pokew _cursor_y 105
+click L
+waitmark 128 100
+click L
+waitmark 128 100
+click L
+waitmark 128 100
+shot tmp/shots/campaign/09_purchase_order.png
+pokew _cursor_x 80
+pokew _cursor_y 184
+click L
+waitmark 96 300
+# $600,000 - 40,000 - 60,000 - 50,000 - 3 x 3,000 = $441,000; 9 солдат;
+# доставка 3: предмет (kind 1), 3 шт.
+expectw 06:004A 0xBAA8
+expectw 06:004C 0x0006
+expect 06:2DD5 9
+expect 06:22DB 1
+expectw 06:22DD 3
+
+# --- солдат: список -> карточка -> новое имя (21 x DELETE стирает старое)
+key S
+waitmark 104 300
+shot tmp/shots/campaign/10_soldiers.png
+pokew _cursor_x 60
+pokew _cursor_y 43
+click L
+waitmark 105 300
+shot tmp/shots/campaign/11_soldier_info.png
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+type ivan petrov
+wait 5
+shot tmp/shots/campaign/12_soldier_rename.png
+key ENTER
+waitmark 104 300
+shot tmp/shots/campaign/13_soldiers_renamed.png
+expect 07:0000 0x69
+expect 07:0004 0x20
+expect 07:000B 0
+key SPACE
+waitmark 96 300
+
+# --- время: 1 день за тик; поставки, персонал, постройка, отчёт месяца
+key SPACE
+waitmark 32 300
+key 6
+waitmark 68 900
+shot tmp/shots/campaign/14_items_arriving.png
+key SPACE
+waitmark 32 300
+waitmark 68 900
+shot tmp/shots/campaign/15_personnel_arriving.png
+key SPACE
+waitmark 32 300
+waitmark 67 900
+shot tmp/shots/campaign/16_construction_done.png
+expect 06:0A5A 0
+# «К базе»
+pokew _cursor_x 220
+pokew _cursor_y 162
+click L
+waitmark 96 300
+shot tmp/shots/campaign/17_base_after.png
+key SPACE
+waitmark 32 300
+# «К базе» сбросил скорость на 5 с (timerReset) — снова 1 день
+key 6
+waitmark 40 1500
+shot tmp/shots/campaign/18_monthly_report.png
+expectw 06:0030 1
+expect 06:003A 1
+expect 06:003B 2
+key SPACE
+waitmark 32 300
+key 1
+waitmark 32 100
+
+# --- графики после месяца (история — 2 месяца): финансы, все ряды; финансирование стран
+key G
+waitmark 240 300
+pokew _cursor_x 272
+pokew _cursor_y 12
+click L
+waitmark 240 300
+pokew _cursor_x 44
+pokew _cursor_y 5
+click L
+waitmark 240 300
+pokew _cursor_y 16
+click L
+waitmark 240 300
+pokew _cursor_y 27
+click L
+waitmark 240 300
+pokew _cursor_y 38
+click L
+waitmark 240 300
+pokew _cursor_y 49
+click L
+waitmark 240 300
+pokew _cursor_x 300
+pokew _cursor_y 190
+wait 2
+shot tmp/shots/campaign/18a_graphs_finance.png
+# переключатели сохраняются: доход стран, «Итого»
+pokew _cursor_x 240
+pokew _cursor_y 12
+click L
+waitmark 240 300
+pokew _cursor_x 44
+pokew _cursor_y 181
+click L
+waitmark 240 300
+pokew _cursor_y 5
+click L
+waitmark 240 300
+pokew _cursor_x 300
+pokew _cursor_y 190
+wait 2
+shot tmp/shots/campaign/18b_graphs_income.png
+key SPACE
+waitmark 32 300
+key F
+waitmark 39 300
+shot tmp/shots/campaign/18c_funding.png
+key SPACE
+waitmark 32 300
+key B
+waitmark 96 300
+key I
+waitmark 97 300
+pokew _cursor_x 260
+pokew _cursor_y 186
+click L
+waitmark 99 300
+shot tmp/shots/campaign/18d_monthly_costs.png
+key SPACE
+waitmark 97 300
+key SPACE
+waitmark 96 300
+key SPACE
+waitmark 32 300
+
+# --- сохранение в слот 2 с именем; деньги перед сохранением: $1,193,046
+pokew 06:004A 0x3456
+pokew 06:004C 0x0012
+key SPACE
+waitmark 5 300
+pokew _cursor_x 128
+pokew _cursor_y 83
+click L
+waitmark 4 300
+pokew _cursor_x 100
+pokew _cursor_y 53
+click L
+waitmark 107 300
+# в поле — прежнее имя слота (файл мог остаться от прошлого прогона): стереть все 23
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+key DELETE
+type autotest
+wait 5
+shot tmp/shots/campaign/19_save_name.png
+key ENTER
+waitmark 5 300
+key SPACE
+waitmark 32 300
+
+# --- продажа: D.U.P. Head Launcher — все (правая кнопка), D.U.P. Head Torpedoes — 1
+key B
+waitmark 96 300
+key E
+waitmark 129 300
+shot tmp/shots/campaign/20_sell.png
+pokew _cursor_x 195
+pokew _cursor_y 121
+click R
+waitmark 129 100
+pokew _cursor_y 129
+click L
+waitmark 129 100
+shot tmp/shots/campaign/21_sell_order.png
+pokew _cursor_x 80
+pokew _cursor_y 184
+click L
+waitmark 96 300
+# + $12,750 + $7,200
+expectw 06:004A 0x8244
+expectw 06:004C 0x0012
+key SPACE
+waitmark 32 300
+
+# --- загрузка слота 2: деньги, месяц, имя солдата — как при сохранении
+key SPACE
+waitmark 5 300
+pokew _cursor_x 128
+pokew _cursor_y 61
+click L
+waitmark 3 300
+shot tmp/shots/campaign/22_load.png
+pokew _cursor_x 100
+pokew _cursor_y 53
+click L
+waitmark 32 300
+shot tmp/shots/campaign/23_loaded.png
+expectw 06:004A 0x3456
+expectw 06:004C 0x0012
+expectw 06:0030 1
+expect 07:0000 0x69
+expect 06:0008 0x61
+expect 06:0010 0
+echo campaign scenario OK
+exit 0

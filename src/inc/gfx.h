@@ -1,0 +1,31 @@
+// Графика интерфейса: экран 320x200 256c (страницы SCREEN_PAGE.., строка 512 байт).
+// Код — банк 1 (src/kernel/gfx.c, вместе с ui.c), кроме gfx_map (общий, pages.c).
+// Координаты — пиксели экрана; всё обрезается по экрану. Функции сохраняют Win3.
+#ifndef GFX_H
+#define GFX_H
+
+#include <stdint.h>
+
+void gfx_init(void) __banked;
+void gfx_fill(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c) __banked;
+void gfx_pset(int16_t x, int16_t y, uint8_t c) __banked;
+void gfx_line(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t c) __banked;
+// Прямоугольник полноэкранной картинки IMG8 (320 в ширину) в ту же позицию экрана.
+// 0 — нет ресурса.
+uint8_t gfx_bg(uint16_t res_id, int16_t x, int16_t y, int16_t w, int16_t h) __banked;
+// Прямоугольник (sx, sy, w, h) картинки IMG8 в точку экрана (x, y). Непрозрачно;
+// x и sx одной чётности, w округляется до чётной (DMA копирует словами). 0 — нет ресурса.
+uint8_t gfx_blit(uint16_t res_id, int16_t sx, int16_t sy, int16_t x, int16_t y, int16_t w, int16_t h) __banked;
+extern uint8_t gfx_key;                 // 1 — gfx_blit пропускает цвет 0 (DMA BLT1, картинка поверх фона)
+// Кадр набора спрайтов (SPRSET) в угол ячейки (x, y), 0 — прозрачно. 0 — нет ресурса.
+uint8_t gfx_sprite(uint16_t res_id, uint16_t frame, int16_t x, int16_t y) __banked;
+// Палитра экрана: ресурс палитры + блок BACKPALS (16 цветов) в цвета 224..239 (-1 — нет).
+void gfx_palette(uint16_t pal_id, int8_t backpal) __banked;
+// Сдвиг цветов lo..lo+n-1 текущей палитры на шаг (цикл палитры; следующая gfx_palette сбросит).
+void gfx_pal_cycle(uint8_t lo, uint8_t n) __banked;
+
+// Адрес CPU пикселя (x, y): страница строки подключается в Win3 и не
+// восстанавливается — вызывающий сохраняет и восстанавливает pg_win3() сам.
+uint8_t *gfx_map(int16_t x, int16_t y);
+
+#endif

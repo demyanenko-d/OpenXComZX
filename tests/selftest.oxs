@@ -1,0 +1,18 @@
+# Самотест при запуске (src/main.c selftest): джампер между банками кода и
+# менеджер страниц, затем главное меню интерфейса.
+# Запуск: powershell -File tools\run.ps1 -Script tests\selftest.oxs -Headless
+
+waitmark 1 600                  # главное меню нарисовано
+
+expectw _bank_result 1028       # 7*3 + (7 + 1000): общий код -> банк 14 -> банк 15
+expect _bank_a_page 0x3E        # код банка 14 видит в Win2 свою страницу
+expect _bank_b_page 0x3F
+expect _bank_a_page_after 0x3E  # трамплин вернул банк вызывающего
+expect _pg_test 0xB0            # pg_alloc(16, 16) — начало пула
+expect _pg_test+1 0xC0          # pg_alloc(1, 1)
+expect _pg_test+2 0xB0          # после pg_free — снова #B0 (выравнивание 8)
+expect _pg_test+3 61            # свободно 64 - 1 - 2
+
+shot tmp/shots/selftest.png
+echo selftest OK
+exit 0

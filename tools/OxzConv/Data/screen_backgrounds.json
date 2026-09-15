@@ -1,0 +1,427 @@
+[
+ {
+  "state": "AbandonGameState",
+  "background": "BACK01.SCR",
+  "interface": "geoscape"
+ },
+ {
+  "state": "AllocatePsiTrainingState",
+  "background": "BACK01.SCR",
+  "interface": "allocatePsi"
+ },
+ {
+  "state": "BaseNameState",
+  "background": "BACK01.SCR",
+  "interface": "baseNaming"
+ },
+ {
+  "state": "BuildNewBaseState",
+  "background": "BACK01.SCR",
+  "interface": "geoscape"
+ },
+ {
+  "state": "CannotReequipState",
+  "background": "BACK01.SCR",
+  "interface": "cannotReequip"
+ },
+ {
+  "state": "CommendationState",
+  "background": "BACK01.SCR",
+  "interface": "commendations"
+ },
+ {
+  "state": "ConfirmLoadState",
+  "background": "BACK01.SCR",
+  "interface": "saveMenus"
+ },
+ {
+  "state": "ConfirmNewBaseState",
+  "background": "BACK01.SCR",
+  "interface": "geoscape"
+ },
+ {
+  "state": "DebriefingState",
+  "background": "BACK01.SCR",
+  "interface": "debriefing"
+ },
+ {
+  "state": "DeleteGameState",
+  "background": "BACK01.SCR",
+  "interface": "saveMenus"
+ },
+ {
+  "state": "ListGamesState",
+  "background": "BACK01.SCR",
+  "interface": "geoscape"
+ },
+ {
+  "state": "ListLoadOriginalState",
+  "background": "BACK01.SCR",
+  "interface": "geoscape"
+ },
+ {
+  "state": "MainMenuState",
+  "background": "BACK01.SCR",
+  "interface": "mainMenu"
+ },
+ {
+  "state": "ModConfirmExtendedState",
+  "background": "BACK01.SCR",
+  "interface": "optionsMenu"
+ },
+ {
+  "state": "ModListState",
+  "background": "BACK01.SCR",
+  "interface": "modsMenu"
+ },
+ {
+  "state": "NewBattleState",
+  "background": "BACK01.SCR",
+  "interface": "newBattleMenu"
+ },
+ {
+  "state": "NewGameState",
+  "background": "BACK01.SCR",
+  "interface": "newGameMenu"
+ },
+ {
+  "state": "OptionsBaseState",
+  "background": "BACK01.SCR",
+  "interface": "optionsMenu"
+ },
+ {
+  "state": "OptionsConfirmState",
+  "background": "BACK01.SCR",
+  "interface": "optionsMenu"
+ },
+ {
+  "state": "OptionsDefaultsState",
+  "background": "BACK01.SCR",
+  "interface": "optionsMenu"
+ },
+ {
+  "state": "PauseState",
+  "background": "BACK01.SCR",
+  "interface": "pauseMenu"
+ },
+ {
+  "state": "PlaceFacilityState",
+  "background": "BACK01.SCR",
+  "interface": "placeFacility"
+ },
+ {
+  "state": "PromotionsState",
+  "background": "BACK01.SCR",
+  "interface": "promotions"
+ },
+ {
+  "state": "PsiTrainingState",
+  "background": "BACK01.SCR",
+  "interface": "psiTraining"
+ },
+ {
+  "state": "SelectDestinationState",
+  "background": "BACK01.SCR",
+  "interface": "geoscape"
+ },
+ {
+  "state": "SetWindowedRootState",
+  "background": "BACK01.SCR",
+  "interface": "optionsMenu"
+ },
+ {
+  "state": "StatisticsState",
+  "background": "BACK01.SCR",
+  "interface": "endGameStatistics"
+ },
+ {
+  "state": "TargetInfoState",
+  "background": "BACK01.SCR",
+  "interface": "targetInfo"
+ },
+ {
+  "state": "UfopaediaSelectState",
+  "background": "BACK01.SCR",
+  "interface": "ufopaedia"
+ },
+ {
+  "state": "UfopaediaStartState",
+  "background": "BACK01.SCR",
+  "interface": "ufopaedia"
+ },
+ {
+  "state": "CommendationLateState",
+  "background": "BACK02.SCR",
+  "interface": "commendationsLate"
+ },
+ {
+  "state": "CraftSoldiersState",
+  "background": "BACK02.SCR",
+  "interface": "craftSoldiers"
+ },
+ {
+  "state": "SoldierDiaryOverviewState",
+  "background": "BACK02.SCR",
+  "interface": "soldierDiary"
+ },
+ {
+  "state": "SoldierDiaryPerformanceState",
+  "background": "BACK02.SCR",
+  "interface": "soldierDiaryPerformance"
+ },
+ {
+  "state": "SoldierMemorialState",
+  "background": "BACK02.SCR",
+  "interface": "soldierMemorial"
+ },
+ {
+  "state": "SoldiersState",
+  "background": "BACK02.SCR",
+  "interface": "soldierList"
+ },
+ {
+  "state": "BaseDefenseState",
+  "background": "BACK04.SCR",
+  "interface": "baseDefense"
+ },
+ {
+  "state": "CraftEquipmentState",
+  "background": "BACK04.SCR",
+  "interface": "craftEquipment"
+ },
+ {
+  "state": "BuildFacilitiesState",
+  "background": "BACK05.SCR",
+  "interface": "selectFacility"
+ },
+ {
+  "state": "NewPossibleResearchState",
+  "background": "BACK05.SCR",
+  "interface": "geoResearch"
+ },
+ {
+  "state": "NewResearchListState",
+  "background": "BACK05.SCR",
+  "interface": "selectNewResearch"
+ },
+ {
+  "state": "ResearchCompleteState",
+  "background": "BACK05.SCR",
+  "interface": "geoResearchComplete"
+ },
+ {
+  "state": "ResearchInfoState",
+  "background": "BACK05.SCR",
+  "interface": "allocateResearch"
+ },
+ {
+  "state": "ResearchRequiredState",
+  "background": "BACK05.SCR",
+  "interface": "geoResearchRequired"
+ },
+ {
+  "state": "ResearchState",
+  "background": "BACK05.SCR",
+  "interface": "researchMenu"
+ },
+ {
+  "state": "SoldierInfoState",
+  "background": "BACK06.SCR",
+  "interface": "soldierInfo"
+ },
+ {
+  "state": "ConfirmCydoniaState",
+  "background": "BACK12.SCR",
+  "interface": "confirmCydonia"
+ },
+ {
+  "state": "ConfirmDestinationState",
+  "background": "BACK12.SCR",
+  "interface": "confirmDestination"
+ },
+ {
+  "state": "CraftErrorState",
+  "background": "BACK12.SCR",
+  "interface": "craftError"
+ },
+ {
+  "state": "CraftPatrolState",
+  "background": "BACK12.SCR",
+  "interface": "craftPatrol"
+ },
+ {
+  "state": "GeoscapeCraftState",
+  "background": "BACK12.SCR",
+  "interface": "geoCraft"
+ },
+ {
+  "state": "InterceptState",
+  "background": "BACK12.SCR",
+  "interface": "intercept"
+ },
+ {
+  "state": "LowFuelState",
+  "background": "BACK12.SCR",
+  "interface": "lowFuel"
+ },
+ {
+  "state": "AlienBaseState",
+  "background": "BACK13.SCR",
+  "interface": "alienBase"
+ },
+ {
+  "state": "DismantleFacilityState",
+  "background": "BACK13.SCR",
+  "interface": "dismantleFacility"
+ },
+ {
+  "state": "FundingState",
+  "background": "BACK13.SCR",
+  "interface": "fundingWindow"
+ },
+ {
+  "state": "ItemsArrivingState",
+  "background": "BACK13.SCR",
+  "interface": "itemsArriving"
+ },
+ {
+  "state": "MonthlyCostsState",
+  "background": "BACK13.SCR",
+  "interface": "costsInfo"
+ },
+ {
+  "state": "MonthlyReportState",
+  "background": "BACK13.SCR",
+  "interface": "monthlyReport"
+ },
+ {
+  "state": "PurchaseState",
+  "background": "BACK13.SCR",
+  "interface": "buyMenu"
+ },
+ {
+  "state": "SackSoldierState",
+  "background": "BACK13.SCR",
+  "interface": "sackSoldier"
+ },
+ {
+  "state": "SellState",
+  "background": "BACK13.SCR",
+  "interface": "sellMenu"
+ },
+ {
+  "state": "StoresState",
+  "background": "BACK13.SCR",
+  "interface": "storesInfo"
+ },
+ {
+  "state": "TransferBaseState",
+  "background": "BACK13.SCR",
+  "interface": "transferBaseSelect"
+ },
+ {
+  "state": "TransferConfirmState",
+  "background": "BACK13.SCR",
+  "interface": "transferConfirm"
+ },
+ {
+  "state": "TransferItemsState",
+  "background": "BACK13.SCR",
+  "interface": "transferMenu"
+ },
+ {
+  "state": "TransfersState",
+  "background": "BACK13.SCR",
+  "interface": "transferInfo"
+ },
+ {
+  "state": "CraftArmorState",
+  "background": "BACK14.SCR",
+  "interface": "craftArmor"
+ },
+ {
+  "state": "CraftInfoState",
+  "background": "BACK14.SCR",
+  "interface": "craftInfo"
+ },
+ {
+  "state": "CraftsState",
+  "background": "BACK14.SCR",
+  "interface": "craftSelect"
+ },
+ {
+  "state": "CraftWeaponsState",
+  "background": "BACK14.SCR",
+  "interface": "craftWeapons"
+ },
+ {
+  "state": "SoldierArmorState",
+  "background": "BACK14.SCR",
+  "interface": "soldierArmor"
+ },
+ {
+  "state": "BaseDestroyedState",
+  "background": "BACK15.SCR",
+  "interface": "baseDestroyed"
+ },
+ {
+  "state": "ConfirmLandingState",
+  "background": "BACK15.SCR",
+  "interface": "confirmLanding"
+ },
+ {
+  "state": "DogfightErrorState",
+  "background": "BACK15.SCR",
+  "interface": "dogfightInfo"
+ },
+ {
+  "state": "MultipleTargetsState",
+  "background": "BACK15.SCR",
+  "interface": "multipleTargets"
+ },
+ {
+  "state": "UfoDetectedState",
+  "background": "BACK15.SCR",
+  "interface": "UFOInfo"
+ },
+ {
+  "state": "UfoLostState",
+  "background": "BACK15.SCR",
+  "interface": "UFOLost"
+ },
+ {
+  "state": "SoldierDiaryMissionState",
+  "background": "BACK16.SCR",
+  "interface": "soldierDiaryMission"
+ },
+ {
+  "state": "ManufactureInfoState",
+  "background": "BACK17.SCR",
+  "interface": "manufactureInfo"
+ },
+ {
+  "state": "ManufactureStartState",
+  "background": "BACK17.SCR",
+  "interface": "allocateManufacture"
+ },
+ {
+  "state": "ManufactureState",
+  "background": "BACK17.SCR",
+  "interface": "manufactureMenu"
+ },
+ {
+  "state": "NewManufactureListState",
+  "background": "BACK17.SCR",
+  "interface": "selectNewManufacture"
+ },
+ {
+  "state": "NewPossibleManufactureState",
+  "background": "BACK17.SCR",
+  "interface": "geoManufacture"
+ },
+ {
+  "state": "ProductionCompleteState",
+  "background": "BACK17.SCR",
+  "interface": "geoManufactureComplete"
+ }
+]

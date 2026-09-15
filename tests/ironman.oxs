@@ -1,0 +1,67 @@
+# Ironman (TFTD, 14_todo §3.15): новая игра с Ironman -> после первой базы сразу выбор
+# слота (без «Отмена») -> сохранение; пауза без Load/Save, «Save and abandon» ->
+# сохранение и главное меню; в списке загрузки — «(Ironman)», загрузка.
+# Слот 6 (индекс 5): tmp/saves/TFTD/SLOT05.SAV. Смещения state_t: hdr.ironman #0007,
+# iron_slot #2DE6. Снимки — tmp/shots/ironman/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\ironman.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+# Ironman
+pokew _cursor_x 119
+pokew _cursor_y 147
+click L
+waitmark 2 100
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 600
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 300
+type iron
+key ENTER
+# сразу — список слотов (ListSaveState без «Отмена»)
+waitmark 4 300
+shot tmp/shots/ironman/01_save_slot.png
+key SPACE
+wait 10
+pokew _cursor_x 100
+pokew _cursor_y 86
+click L
+waitmark 107 300
+key ENTER
+waitmark 32 300
+expect 06:0007 1
+expect 06:2DE6 5
+
+# пауза: без загрузки и сохранения, «Save and abandon»
+key SPACE
+waitmark 5 300
+shot tmp/shots/ironman/02_pause.png
+pokew _cursor_x 128
+pokew _cursor_y 105
+click L
+waitmark 6 300
+key ENTER
+waitmark 1 300
+
+# список загрузки: слот с «(Ironman)», загрузка
+pokew _cursor_x 210
+pokew _cursor_y 100
+click L
+waitmark 3 300
+shot tmp/shots/ironman/03_load.png
+pokew _cursor_x 100
+pokew _cursor_y 86
+click L
+waitmark 32 300
+# загружено: ST->ironman (#002D)
+expect 06:002D 1
+echo ironman scenario OK
+exit 0

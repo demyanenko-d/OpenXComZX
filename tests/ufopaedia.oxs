@@ -1,0 +1,239 @@
+# Автотест Уфопедии (TFTD): статьи с SD-карты (UFOP.PAK с образа tmp\sdimg\oxz.img,
+# драйвер src/kernel/sd.s + fat.c), листание «>>» по всем видимым статьям
+# (корабли, оружие, техника, снаряжение, броня, постройки, USO, тексты).
+# Все исследования открыты записью в discovered (#006E, 20 байт).
+# Снимки — tmp/shots/ufopaedia/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\ufopaedia.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 600
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 300
+type deep
+key ENTER
+waitmark 32 300
+pokew 06:006E 0xFFFF
+pokew 06:0070 0xFFFF
+pokew 06:0072 0xFFFF
+pokew 06:0074 0xFFFF
+pokew 06:0076 0xFFFF
+pokew 06:0078 0xFFFF
+pokew 06:007A 0xFFFF
+pokew 06:007C 0xFFFF
+pokew 06:007E 0xFFFF
+pokew 06:0080 0xFFFF
+
+key U
+waitmark 9 300
+shot tmp/shots/ufopaedia/00_sections.png
+pokew _cursor_x 160
+pokew _cursor_y 56
+click L
+waitmark 10 300
+shot tmp/shots/ufopaedia/01_select.png
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/02_article.png
+pokew _cursor_x 292
+pokew _cursor_y 184
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/03.png
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/04.png
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/05.png
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/06.png
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/07.png
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/08.png
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/09.png
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/10.png
+# назад «<<»
+pokew _cursor_x 265
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/11_prev.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+# остальные разделы (y = 56 + 13 * i): первая статья и две следующие
+pokew _cursor_x 160
+pokew _cursor_y 69
+click L
+waitmark 10 300
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s1_0.png
+pokew _cursor_x 292
+pokew _cursor_y 184
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s1_1.png
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s1_2.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+pokew _cursor_x 160
+pokew _cursor_y 82
+click L
+waitmark 10 300
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s2_0.png
+pokew _cursor_x 292
+pokew _cursor_y 184
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s2_1.png
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s2_2.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+pokew _cursor_x 160
+pokew _cursor_y 95
+click L
+waitmark 10 300
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s3_0.png
+pokew _cursor_x 292
+pokew _cursor_y 184
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s3_1.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+pokew _cursor_x 160
+pokew _cursor_y 108
+click L
+waitmark 10 300
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s4_0.png
+pokew _cursor_x 292
+pokew _cursor_y 184
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s4_1.png
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s4_2.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+pokew _cursor_x 160
+pokew _cursor_y 121
+click L
+waitmark 10 300
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s5_0.png
+pokew _cursor_x 292
+pokew _cursor_y 184
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s5_1.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+pokew _cursor_x 160
+pokew _cursor_y 134
+click L
+waitmark 10 300
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s6_0.png
+pokew _cursor_x 292
+pokew _cursor_y 184
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s6_1.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+pokew _cursor_x 160
+pokew _cursor_y 147
+click L
+waitmark 10 300
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s7_0.png
+pokew _cursor_x 292
+pokew _cursor_y 184
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s7_1.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+pokew _cursor_x 160
+pokew _cursor_y 160
+click L
+waitmark 10 300
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s8_0.png
+pokew _cursor_x 292
+pokew _cursor_y 184
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia/s8_1.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+echo ufopaedia scenario OK
+exit 0

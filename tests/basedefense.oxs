@@ -1,0 +1,62 @@
+# Штурм баз (TFTD, 14_todo §3.11): отладочный штурм (poke _geo_dbg_attack <база + 1>,
+# подставное НЛО типа _df_dbg_type). 1) База 0 с торпедной обороной и щитом
+# (fac[34] = 6 STR_TORPEDO_DEFENSES, fac[35] = 12 STR_BOMBARDMENT_SHIELD): BaseDefense —
+# выстрелы, щит — второй круг; OK — солдаты есть: бой на базе (не перенесён). НЛО
+# уничтожено в любом случае. 2) База 1 (poke — без построек и людей): BaseDestroyed,
+# база удалена. Смещения state_t: base[0].fac #0A3D + 3k, base[1] #0BEE (pos +16),
+# ufo[0] #26CD (status +1). Снимки — tmp/shots/basedefense/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\basedefense.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 600
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 300
+type atlantis
+key ENTER
+waitmark 32 300
+
+# --- 1: оборона базы 0 (линкор)
+poke 06:0AA3 6
+poke 06:0AA4 0x55
+poke 06:0AA5 0
+poke 06:0AA6 12
+poke 06:0AA7 0x54
+poke 06:0AA8 0
+poke _df_dbg_type 5
+poke _geo_dbg_attack 1
+waitmark 70 300
+wait 60
+shot tmp/shots/basedefense/01_defense.png
+wait 300
+shot tmp/shots/basedefense/02_defense_end.png
+key SPACE
+waitmark 7 300
+shot tmp/shots/basedefense/03_not_ported.png
+expect 06:26CE 3
+key SPACE
+waitmark 32 300
+
+# --- 2: база 1 без обороны и людей — уничтожена
+poke 06:0BEE 0x62
+poke 06:0BEF 0
+pokew 06:0C00 0xF800
+pokew 06:0C04 0x0800
+poke _geo_dbg_attack 2
+waitmark 71 300
+shot tmp/shots/basedefense/04_destroyed.png
+key SPACE
+waitmark 32 300
+expect 06:0BEE 0
+shot tmp/shots/basedefense/05_after.png
+echo basedefense scenario OK
+exit 0

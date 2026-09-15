@@ -1,0 +1,433 @@
+# Автотест интерфейса: главное меню -> новая игра -> первая база -> геоскейп и
+# все его окна. Данные — состояние кампании (state.h); окна, для которых ещё нет
+# логики (НЛО, миссии, бой), открываются запросом poke _ui_request <номер>
+# (src/ui/screens.h) и показывают отладочные данные. Клики — курсор прямо в
+# экранные координаты (pokew _cursor_x/_cursor_y) + click L; экран сообщает
+# свой номер в #FCAF (waitmark). Экономика и сохранения — tests/campaign.oxs.
+# Запуск: powershell -File tools\run.ps1 -Script tests\ui_geoscape.oxs -Headless
+# Снимки экранов — отдельная папка tmp/shots/ui/ (NN_имя.png, по порядку прохода).
+
+waitmark 1 600
+# пришельцы не начинают миссий (их проверяет aliens.oxs); окна НЛО — подставные
+poke _alien_off 1
+shot tmp/shots/ui/01_main.png
+
+# --- новая игра: сложность (радиогруппа), ironman (переключатель), OK
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 160
+pokew _cursor_y 81
+click L
+waitmark 2 100
+pokew _cursor_x 119
+pokew _cursor_y 147
+click L
+waitmark 2 100
+shot tmp/shots/ui/02_newgame.png
+# Ironman обратно выключить (иначе сразу после базы — обязательный слот, tests/ironman.oxs)
+pokew _cursor_y 147
+click L
+waitmark 2 100
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+
+# --- первая база: место на глобусе -> имя (ввод с клавиатуры) -> геоскейп
+waitmark 43 600
+shot tmp/shots/ui/03_first_base.png
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 300
+type atlantis
+wait 10
+shot tmp/shots/ui/04_base_name.png
+key ENTER
+waitmark 32 300
+shot tmp/shots/ui/05_geoscape.png
+
+# --- скорость времени: клавиша 3 (5 минут), часы идут
+key 3
+wait 60
+shot tmp/shots/ui/06_geo_speed.png
+key 1
+waitmark 32 100
+
+# --- перехват: корабль базы -> выбор цели (новая путевая точка) -> подтверждение ->
+# корабль вылетает (взлёт 5 минут игры, потом к точке)
+pokew _cursor_x 288
+pokew _cursor_y 5
+click L
+waitmark 200 300
+shot tmp/shots/ui/07_intercept.png
+pokew _cursor_x 50
+pokew _cursor_y 81
+click L
+waitmark 49 300
+shot tmp/shots/ui/08_select_dest.png
+pokew _cursor_x 128
+pokew _cursor_y 120
+click L
+waitmark 203 300
+shot tmp/shots/ui/09_confirm_dest.png
+pokew _cursor_x 93
+pokew _cursor_y 110
+click L
+waitmark 32 300
+
+# --- база на глобусе (центр): там же взлетающий корабль — MultipleTargets (база, корабль);
+# база -> перехват с базы (её корабли, «Go to base») -> Basescape
+pokew _cursor_x 128
+pokew _cursor_y 100
+click L
+waitmark 207 300
+shot tmp/shots/ui/09b_multi_targets.png
+pokew _cursor_y 90
+click L
+waitmark 200 300
+shot tmp/shots/ui/09a_intercept_base.png
+pokew _cursor_x 230
+pokew _cursor_y 154
+click L
+waitmark 96 300
+shot tmp/shots/ui/10_basescape.png
+key SPACE
+waitmark 32 300
+
+# --- окна целей на глобусе (НЛО — отладочное)
+poke _ui_request 36
+waitmark 36 300
+shot tmp/shots/ui/11_ufo_detected.png
+key SPACE
+waitmark 32 300
+poke _ui_request 201
+waitmark 201 300
+shot tmp/shots/ui/12_geo_craft.png
+key SPACE
+waitmark 32 300
+poke _ui_request 202
+waitmark 202 300
+shot tmp/shots/ui/13_target_info.png
+key SPACE
+waitmark 32 300
+poke _ui_request 207
+waitmark 207 300
+shot tmp/shots/ui/14_multi_targets.png
+pokew _cursor_x 128
+pokew _cursor_y 80
+click L
+waitmark 201 300
+key SPACE
+waitmark 32 300
+poke _ui_request 206
+waitmark 206 300
+shot tmp/shots/ui/15_craft_error.png
+key SPACE
+waitmark 32 300
+
+# --- базы: кнопка панели -> Basescape
+key B
+waitmark 96 300
+key SPACE
+waitmark 32 300
+
+# --- графики: переключатель региона, режимы
+key G
+waitmark 240 300
+shot tmp/shots/ui/16_graphs.png
+pokew _cursor_x 44
+pokew _cursor_y 60
+click L
+waitmark 240 300
+pokew _cursor_x 144
+pokew _cursor_y 12
+click L
+waitmark 240 300
+shot tmp/shots/ui/17_graphs_countries.png
+pokew _cursor_x 272
+pokew _cursor_y 12
+click L
+waitmark 240 300
+# финансы: доход, содержание, баланс
+pokew _cursor_x 44
+pokew _cursor_y 5
+click L
+waitmark 240 300
+pokew _cursor_y 27
+click L
+waitmark 240 300
+pokew _cursor_y 38
+click L
+waitmark 240 300
+shot tmp/shots/ui/18_graphs_finance.png
+key SPACE
+waitmark 32 300
+
+# --- Уфопедия: раздел, прокрутка, статья
+key U
+waitmark 9 300
+shot tmp/shots/ui/19_ufopaedia.png
+pokew _cursor_x 160
+pokew _cursor_y 82
+click L
+waitmark 10 300
+shot tmp/shots/ui/20_ufop_select.png
+pokew _cursor_x 274
+pokew _cursor_y 147
+click L
+waitmark 10 100
+click L
+waitmark 10 100
+shot tmp/shots/ui/21_ufop_scrolled.png
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ui/22_ufop_article.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+key SPACE
+waitmark 32 300
+
+# --- финансы
+key F
+waitmark 39 300
+shot tmp/shots/ui/23_funding.png
+key SPACE
+waitmark 32 300
+
+# --- опции геоскейпа: сохранить (окно имени, отмена), загрузить, свои опции, выход из игры
+key SPACE
+waitmark 5 300
+shot tmp/shots/ui/24_pause.png
+pokew _cursor_x 128
+pokew _cursor_y 83
+click L
+waitmark 4 300
+shot tmp/shots/ui/25_save.png
+pokew _cursor_x 100
+pokew _cursor_y 62
+click L
+waitmark 107 300
+shot tmp/shots/ui/26_save_name.png
+key BREAK
+waitmark 4 300
+key SPACE
+waitmark 5 300
+pokew _cursor_x 128
+pokew _cursor_y 61
+click L
+waitmark 3 300
+shot tmp/shots/ui/27_load.png
+# правый клик по занятому слоту — подтверждение удаления (No)
+pokew _cursor_x 100
+pokew _cursor_y 53
+click R
+waitmark 13 300
+shot tmp/shots/ui/27a_delete_save.png
+key SPACE
+waitmark 3 300
+key SPACE
+waitmark 5 300
+pokew _cursor_x 128
+pokew _cursor_y 131
+click L
+waitmark 8 300
+pokew _cursor_x 102
+pokew _cursor_y 85
+click L
+waitmark 8 100
+shot tmp/shots/ui/28_options.png
+key SPACE
+waitmark 5 300
+pokew _cursor_x 128
+pokew _cursor_y 105
+click L
+waitmark 6 300
+shot tmp/shots/ui/29_abandon.png
+pokew _cursor_x 193
+pokew _cursor_y 150
+click L
+waitmark 5 300
+key SPACE
+waitmark 32 300
+
+# --- окна событий геоскейпа по запросу
+poke _ui_request 37
+waitmark 37 300
+shot tmp/shots/ui/30_ufo_lost.png
+key SPACE
+waitmark 32 300
+poke _ui_request 38
+waitmark 38 300
+shot tmp/shots/ui/31_mission_detected.png
+key SPACE
+waitmark 32 300
+poke _ui_request 40
+waitmark 40 300
+shot tmp/shots/ui/32_monthly_report.png
+key SPACE
+waitmark 32 300
+poke _ui_request 204
+waitmark 204 300
+shot tmp/shots/ui/33_craft_patrol.png
+key SPACE
+waitmark 32 300
+poke _ui_request 205
+waitmark 205 300
+shot tmp/shots/ui/34_low_fuel.png
+key SPACE
+waitmark 32 300
+
+# новая база: место на глобусе -> подтверждение (цена региона) -> имя -> Basescape
+poke _ui_request 43
+waitmark 43 300
+shot tmp/shots/ui/35_build_base.png
+pokew _cursor_x 60
+pokew _cursor_y 70
+click L
+waitmark 44 300
+shot tmp/shots/ui/36_confirm_base.png
+key ENTER
+waitmark 42 300
+type poseidon
+wait 10
+shot tmp/shots/ui/37_base_name.png
+key ENTER
+# место лифта (PlaceLiftState) -> экран новой базы
+waitmark 108 300
+shot tmp/shots/ui/38_place_lift.png
+pokew _cursor_x 80
+pokew _cursor_y 88
+wait 3
+shot tmp/shots/ui/38a_lift_frame.png
+wait 5
+shot tmp/shots/ui/38b_lift_frame.png
+click L
+waitmark 96 300
+shot tmp/shots/ui/39_new_base.png
+key SPACE
+waitmark 32 300
+
+poke _ui_request 64
+waitmark 64 300
+shot tmp/shots/ui/40_research_complete.png
+key SPACE
+waitmark 32 300
+poke _ui_request 65
+waitmark 65 300
+shot tmp/shots/ui/41_new_research.png
+key SPACE
+waitmark 32 300
+poke _ui_request 66
+waitmark 66 300
+shot tmp/shots/ui/42_new_manufacture.png
+key SPACE
+waitmark 32 300
+poke _ui_request 67
+waitmark 67 300
+shot tmp/shots/ui/43_production_done.png
+key SPACE
+waitmark 32 300
+poke _ui_request 68
+waitmark 68 300
+shot tmp/shots/ui/44_items_arriving.png
+key SPACE
+waitmark 32 300
+poke _ui_request 69
+waitmark 69 300
+shot tmp/shots/ui/45_alien_base.png
+key SPACE
+waitmark 32 300
+poke _ui_request 70
+waitmark 70 300
+wait 120
+shot tmp/shots/ui/46_base_defense.png
+key SPACE
+waitmark 32 300
+poke _ui_request 71
+waitmark 71 300
+shot tmp/shots/ui/47_base_destroyed.png
+key SPACE
+waitmark 32 300
+poke _ui_request 72
+waitmark 72 300
+shot tmp/shots/ui/48_confirm_landing.png
+key SPACE
+waitmark 32 300
+poke _ui_request 73
+waitmark 73 300
+shot tmp/shots/ui/49_confirm_cydonia.png
+key SPACE
+waitmark 32 300
+
+# пси-тренировка: базы с пси-лабораторией (у стартовой нет) и список солдат
+# базы (вместимость 0 — отметить нельзя)
+poke _ui_request 74
+waitmark 74 300
+shot tmp/shots/ui/50_psi_training.png
+key SPACE
+waitmark 32 300
+poke _ui_request 75
+waitmark 75 300
+pokew _cursor_x 60
+pokew _cursor_y 56
+click L
+waitmark 75 100
+shot tmp/shots/ui/51_alloc_psi.png
+key SPACE
+waitmark 32 300
+
+poke _ui_request 76
+waitmark 76 300
+shot tmp/shots/ui/52_research_required.png
+key SPACE
+waitmark 32 300
+poke _ui_request 217
+waitmark 217 300
+shot tmp/shots/ui/53_dogfight_error.png
+key SPACE
+waitmark 32 300
+
+# перехват (отладочный бой: корабль с оружием против подставного НЛО у базы):
+# режим кнопкой, сближение, отход — бой кончается за 640, окно закрывается
+poke _ui_request 216
+waitmark 216 300
+shot tmp/shots/ui/54_dogfight.png
+key 4
+wait 150
+shot tmp/shots/ui/55_dogfight_aggressive.png
+key 5
+waitmark 32 900
+
+# --- выход в главное меню, отладочный список окон, выход
+key SPACE
+waitmark 5 300
+pokew _cursor_x 128
+pokew _cursor_y 105
+click L
+waitmark 6 300
+key ENTER
+waitmark 1 300
+key D
+waitmark 11 300
+shot tmp/shots/ui/60_debug_list.png
+pokew _cursor_x 100
+pokew _cursor_y 52
+click L
+waitmark 202 300
+shot tmp/shots/ui/61_debug_open.png
+key SPACE
+waitmark 11 300
+key SPACE
+waitmark 1 300
+echo ui_geoscape scenario OK
+pokew _cursor_x 210
+pokew _cursor_y 128
+click L
+wait 20
+exit 1

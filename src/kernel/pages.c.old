@@ -1,0 +1,85 @@
+// Менеджер страниц: битовая карта динамического пула и окно Win3.
+#include <stdint.h>
+#include "tsconf.h"
+#include "memmap.h"
+#include "pages.h"
+
+#define POOL_N (POOL_LAST - POOL_FIRST + 1)
+
+static uint8_t pool_map[(POOL_N + 7) / 8];   // 1 — занята
+static uint8_t win3_page;
+
+static uint8_t is_used(uint8_t i)
+{
+	return pool_map[i >> 3] & (uint8_t)(1 << (i & 7));
+}
+
+static void set_used(uint8_t i, uint8_t used)
+{
+	uint8_t m = (uint8_t)(1 << (i & 7));
+	if (used)
+		pool_map[i >> 3] |= m;
+	else
+		pool_map[i >> 3] &= (uint8_t)~m;
+}
+
+uint8_t pg_alloc(uint8_t n, uint8_t align)
+{
+	if (!n || n > POOL_N)
+		return PG_NONE;
+	if (!align)
+		align = 1;
+	// первая страница, кратная align, не ниже POOL_FIRST
+	uint8_t page = (uint8_t)((POOL_FIRST + align - 1) & ~(align - 1));
+	for (; page + n - 1 <= POOL_LAST; page += align) {
+		uint8_t k = 0;
+		while (k < n && !is_used(page - POOL_FIRST + k))
+			k++;
+		if (k == n) {
+			for (k = 0; k < n; k++)
+				set_used(page - POOL_FIRST + k, 1);
+			return page;
+		}
+	}
+	return PG_NONE;
+}
+
+void pg_free(uint8_t first, uint8_t n)
+{
+	for (uint8_t k = 0; k < n; k++) {
+		uint8_t p = first + k;
+		if (p >= POOL_FIRST && p <= POOL_LAST)
+			set_used(p - POOL_FIRST, 0);
+	}
+}
+
+uint8_t pg_free_count(void)
+{
+	uint8_t n = 0;
+	for (uint8_t i = 0; i < POOL_N; i++)
+		if (!is_used(i))
+			n++;
+	return n;
+}
+
+uint8_t pg_map3(uint8_t page)
+{
+	uint8_t old = win3_page;
+	win3_page = page;
+	TS_PAGE3 = page;
+	return old;
+}
+
+uint8_t pg_win3(void)
+{
+	return win3_page;
+}
+
+// Адрес точки экрана (x, y): страница строки подключается в Win3 и НЕ
+// восстанавливается (вызывающий сохраняет pg_win3 сам). Строка — 512 байт,
+// страница — 32 строки.
+uint8_t *gfx_map(int16_t x, int16_t y)
+{
+	pg_map3(SCREEN_PAGE + (uint8_t)(y >> 5));
+	return (uint8_t *)(0xC000 + (((uint16_t)y & 31) << 9) + x);
+}

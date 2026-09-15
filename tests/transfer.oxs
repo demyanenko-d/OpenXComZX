@@ -1,0 +1,133 @@
+# Автотест переводов между базами и категорий покупки/продажи (TFTD):
+# новая игра -> вторая база (жильё и склад дописываются в память) -> перевод:
+# выбор базы, категория (ComboBox), все учёные, подтверждение (деньги, доставка)
+# -> список поставок второй базы (BaseInfo -> Transfers) -> покупка и продажа
+# с категориями. Смещения: base[0] #0A25, base[1] #0BEE (fac +#18),
+# base[0].scientists #0BE9, transfer[] #216D (base, hours, kind, item, qty).
+# Снимки — tmp/shots/transfer/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\transfer.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 600
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 300
+type alpha
+key ENTER
+waitmark 32 300
+pokew 06:004A 0x4B40
+pokew 06:004C 0x004C
+
+# вторая база
+poke _ui_request 43
+waitmark 43 300
+pokew _cursor_x 60
+pokew _cursor_y 70
+click L
+waitmark 44 300
+key ENTER
+waitmark 42 300
+type beta
+key ENTER
+# лифт в клетку (2,2)
+waitmark 108 300
+pokew _cursor_x 80
+pokew _cursor_y 88
+click L
+waitmark 96 300
+# base[1]: fac[1] = General Stores (3,2), fac[2] = Living Quarters (1,2), готовы
+poke 06:0C09 7
+poke 06:0C0A 0x23
+poke 06:0C0B 0
+poke 06:0C0C 1
+poke 06:0C0D 0x21
+poke 06:0C0E 0
+key 1
+waitmark 96 300
+shot tmp/shots/transfer/01_base_alpha.png
+
+# --- перевод с alpha на beta
+key T
+waitmark 130 300
+shot tmp/shots/transfer/02_select_base.png
+pokew _cursor_x 80
+pokew _cursor_y 83
+click L
+waitmark 131 300
+shot tmp/shots/transfer/03_transfer_items.png
+pokew _cursor_x 70
+pokew _cursor_y 32
+click L
+waitmark 12 300
+shot tmp/shots/transfer/04_categories.png
+# категории в порядке появления: All, Craft & Armament, Personnel, Equipment
+pokew _cursor_x 70
+pokew _cursor_y 63
+click L
+waitmark 131 300
+shot tmp/shots/transfer/05_personnel.png
+# учёные (строка 0): правая кнопка — все
+pokew _cursor_x 206
+pokew _cursor_y 47
+click R
+waitmark 131 100
+shot tmp/shots/transfer/06_scientists.png
+pokew _cursor_x 80
+pokew _cursor_y 184
+click L
+waitmark 132 300
+shot tmp/shots/transfer/07_confirm.png
+pokew _cursor_x 80
+pokew _cursor_y 123
+click L
+waitmark 96 300
+expectw 06:0BE9 0
+expect 06:22CD 1
+expect 06:22CF 2
+expectw 06:22D1 10
+
+# --- поставки на beta
+key 2
+waitmark 96 300
+key I
+waitmark 97 300
+pokew _cursor_x 86
+pokew _cursor_y 187
+click L
+waitmark 133 300
+shot tmp/shots/transfer/08_transfers.png
+key SPACE
+waitmark 97 300
+key SPACE
+waitmark 96 300
+
+# --- покупка и продажа с категориями (база alpha)
+key 1
+waitmark 96 300
+key P
+waitmark 128 300
+pokew _cursor_x 70
+pokew _cursor_y 44
+click L
+waitmark 12 300
+shot tmp/shots/transfer/10_buy_categories.png
+key SPACE
+waitmark 128 300
+key SPACE
+waitmark 96 300
+key E
+waitmark 129 300
+shot tmp/shots/transfer/11_sell.png
+key SPACE
+waitmark 96 300
+echo transfer scenario OK
+exit 0

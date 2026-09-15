@@ -1,0 +1,160 @@
+# Автотест исследований и производства (TFTD): новая игра -> база ->
+# исследования: новая тема, учёные стрелкой (правая кнопка — все), список ->
+# производство: категория (ComboBox), запуск, инженеры, количество, продажа ->
+# ход времени: производство идёт, исследование завершается (окна событий).
+# Смещения state_t: discovered #006E, research[] #23ED (8 Б: base, topic,
+# assigned, spent, cost), prod[] #256D (11 Б: base, manuf, engineers, spent(4),
+# amount, flags), base[0].scientists #0BE9.
+# Снимки — tmp/shots/lab/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\lab.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 600
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 300
+type lab
+key ENTER
+waitmark 32 300
+# деньги $5,000,000; исследовано Aqua Plastics (тема 14: байт #006F, бит 6)
+pokew 06:004A 0x4B40
+pokew 06:004C 0x004C
+poke 06:006F 0x40
+
+key B
+waitmark 96 300
+key R
+waitmark 160 300
+shot tmp/shots/lab/01_research_empty.png
+pokew _cursor_x 80
+pokew _cursor_y 184
+click L
+waitmark 161 300
+shot tmp/shots/lab/02_new_research.png
+pokew _cursor_x 150
+pokew _cursor_y 57
+click L
+waitmark 162 300
+shot tmp/shots/lab/03_research_info_new.png
+# +1 учёный, затем правая кнопка — все свободные (10, места в лаборатории хватает)
+pokew _cursor_x 201
+pokew _cursor_y 106
+click L
+waitmark 162 100
+click R
+waitmark 162 100
+# -1
+pokew _cursor_y 126
+click L
+waitmark 162 100
+shot tmp/shots/lab/04_research_info_alloc.png
+expect 06:23ED 0
+expectw 06:23EF 9
+pokew _cursor_x 214
+pokew _cursor_y 153
+click L
+waitmark 161 300
+shot tmp/shots/lab/05_new_research_after.png
+key SPACE
+waitmark 160 300
+shot tmp/shots/lab/06_research_list.png
+# проект из списка — окно существующего (OK / отмена проекта)
+pokew _cursor_x 60
+pokew _cursor_y 65
+click L
+waitmark 162 300
+shot tmp/shots/lab/07_research_info_old.png
+key SPACE
+waitmark 160 300
+key SPACE
+waitmark 96 300
+
+# --- производство
+key M
+waitmark 163 300
+shot tmp/shots/lab/10_manufacture_empty.png
+pokew _cursor_x 80
+pokew _cursor_y 184
+click L
+waitmark 164 300
+shot tmp/shots/lab/11_new_manuf.png
+# ComboBox категорий: открыть, выбрать вторую строку
+pokew _cursor_x 240
+pokew _cursor_y 54
+click L
+waitmark 12 300
+shot tmp/shots/lab/12_combo.png
+pokew _cursor_x 230
+pokew _cursor_y 77
+click L
+waitmark 164 300
+shot tmp/shots/lab/13_new_manuf_cat.png
+pokew _cursor_x 60
+pokew _cursor_y 73
+click L
+waitmark 165 300
+shot tmp/shots/lab/14_manuf_start.png
+pokew _cursor_x 236
+pokew _cursor_y 163
+click L
+waitmark 166 300
+shot tmp/shots/lab/15_manuf_info_new.png
+# инженеры: правая кнопка — все; единиц: +1 +1; продажа
+pokew _cursor_x 138
+pokew _cursor_y 120
+click R
+waitmark 166 100
+pokew _cursor_x 290
+click L
+waitmark 166 100
+click L
+waitmark 166 100
+pokew _cursor_x 274
+pokew _cursor_y 69
+click L
+waitmark 166 100
+shot tmp/shots/lab/16_manuf_info_alloc.png
+pokew _cursor_x 236
+pokew _cursor_y 163
+click L
+waitmark 164 300
+key SPACE
+waitmark 163 300
+shot tmp/shots/lab/17_manufacture_list.png
+# prod[0]: база 0, инженеров 10, штук 3, флаг продажи
+expect 06:256D 0
+expectw 06:256F 10
+expectw 06:2575 3
+expect 06:2577 2
+key SPACE
+waitmark 96 300
+key SPACE
+waitmark 32 300
+
+# --- время: 1 день за тик до конца производства (3 x 100 ч / 10 инженеров)
+key 6
+waitmark 67 1500
+shot tmp/shots/lab/20_production_done.png
+key SPACE
+waitmark 32 300
+# исследование готово -> новые возможные темы
+waitmark 64 3000
+shot tmp/shots/lab/21_research_complete.png
+expect 06:23ED 0xFF
+key SPACE
+waitmark 32 300
+waitmark 65 300
+shot tmp/shots/lab/22_new_possible.png
+key SPACE
+waitmark 32 300
+echo lab scenario OK
+exit 0

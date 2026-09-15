@@ -1,0 +1,71 @@
+# Глобус (src/ui/globe.c, globe.md): новая игра -> база -> геоскейп; снимки на зумах 0..5
+# (зум — SS+K / SS+J и кнопки GEOBORD), поворот стрелками, вид вниз (наклон). Строки
+# «globe:» консоли — ячейки, многоугольники, отрезки, кадров на рендер. Снимки —
+# tmp/shots/globe/ (сравнение версий — tools/shotdiff.ps1). ST->zoom — #0048.
+# Запуск: powershell -File tools\run.ps1 -Script tests\globe.oxs -Headless
+#   (сборка -Game UFO — те же шаги, снимки перезапишутся)
+
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 3000
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 3000
+type globe
+key ENTER
+waitmark 32 3000
+wait 10
+shot tmp/shots/globe/z0.png
+# поворот вправо и вниз (к югу)
+key RIGHT
+waitmark 32 3000
+shot tmp/shots/globe/z0_right.png
+key DOWN
+waitmark 32 3000
+shot tmp/shots/globe/z0_down.png
+key UP
+waitmark 32 3000
+# зумы 1..5 (SS+K), кнопка зума у GEOBORD — последний
+key SS+K
+waitmark 32 3000
+shot tmp/shots/globe/z1.png
+key SS+K
+waitmark 32 3000
+shot tmp/shots/globe/z2.png
+key SS+K
+waitmark 32 3000
+shot tmp/shots/globe/z3.png
+key SS+K
+waitmark 32 3000
+shot tmp/shots/globe/z4.png
+pokew _cursor_x 306
+pokew _cursor_y 167
+click L
+waitmark 32 3000
+shot tmp/shots/globe/z5.png
+expect 06:0048 5
+# обратно на зум 0 (SS+J и кнопка)
+key SS+J
+waitmark 32 3000
+key SS+J
+waitmark 32 3000
+key SS+J
+waitmark 32 3000
+key SS+J
+waitmark 32 3000
+pokew _cursor_x 306
+pokew _cursor_y 190
+click L
+waitmark 32 3000
+expect 06:0048 0
+shot tmp/shots/globe/z0_back.png
+echo globe scenario OK
+exit 0

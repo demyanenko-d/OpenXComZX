@@ -1,0 +1,125 @@
+# Автотест экранов корабля (TFTD): база -> список кораблей -> TRITON-1 ->
+# экипаж (снять/посадить), снаряжение (стрелки влево/вправо), броня (выбор
+# брони солдату), оружие у BARRACUDA-1 (снять, поставить другое). Смещения:
+# craft[] #186D (34 Б: type, base, num, pos(8), dest_kind, dest, speed, fuel,
+# damage, weap[2] по 4 Б с +#14), soldier[0] #07:0000 (craft +#19, armor +#1B).
+# Снимки — tmp/shots/craft/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\craft.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 600
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 300
+type hangar
+key ENTER
+waitmark 32 300
+key B
+waitmark 96 300
+key C
+waitmark 103 300
+shot tmp/shots/craft/01_crafts.png
+pokew _cursor_x 60
+pokew _cursor_y 61
+click L
+waitmark 192 300
+shot tmp/shots/craft/02_craft_info.png
+
+# --- экипаж: первый солдат снят с корабля, затем посажен обратно
+pokew _cursor_x 46
+pokew _cursor_y 104
+click L
+waitmark 193 300
+shot tmp/shots/craft/03_crew.png
+pokew _cursor_x 60
+pokew _cursor_y 43
+click L
+waitmark 193 100
+shot tmp/shots/craft/04_crew_removed.png
+expect 07:0019 0xFF
+click L
+waitmark 193 100
+expect 07:0019 0
+key SPACE
+waitmark 192 300
+
+# --- снаряжение: строка 0 — одну штуку в корабль, правой — все обратно на склад
+pokew _cursor_x 46
+pokew _cursor_y 128
+click L
+waitmark 195 300
+shot tmp/shots/craft/05_equipment.png
+pokew _cursor_x 228
+pokew _cursor_y 43
+click L
+waitmark 195 100
+click L
+waitmark 195 100
+shot tmp/shots/craft/06_equipment_more.png
+pokew _cursor_x 216
+click R
+waitmark 195 100
+shot tmp/shots/craft/07_equipment_unload.png
+key SPACE
+waitmark 192 300
+
+# --- броня: солдат 0 -> список брони -> первая строка
+pokew _cursor_x 46
+pokew _cursor_y 152
+click L
+waitmark 196 300
+shot tmp/shots/craft/08_armor_list.png
+pokew _cursor_x 60
+pokew _cursor_y 43
+click L
+waitmark 197 300
+shot tmp/shots/craft/09_soldier_armor.png
+pokew _cursor_x 120
+pokew _cursor_y 71
+click L
+waitmark 196 300
+shot tmp/shots/craft/10_armor_set.png
+key SPACE
+waitmark 192 300
+
+# --- BARRACUDA-1 (craft[1]), оружие 1: снять (NONE), затем поставить первое доступное
+key SPACE
+waitmark 103 300
+pokew _cursor_x 60
+pokew _cursor_y 69
+click L
+waitmark 192 300
+shot tmp/shots/craft/11_barracuda.png
+pokew _cursor_x 26
+pokew _cursor_y 64
+click L
+waitmark 194 300
+shot tmp/shots/craft/12_weapons.png
+pokew _cursor_x 100
+pokew _cursor_y 71
+click L
+waitmark 192 300
+shot tmp/shots/craft/13_weapon_removed.png
+expect 06:18AE 0xFF
+pokew _cursor_x 26
+pokew _cursor_y 64
+click L
+waitmark 194 300
+pokew _cursor_x 100
+pokew _cursor_y 79
+click L
+waitmark 192 300
+shot tmp/shots/craft/14_weapon_set.png
+key SPACE
+waitmark 103 300
+echo craft scenario OK
+exit 0

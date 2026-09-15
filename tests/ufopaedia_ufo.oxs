@@ -1,0 +1,225 @@
+# Автотест Уфопедии UFO (статьи типов 1..9): то же, что tests/ufopaedia.oxs, но
+# кнопки статьи — в левом верхнем углу (OK 5,5; «<<» 40,5; «>>» 75,5).
+# Нужна сборка UFO: powershell -File tools\build.ps1 -Game UFO
+# Снимки — tmp/shots/ufopaedia_ufo/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\ufopaedia_ufo.oxs -Headless
+
+waitmark 1 600
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 600
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 300
+type deep
+key ENTER
+waitmark 32 300
+pokew 06:006E 0xFFFF
+pokew 06:0070 0xFFFF
+pokew 06:0072 0xFFFF
+pokew 06:0074 0xFFFF
+pokew 06:0076 0xFFFF
+pokew 06:0078 0xFFFF
+pokew 06:007A 0xFFFF
+pokew 06:007C 0xFFFF
+pokew 06:007E 0xFFFF
+pokew 06:0080 0xFFFF
+
+key U
+waitmark 9 300
+shot tmp/shots/ufopaedia_ufo/00_sections.png
+pokew _cursor_x 160
+pokew _cursor_y 56
+click L
+waitmark 10 300
+shot tmp/shots/ufopaedia_ufo/01_select.png
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/02_article.png
+pokew _cursor_x 90
+pokew _cursor_y 12
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/03.png
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/04.png
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/05.png
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/06.png
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/07.png
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/08.png
+# назад «<<»
+pokew _cursor_x 55
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/09_prev.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+# остальные разделы (y = 56 + 13 * i): первая статья и следующая
+pokew _cursor_x 160
+pokew _cursor_y 69
+click L
+waitmark 10 300
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/s1_0.png
+pokew _cursor_x 90
+pokew _cursor_y 12
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/s1_1.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+pokew _cursor_x 160
+pokew _cursor_y 82
+click L
+waitmark 10 300
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/s2_0.png
+pokew _cursor_x 90
+pokew _cursor_y 12
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/s2_1.png
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/s2_2.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+pokew _cursor_x 160
+pokew _cursor_y 95
+click L
+waitmark 10 300
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/s3_0.png
+pokew _cursor_x 90
+pokew _cursor_y 12
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/s3_1.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+pokew _cursor_x 160
+pokew _cursor_y 108
+click L
+waitmark 10 300
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/s4_0.png
+pokew _cursor_x 90
+pokew _cursor_y 12
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/s4_1.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+pokew _cursor_x 160
+pokew _cursor_y 121
+click L
+waitmark 10 300
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/s5_0.png
+pokew _cursor_x 90
+pokew _cursor_y 12
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/s5_1.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+pokew _cursor_x 160
+pokew _cursor_y 134
+click L
+waitmark 10 300
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/s6_0.png
+pokew _cursor_x 90
+pokew _cursor_y 12
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/s6_1.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+pokew _cursor_x 160
+pokew _cursor_y 147
+click L
+waitmark 10 300
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/s7_0.png
+pokew _cursor_x 90
+pokew _cursor_y 12
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/s7_1.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+pokew _cursor_x 160
+pokew _cursor_y 160
+click L
+waitmark 10 300
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/s8_0.png
+pokew _cursor_x 90
+pokew _cursor_y 12
+click L
+waitmark 224 900
+shot tmp/shots/ufopaedia_ufo/s8_1.png
+key SPACE
+waitmark 10 300
+key SPACE
+waitmark 9 300
+echo ufopaedia ufo scenario OK
+exit 0

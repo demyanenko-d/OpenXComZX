@@ -1,0 +1,74 @@
+# Воздушный бой, TFTD: 1) два корабля против одного НЛО (poke _df_dbg_n 2) — два окна
+# (80, 0) и (80, 104); первое свернуть — значок, второе — отход; значок — развернуть,
+# отход. 2) НЛО глубже, чем может Barracuda (maxAltitude 3, poke _df_dbg_alt 4):
+# DogfightError «глубина», бой свёрнут и ждёт; НЛО поднялось (ufo[1].altitude #272A = 3)
+# — бой развернулся сам (handleDogfights). Снимки — tmp/shots/dogfight2/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\dogfight2.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 600
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 300
+type two
+key ENTER
+waitmark 32 300
+
+# --- 1: два боя
+poke _df_dbg_n 2
+poke _ui_request 216
+waitmark 216 300
+wait 4
+shot tmp/shots/dogfight2/01_two.png
+pokew _cursor_x 85
+pokew _cursor_y 5
+click L
+waitmark 216 300
+wait 4
+shot tmp/shots/dogfight2/02_one_min.png
+pokew _cursor_x 211
+pokew _cursor_y 147
+click L
+waitmark 32 600
+wait 4
+shot tmp/shots/dogfight2/03_icon.png
+pokew _cursor_x 20
+pokew _cursor_y 15
+click L
+waitmark 216 300
+wait 4
+shot tmp/shots/dogfight2/04_restored.png
+pokew _cursor_x 211
+pokew _cursor_y 43
+click L
+waitmark 32 600
+
+# --- 2: TFTD — глубина
+poke _df_dbg_n 1
+poke _df_dbg_alt 4
+poke _ui_request 216
+waitmark 217 600
+shot tmp/shots/dogfight2/05_depth.png
+key SPACE
+waitmark 32 300
+wait 10
+shot tmp/shots/dogfight2/06_waiting.png
+poke 06:272A 3
+waitmark 216 300
+wait 4
+shot tmp/shots/dogfight2/07_engaged.png
+pokew _cursor_x 211
+pokew _cursor_y 95
+click L
+waitmark 32 600
+echo dogfight2 scenario OK
+exit 0

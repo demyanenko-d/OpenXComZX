@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    OxzConv — конвертер данных оригинальной X-COM (UFO / TFTD) для OpenXComZX.
+    .NET Framework 4.8 (есть на любой Windows 10/11, ставится на 7/8.1) — ОДИН
+    консольный exe: YamlDotNet и файлы OpenXcom вшиты ресурсами.
+    Без аргументов спрашивает каталоги в консоли; каталог игры можно перетащить на exe.
+    Сборка: powershell -File tools\dotnet.ps1 build tools\OxzConv\OxzConv.csproj -c Release
+    Описание — project_docs/09_converter.md.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>OxzConv</AssemblyName>
+    <RootNamespace>OxzConv</RootNamespace>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Version>0.1.0</Version>
+    <Product>OpenXComZX data converter</Product>
+    <BaseOutputPath>..\..\tmp\oxzconv\bin\</BaseOutputPath>
+    <RestoreConfigFile>$(MSBuildThisFileDirectory)nuget.config</RestoreConfigFile>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <!-- YamlDotNet: только для компиляции; в exe вшивается сама DLL (Program.cs, AssemblyResolve) -->
+  <ItemGroup>
+    <PackageReference Include="YamlDotNet" Version="16.3.0" ExcludeAssets="runtime" GeneratePathProperty="true" />
+  </ItemGroup>
+  <Target Name="EmbedYamlDotNet" BeforeTargets="PrepareForBuild">
+    <ItemGroup>
+      <EmbeddedResource Include="$(PkgYamlDotNet)\lib\net47\YamlDotNet.dll" LogicalName="lib/YamlDotNet.dll" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Реестры с фиксированными номерами (общие для обеих игр) -->
+  <ItemGroup>
+    <EmbeddedResource Include="Data\*.txt;Data\*.json" LogicalName="data/%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- Файлы OpenXcom (GPL): правила, строки, шрифты -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\REF\OpenXcom\bin\common\Language\Font.dat;..\..\REF\OpenXcom\bin\common\Language\FontBig.png;..\..\REF\OpenXcom\bin\common\Language\FontSmall.png;..\..\REF\OpenXcom\bin\common\Language\FontGeoBig.png;..\..\REF\OpenXcom\bin\common\Language\FontGeoSmall.png;..\..\REF\OpenXcom\bin\common\Language\en-US.yml" LogicalName="openxcom/common/Language/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\REF\OpenXcom\bin\common\SoldierName\*.nam" LogicalName="openxcom/common/SoldierName/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\REF\OpenXcom\bin\standard\xcom1\*.rul" LogicalName="openxcom/standard/xcom1/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\REF\OpenXcom\bin\standard\xcom1\Language\en-US.yml" LogicalName="openxcom/standard/xcom1/Language/en-US.yml" />
+    <EmbeddedResource Include="..\..\REF\OpenXcom\bin\standard\xcom2\*.rul" LogicalName="openxcom/standard/xcom2/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\REF\OpenXcom\bin\standard\xcom2\Language\en-US.yml" LogicalName="openxcom/standard/xcom2/Language/en-US.yml" />
+  </ItemGroup>
+
+</Project>

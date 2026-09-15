@@ -1,0 +1,340 @@
+// Банк 24: глобус — этап 1 плана project_docs/globe.md (М4в, без тени): плоская карта
+// WORLD.DAT (ресурс GLOBE v5, конвертер Core/Globe.cs: границы текстур с текстурами сторон,
+// перекрытия и T-стыки разрешены заранее) в ортографической проекции OpenXcom
+// (Globe::polarToCart), вывод по строкам отрезками развёрнутых строк узора через DMA.
+//
+// Узор суши в OpenXcom привязан к экрану (texturedPolygon(…, 0, 0)): пиксель (x, y)
+// берёт TEXTURE[y & 31][x & 31]. Поэтому строка r узора t развёрнута в блок 256 байт
+// (повтор 8 раз), и отрезок [xs, xe) строки y — это копия байтов блока с смещения xs:
+// младший байт адреса источника DMA = x. Блоки — в 8 страницах пула: страница r / 4,
+// блок (r & 3) * 14 + t, t = 13 — океан (globe.md §6.5).
+//
+// Кадр: таблицы произведений на 8 констант вида -> центры ячеек 30° (передняя сторона и
+// окно) -> по видимой ячейке: вершины (DMA в рабочую страницу, линейная проекция таблицами,
+// globe_s.s gl_project) и рёбра (gl_edges: горизонт, окно, шаг по строкам -> страница
+// рёбер) -> строки (gl_rows: список рёбер по x -> отрезки DMA в задний буфер, строки
+// экрана 280..479) -> копия на экран.
+//
+// Проекция (Globe::polarToCart в векторах): X = cosφ cosλ, Y = cosφ sinλ, Z = sinφ (Q14),
+// W = X cosλ0 + Y sinλ0: x = 128 + R(Y cosλ0 − X sinλ0), y = 100 + R(cosC·Z − sinC·W),
+// z = cosC·W + sinC·Z; x, y — в четвертях пикселя (Q2). Умножение значения v (Q14) на
+// константу K — таблицы T_hi[v >> 7] + T_lo[v & 127] (globe_s.s gl_ktab), для z — только
+// T_hi (8 бит, Q6).
+//
+// Рабочая страница пула (Win3 на время проекции и рёбер):
+//   #0000    таблицы: 5 констант x/y по 4 страницы (T_hi и T_lo: младшие, старшие байты),
+//            3 константы z по странице (+1 служебная)
+//   #1800    проекции вершин ячейки: x, y (Q2), z (Q6) — 5 байт
+//   #1AF0    блок ячейки из ресурса (одно DMA): векторы вершин, затем рёбра
+//   #2210    корзины строк, #23A0.. — записи рёбер (globe_s.s), затем копия DMA в страницу
+//            рёбер с тех же смещений
+// Страница рёбер — globe_s.s (корзины, записи строк, события края, список, рёбра).
+#include <stdint.h>
+#include <string.h>
+#include "tsconf.h"
+#include "memmap.h"
+#include "pages.h"
+#include "far.h"
+#include "res.h"
+#include "res_ids.h"
+#include "dmabuf.h"
+#include "dbg.h"
+#include "gfx.h"
+#include "state.h"
+#include "game.h"
+#include "globe.h"
+#include "globe_tab.h"
+
+#define RES_OFF   0x1800                // рабочая страница: проекции вершин ячейки (5 байт)
+#define VREC      5
+#define VSRC      0x1AF0                //   блок ячейки (DMA из ресурса): вершины, рёбра (по 6 байт)
+#define MAXCV     150                   // вершин / рёбер в ячейке (конвертер: до 144)
+#define EP_BUCKET 0x2210                // корзины строк и записи рёбер: пишутся в рабочую
+#define EP_POOL   0x23A0                //   страницу, потом копия DMA в страницу рёбер
+#define EP_ROW    0x0200                // страница рёбер (globe_s.s): записи строк (6 байт),
+#define EP_EVB    0x0700                //   события края: текстура ниже, выше, ключи
+#define EP_EVKB   0x0900
+#define EP_EVKA   0x0A00
+#define NCELL     72
+#define BACK_Y    280                   // задний буфер: строки экрана 280..479, x 0..255
+#define NTEX      13
+#define NBLK      14                    // блоков узора на строку: 13 текстур + океан (13)
+
+// 16x16 -> 32 (src/kernel/mul32.s; выражение (int32_t)a * b SDCC часто считает 32x32)
+int32_t __mulsint2slong(int16_t a, int16_t b);
+#define MUL(a, b) __mulsint2slong((int16_t)(a), (int16_t)(b))
+// Сдвиги int32 через старшее слово (сдвиг на 10–18 SDCC делает циклом по битам)
+#define HI16(v)   ((int16_t)((uint32_t)(v) >> 16))
+#define SHR14(v)  HI16((int32_t)(v) << 2)
+#define SHR18(v)  (HI16(v) >> 2)
+#define SHR10(v)  HI16((int32_t)(v) << 6)
+
+static const int16_t zoom_r[GLOBE_ZOOMS] = { 90, 120, 180, 280, 450, 720 };   // Globe::setupRadii
+
+static uint8_t work = PG_NONE, epage = PG_NONE, strip_set = 0xFF;
+static uint8_t valid, v_zoom = 0xFF, bg_zoom = 0xFF, row_zoom = 0xFF, ocean;
+static uint16_t v_lon;
+static int16_t v_lat, R;
+static uint8_t strip = PG_NONE;
+
+// Проходы М4в (globe_s.s). Рёбра: gl_ec записей по 6 байт с gl_eb -> записи в странице
+// рёбер gl_epg с gl_eptr (корзины строк); проекции вершин ячейки — с gl_res (Win3 = рабочая
+// страница gl_wpg); gl_limb — зумы 0–1 (левый край строки — край диска). Строки: gl_gtex —
+// текстура, если в окне нет ни одного ребра (сетка 5° ресурса в центре вида).
+const uint8_t *gl_eb;
+uint8_t gl_ec, gl_wpg, gl_epg, gl_limb, gl_gtex;
+uint16_t gl_res, gl_eptr, gl_nedge;
+void gl_edges(void);
+void gl_rows(void);
+// Проекция (globe_s.s): gl_pn векторов (по 2 байта на X, Y, Z: v & 127, v >> 7) с gl_pv
+// -> {x, y (Q2), z8} с gl_pd
+const uint8_t *gl_pv;
+uint8_t *gl_pd;
+uint8_t gl_pn, gl_noz;                  // gl_noz = 1 — z не считать (ячейка вся спереди)
+void gl_project(void);
+// Таблицы произведений (globe_s.s): gl_ktab — на K (int32 = R·c, c в Q14) в 4 страницы
+// с gl_kpg (адрес страницы Win3); gl_ztab — на k (Q14) в страницу gl_kpg (z в Q6)
+int32_t gl_k;
+uint8_t gl_kpg;
+void gl_ktab(void);
+void gl_ztab(void);
+
+// Синус 16-битного угла (Q14) — src/ui/globe_ui.c, банк 2
+#define sin16(a) globe_sin((uint16_t)(a))
+#define cos16(a) globe_sin((uint16_t)(a) + 0x4000)
+
+static void dma_wait(void)
+{
+	while (TS_DMASTATUS & DMASTATUS_ACT)
+		;
+}
+
+// ---------------------------------------------------------------- подготовка
+
+// DMA напрямую регистрами (после конца прошлого): источник sp:so, приёмник dp:do_ (страница,
+// смещение в ней), len — слов в пачке - 1, num — пачек - 1
+static void dma_go(uint8_t sp, uint16_t so, uint8_t dp, uint16_t do_, uint8_t len, uint8_t num, uint8_t ctrl)
+{
+	dma_wait();
+	TS_DMASAL = (uint8_t)so; TS_DMASAH = (uint8_t)(so >> 8); TS_DMASAX = sp;
+	TS_DMADAL = (uint8_t)do_; TS_DMADAH = (uint8_t)(do_ >> 8); TS_DMADAX = dp;
+	TS_DMALEN = len;
+	TS_DMANUM = num;
+	TS_DMACTRL = ctrl;
+}
+
+// Узоры набора set (0 — зумы 4–5, 1 — 2–3, 2 — 0–1): в каждом блоке — 32 байта строки узора
+// (океан — заливка словом), затем три удвоения сразу по всем 56 блокам страницы (2D DMA,
+// пачка на блок, шаг 256): [0, 32) -> [32, 64), [0, 64) -> [64, 128), [0, 128) -> [128, 256).
+static void build_strips(far_t tex, uint8_t set)
+{
+	uint8_t tp = FAR_PAGE(tex);
+	uint16_t to = FAR_OFFS(tex) + (uint16_t)set * NTEX * 1024u;   // < 64 КБ: смещение + 39 КБ
+	uint16_t fw = (uint16_t)&dma_fill_word;
+	dma_wait();
+	dma_fill_word = ocean | ((uint16_t)ocean << 8);
+	for (uint8_t p = 0; p < 8; p++) {
+		uint8_t sp = strip + p;
+		for (uint8_t rr = 0; rr < 4; rr++) {
+			uint16_t o = to + (uint16_t)((p << 2) | rr) * 32u;
+			for (uint8_t t = 0; t < NTEX; t++, o += 1024u)
+				dma_go(tp + (uint8_t)(o >> 14), o & 0x3FFF, sp, (uint16_t)(rr * NBLK + t) << 8, 15, 0, DMA_RAM_RAM);
+			dma_go(DATA_PAGE, fw & 0x3FFF, sp, (uint16_t)(rr * NBLK + NTEX) << 8, 15, 0, DMA_FILL);
+		}
+		dma_go(sp, 0x0000, sp, 0x0020, 15, 4 * NBLK - 1, DMA_RAM_RAM | DMA_S_ALGN | DMA_D_ALGN);
+		dma_go(sp, 0x0000, sp, 0x0040, 31, 4 * NBLK - 1, DMA_RAM_RAM | DMA_S_ALGN | DMA_D_ALGN);
+		dma_go(sp, 0x0000, sp, 0x0080, 63, 4 * NBLK - 1, DMA_RAM_RAM | DMA_S_ALGN | DMA_D_ALGN);
+	}
+	dma_wait();
+	strip_set = set;
+}
+
+// Записи строк страницы рёбер (globe_s.s): диск в парах пикселей (Globe: circle_norm с
+// центрами пикселей i + .5, j + .5: пиксель внутри, если (2i + 1 - 256)^2 +
+// (2j + 1 - 200)^2 < 4R^2; пара — если внутри хоть один её пиксель), адрес строки
+// заднего буфера, блок и страница узоров. Win3 = страница рёбер.
+static void rows_init(void)
+{
+	uint8_t *rw = (uint8_t *)(0xC000 + EP_ROW);
+	// s — наибольшее с s^2 < d = 4R^2 - v^2 (v = 2y + 1 - 200): по строкам d сначала растёт,
+	// потом убывает — s догоняет приращениями (без корня); s^2 ведётся в s2
+	int32_t r4 = (int32_t)4 * R * R, d, s2 = 0;
+	int16_t s = 0, v = 1 - GLOBE_H;
+	for (uint8_t y = 0; y < GLOBE_H; y++, rw += 6, v += 2) {
+		uint16_t row = BACK_Y + y;
+		rw[2] = (uint8_t)((row & 31) << 1);
+		rw[3] = SCREEN_PAGE + (uint8_t)(row >> 5);
+		rw[4] = (uint8_t)((y & 3) * NBLK);
+		rw[5] = strip + (uint8_t)((y & 31) >> 2);
+		rw[0] = 255; rw[1] = 0;
+		d = r4 - MUL(v, v);
+		if (d <= 0) { s = 0; s2 = 0; continue; }
+		while (s2 + 2 * s + 1 < d) { s2 += 2 * s + 1; s++; }
+		while (s > 0 && s2 >= d) { s--; s2 -= 2 * s + 1; }
+		int16_t a = (255 - s + 1) >> 1, b = (255 + s) >> 1;
+		if (a < 0) a = 0;
+		if (b > 255) b = 255;
+		if (a > b) continue;
+		rw[0] = (uint8_t)(a >> 1); rw[1] = (uint8_t)(b >> 1);
+	}
+}
+
+// Фон окна вне диска (зумы 0–1): левые 256 столбцов GEOBORD в задний буфер
+static void bg_restore(void)
+{
+	res_t r;
+	if (!res_find(RES_GEOBORD_SCR, &r)) return;
+	far_t s = r.phys;
+	for (uint16_t y = 0; y < GLOBE_H; y++, s += r.a) {
+		uint16_t row = BACK_Y + y;
+		far_copy(FAR(SCREEN_PAGE + (row >> 5), (row & 31) << 9), s, GLOBE_W);
+	}
+}
+
+// Таблицы произведений на 8 констант вида (λ0, наклон C, радиус R). Win3 = work.
+// x/y: K = R·c (c — Q14), страницы 4k..4k+3: kxX, kxY, kyX, kyY, kyZ; z: k (Q14),
+// страницы 20..22: kzX, kzY, kzZ (23 — служебная, старшие байты последней z).
+static void tables(uint16_t lon, int16_t lat)
+{
+	int16_t cl = cos16(lon), sl = sin16(lon), cc = cos16((uint16_t)lat), sc = sin16((uint16_t)lat);
+	int32_t k[5];
+	k[0] = MUL(R, -sl);                               // x: -R sinλ0 · X
+	k[1] = MUL(R, cl);                                //     R cosλ0 · Y
+	k[2] = MUL(R, -SHR14(MUL(sc, cl)));               // y: -R sinC cosλ0 · X
+	k[3] = MUL(R, -SHR14(MUL(sc, sl)));               //    -R sinC sinλ0 · Y
+	k[4] = MUL(R, cc);                                //     R cosC · Z
+	for (uint8_t i = 0; i < 5; i++) {
+		gl_k = k[i];
+		gl_kpg = 0xC0 + i * 4;
+		gl_ktab();
+	}
+	gl_k = SHR14(MUL(cc, cl)); gl_kpg = (uint8_t)(0xC0 + 20); gl_ztab();   // z: cosC cosλ0 · X
+	gl_k = SHR14(MUL(cc, sl)); gl_kpg = (uint8_t)(0xC0 + 21); gl_ztab();   //    cosC sinλ0 · Y
+	gl_k = sc;                 gl_kpg = (uint8_t)(0xC0 + 22); gl_ztab();   //    sinC · Z
+}
+
+// ---------------------------------------------------------------- кадр
+
+extern volatile uint16_t frames;
+
+static void render(uint16_t lon, int16_t lat, uint8_t z)
+{
+	res_t rg, rt;
+	uint16_t h[3];
+	if (!res_find(RES_GLOBE, &rg) || !res_find(RES_TEXTURE_DAT, &rt)) return;
+	far_read(rg.phys, h, 6);                   // nCell, nVert, nEdge
+	far_t ct = rg.phys + 6, bt = ct + h[0] * 16u, gt = bt + (h[1] + h[2]) * 6u;
+	if (h[0] > NCELL) { dbg_puts("globe: bad GLOBE\n"); return; }
+	uint16_t t0 = frames;
+	uint8_t set = 2 - (z >> 1), ss = strip_set, bz = bg_zoom, rz = row_zoom;   // копии: SDCC и сравнение с глобальной
+	R = zoom_r[z];
+	ocean = res_game() == 2 ? 16 : 192;       // globe.rul oceanPalette: TFTD 1, UFO 12
+	if (set != ss) build_strips(rt.phys, set);
+	pg_map3(epage);                            // страница рёбер: строки (при смене зума), события
+	if (z != rz) { rows_init(); row_zoom = z; }
+	memset((void *)(0xC000 + EP_EVB), 0xFE, 0x200);
+	memset((void *)(0xC000 + EP_EVKB), 0, 0x100);
+	memset((void *)(0xC000 + EP_EVKA), 0xFF, 0x100);
+	gl_eptr = 0xC000 + EP_POOL;
+	gl_nedge = 0;
+	pg_map3(work);
+	memset((void *)(0xC000 + EP_BUCKET), 0, GLOBE_H * 2);
+	if (z >= 2) bg_zoom = 0xFF;                // диск закрывает окно — фон затёрт
+	else if (bz != z) { bg_restore(); bg_zoom = z; }
+	v_lon = lon; v_lat = lat; v_zoom = z;
+	tables(lon, lat);
+	// центры ячеек — той же проекцией (x, y в Q2, z в Q6)
+	uint16_t cr[NCELL][8];                    // блок, vn, en, 0, центр (6 байт), sinRho
+	uint8_t cv[NCELL][6];
+	uint8_t cp[NCELL][VREC];
+	far_read(ct, cr, h[0] * 16u);
+	for (uint8_t c = 0; c < h[0]; c++) memcpy(cv[c], &cr[c][4], 6);
+	gl_pv = &cv[0][0]; gl_pd = &cp[0][0]; gl_pn = (uint8_t)h[0]; gl_noz = 0;
+	gl_project();
+	gl_limb = z < 2;
+	gl_wpg = work; gl_epg = epage;
+	gl_res = 0xC000 + RES_OFF;
+	uint8_t ncells = 0;
+	far_t fsrc = FAR(work, VSRC);
+	for (uint8_t c = 0; c < h[0]; c++) {
+		uint16_t vn = cr[c][1], en = cr[c][2];
+		if (!en) continue;
+		int16_t sr = (int16_t)cr[c][7];
+		if (sr < 16384) {
+			const uint8_t *q = cp[c];
+			// вся ячейка на задней стороне: z центра + sinρ < -1 (Q6, байтами: SDCC 4.5 путает
+			// байты в -(sr >> 8) - 1 со знаковым расширением — findings_log)
+			if ((int8_t)(q[4] + (uint8_t)(sr >> 8)) < -1) continue;
+			// окно: проекция не длиннее хорды (2R·sin(ρ/2) <= 1.1·R·sinρ при ρ < 49°)
+			int16_t m = SHR14(MUL(R, sr));
+			int16_t xc = (int16_t)(q[0] | (q[1] << 8)) >> 2, yc = (int16_t)(q[2] | (q[3] << 8)) >> 2;
+			m += (m >> 3) + 2;
+			if (xc + m < 0 || xc - m >= GLOBE_W || yc + m < 0 || yc - m >= GLOBE_H) continue;
+		}
+		if (vn > MAXCV || en > MAXCV) { dbg_puts("globe: cell too big\n"); continue; }
+		if (gl_eptr > 0xC000 + 0x4000 - 10 * en) { dbg_puts("globe: edge pool full\n"); break; }
+		ncells++;
+		// вся ячейка на передней стороне — z вершин не нужен
+		gl_noz = sr < 16384 && (int8_t)(cp[c][4] - (uint8_t)(sr >> 8)) > 1;
+		far_copy(fsrc, bt + cr[c][0], (vn + en) * 6u);   // блок ячейки: вершины, рёбра
+		gl_pv = (const uint8_t *)(0xC000 + VSRC); gl_pd = (uint8_t *)(0xC000 + RES_OFF); gl_pn = (uint8_t)vn;
+		gl_project();
+		gl_eb = (const uint8_t *)(0xC000 + VSRC) + vn * 6u; gl_ec = (uint8_t)en;
+		gl_edges();
+	}
+	// сетка 5° (72 x 36 от λ = 0, φ = −90°) в центре вида — если в окне нет рёбер
+	uint8_t gx = (uint8_t)(((uint32_t)lon * 72) >> 16), gy = (uint8_t)(((uint32_t)(lat + 16384) * 36) >> 15);
+	if (gy > 35) gy = 35;
+	uint8_t g = far_byte(gt + (uint16_t)gy * 72 + gx);
+	gl_gtex = g == 0xFE ? NTEX : g;
+	// корзины и рёбра -> страница рёбер (те же смещения); строки: активные рёбра -> отрезки
+	// DMA в задний буфер
+	far_copy(FAR(epage, EP_BUCKET), FAR(work, EP_BUCKET), gl_eptr - (0xC000 + EP_BUCKET));
+	pg_map3(epage);
+	gl_rows();
+	pg_map3(work);
+	dma_wait();
+	valid = 1;
+	dbg_puts("globe: zoom "); dbg_dec(z);
+	dbg_puts(", cells "); dbg_dec(ncells);
+	dbg_puts(", edges "); dbg_dec(gl_nedge);
+	dbg_puts(", frames "); dbg_dec((uint16_t)(frames - t0));
+	dbg_puts("\n");
+}
+
+// Задний буфер -> окно глобуса на экране (2D DMA, строки по 512)
+static void blit(void)
+{
+	dma_wait();
+	TS_DMASAL = 0; TS_DMASAH = (BACK_Y & 31) << 1; TS_DMASAX = SCREEN_PAGE + (BACK_Y >> 5);
+	TS_DMADAL = 0; TS_DMADAH = 0; TS_DMADAX = SCREEN_PAGE;
+	TS_DMALEN = 127;
+	TS_DMANUM = (uint8_t)(GLOBE_H - 1);
+	TS_DMACTRL = DMA_RAM_RAM | DMA_S_ALGN | DMA_D_ALGN | DMA_ASZ;
+	dma_wait();
+}
+
+void globe_invalidate(void) __banked
+{
+	valid = 0;
+	bg_zoom = 0xFF;
+	v_zoom = 0xFF;
+	row_zoom = 0xFF;
+}
+
+void globe_draw(void) __banked
+{
+	uint8_t z = ST->zoom;
+	uint16_t lon = ctx.globe_lon;
+	int16_t lat = ctx.globe_lat;
+	if (z >= GLOBE_ZOOMS) z = GLOBE_ZOOMS - 1;
+	if (work == PG_NONE) work = pg_alloc(1, 1);
+	if (strip == PG_NONE) strip = pg_alloc(8, 1);
+	if (epage == PG_NONE) epage = pg_alloc(1, 1);
+	if (work == PG_NONE || strip == PG_NONE || epage == PG_NONE) { dbg_puts("globe: no pages\n"); return; }
+	uint8_t old = pg_win3();
+	uint8_t vz = v_zoom;
+	if (!valid || z != vz || lon != v_lon || lat != v_lat) render(lon, lat, z);
+	blit();
+	pg_map3(old);
+}

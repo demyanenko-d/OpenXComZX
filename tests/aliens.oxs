@@ -1,0 +1,59 @@
+# Пришельцы на геоскейпе (TFTD): миссии сценария при старте (зонд у базы, террор),
+# НЛО по траекториям, обнаружение радаром базы -> UfoDetected -> «центр» (глобус на НЛО,
+# 5 с); место миссии (порт) -> MissionDetected -> «центр» -> нажатие по метке ->
+# TargetInfo. Порядок окон детерминирован (под сценарием зерно ГСЧ постоянное,
+# newgame.c); сменится логика — поправить.
+# Журнал миссий и НЛО — строки «alien:» / «ufo:» консоли. src/game/alien.c, ufo.c.
+# Запуск: powershell -File tools\run.ps1 -Script tests\aliens.oxs -Headless
+
+waitmark 1 600
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 600
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 300
+type atlantis
+key ENTER
+waitmark 32 300
+# миссии запущены сразу (months 0): nmissions (#2DE3) = 2
+expect 06:2DE3 2
+
+# --- первое обнаружение: окно НЛО, центр на НЛО
+key 6
+waitmark 36 3000
+shot tmp/shots/aliens/01_ufo_detected.png
+pokew _cursor_x 128
+pokew _cursor_y 140
+click L
+waitmark 32 300
+shot tmp/shots/aliens/02_globe_ufo.png
+expect 06:003E 0
+
+# --- дальше: окна НЛО закрываются, пока не появится место миссии
+key 6
+waitmark 36 3000
+key SPACE
+waitmark 32 300
+key 6
+waitmark 38 3000
+shot tmp/shots/aliens/03_mission_detected.png
+pokew _cursor_x 128
+pokew _cursor_y 156
+click L
+waitmark 32 300
+shot tmp/shots/aliens/04_globe_site.png
+pokew _cursor_x 128
+pokew _cursor_y 100
+click L
+waitmark 202 300
+shot tmp/shots/aliens/05_target_info.png
+key SPACE
+waitmark 32 300
+exit 0

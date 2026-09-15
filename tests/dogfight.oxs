@@ -1,0 +1,101 @@
+# Воздушный (подводный) бой, TFTD: отладочный бой (poke _ui_request 216 без боёв —
+# корабль с оружием против подставного НЛО у базы, src/game/dogfight.c: df_debug;
+# тип НЛО — poke _df_dbg_type). Окно одно — в (80, 52).
+# 1) Survey Ship: вид НЛО (кнопка), свёртывание на standoff, значок на глобусе,
+#    разворот, агрессивный режим — торпеды, попадания, НЛО уничтожено, окно закрывается.
+# 2) Escort (оружие 30): огонь НЛО, повреждения корабля, уход НЛО (escapeCountdown).
+# Журнал — строки «df:» консоли; исход по ГСЧ (под сценарием зерно постоянное) —
+# сменится логика — поправить.
+# ufo[0] в state_t: #26CD (status +1). Снимки — tmp/shots/dogfight/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\dogfight.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 600
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 300
+type dog
+key ENTER
+waitmark 32 300
+
+# --- 1: Survey Ship
+poke _ui_request 216
+waitmark 216 300
+shot tmp/shots/dogfight/01_start.png
+wait 3
+shot tmp/shots/dogfight/02_start_cycle.png
+# вид НЛО спереди и обратно
+pokew _cursor_x 218
+pokew _cursor_y 110
+click L
+wait 4
+shot tmp/shots/dogfight/03_preview.png
+pokew _cursor_x 160
+pokew _cursor_y 100
+click L
+wait 4
+shot tmp/shots/dogfight/04_back.png
+# на standoff (560) — свернуть: значок слева на глобусе, время идёт
+wait 80
+pokew _cursor_x 85
+pokew _cursor_y 57
+click L
+waitmark 32 300
+wait 10
+shot tmp/shots/dogfight/05_minimized.png
+# значок -> окно снова
+pokew _cursor_x 20
+pokew _cursor_y 15
+click L
+waitmark 216 300
+shot tmp/shots/dogfight/06_maximized.png
+# агрессивный режим
+pokew _cursor_x 218
+pokew _cursor_y 79
+click L
+wait 40
+shot tmp/shots/dogfight/07_aggressive.png
+wait 200
+shot tmp/shots/dogfight/08_fire.png
+wait 30
+shot tmp/shots/dogfight/09.png
+wait 30
+shot tmp/shots/dogfight/10.png
+waitmark 32 3000
+shot tmp/shots/dogfight/11_after.png
+# НЛО уничтожено (US_DESTROYED: последнее попадание 76 — повреждения за damageMax)
+expect 06:26CE 3
+
+# --- 2: Escort — отвечает огнём и уходит
+poke _df_dbg_type 1
+# зерно ГСЧ (state_t.rng #0032): с ним НЛО дважды попадает в корабль и уходит
+pokew 06:0032 0x5678
+poke _ui_request 216
+waitmark 216 300
+pokew _cursor_x 218
+pokew _cursor_y 79
+click L
+wait 200
+shot tmp/shots/dogfight/20_escort.png
+wait 60
+shot tmp/shots/dogfight/21_escort.png
+wait 60
+shot tmp/shots/dogfight/22_escort.png
+wait 100
+shot tmp/shots/dogfight/23_cannon.png
+waitmark 32 3000
+shot tmp/shots/dogfight/24_after.png
+# Escort ушёл (US_FLYING), повреждения 118 из 300: ufo[1] — #2704
+expect 06:2705 0
+expectw 06:2728 118
+echo dogfight scenario OK
+exit 0
