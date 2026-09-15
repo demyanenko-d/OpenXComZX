@@ -92,9 +92,155 @@ function run(lonD, latD, zoom, daylight) {
 	return { diff, tot, bands, maxSeg, s };
 }
 
+// ---- картинка: дневной кадр — эталон globe_model (текстура на пиксель); тень OpenXcom
+// (шум rand() % 4 в клетке 60x60) против схемы движка: уровень пары k (отрезки по строке),
+// строки-образцы уровня с шумом (256 пикселей, сдвиг по строке): суша — BLT2 по полубайтам
+// +L_k(x) = ⌊(v_k − n)/3⌋, океан — копия O_k(x) = OCEAN + (v_k − n), v_k = 3k + 1 (k = 10 — 31)
+function picture(lonD, latD, zoom, daylight, out) {
+	const M = require('./globe_model.js'), fs = require('fs'), zlib = require('zlib');
+	const R = ZR[zoom], s = sunDir(lonD, latD, daylight), set = 2 - (zoom >> 1);
+	const r = M.render(lonD, latD, zoom, true);
+	const day = (x, y) => { const t = r.truth[y * 256 + x]; return t < 0 ? -1 : (t === 13 || t === 255) ? M.OCEAN : M.TEX[(set * 13 + t) * 1024 + (y & 31) * 32 + (x & 31)]; };
+	let seed = 12345; const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) >>> 16;
+	const noise60 = Array.from({ length: 3600 }, () => rnd() % 4);
+	const pat = Array.from({ length: 256 }, () => rnd() % 4), shift = Array.from({ length: 200 }, () => rnd() & 0xFE);
+	const isOcean = c => c >= M.OCEAN && c < M.OCEAN + 32;
+	const land = (c, sh) => { if (!sh) return c; const d = c & 0xF0, e = c + Math.floor(sh / 3); return e > d + 15 ? d + 15 : e; };
+	const truth = new Int16Array(256 * 200).fill(-1), ours = new Int16Array(256 * 200).fill(-1);
+	let sum = 0, n = 0, big = 0;
+	for (let y = 0; y < 200; y++) for (let x = 0; x < 256; x++) {
+		const c = day(x, y);
+		if (c < 0) continue;
+		const ex = (x + 0.5 - 128) / R, ey = (y + 0.5 - 100) / R, q = ex * ex + ey * ey;
+		if (q >= 1) continue;
+		const dd = ex * s[0] + ey * s[1] + Math.sqrt(1 - q) * s[2];
+		// эталон
+		const sh = Math.max(0, Math.min(31, shadeOfRaw(dd) - noise60[(y % 60) * 60 + (x % 60)]));
+		truth[y * 256 + x] = isOcean(c) ? M.OCEAN + sh : land(c, sh);
+		// схема: уровень по левому пикселю пары
+		const xp = x & ~1, exp = (xp + 0.5 - 128) / R, qp = exp * exp + ey * ey;
+		const k = qp < 1 ? Math.floor(shadeOf(exp * s[0] + ey * s[1] + Math.sqrt(1 - qp) * s[2]) / 3) : Math.floor(shadeOf(dd) / 3);
+		const vk = k === 10 ? 31 : 3 * k + 1, nn = pat[(x + shift[y]) & 255], sv = Math.max(0, vk - nn);
+		ours[y * 256 + x] = isOcean(c) ? M.OCEAN + sv : (() => { const d = c & 0xF0, e = c + Math.floor(sv / 3); return e > d + 15 ? d + 15 : e; })();
+		// разница в шагах тени (для суши — в шагах полубайта, океан — в шагах 0..31)
+		const dv = Math.abs(truth[y * 256 + x] - ours[y * 256 + x]);
+		sum += dv; n++; if (dv > 3) big++;
+	}
+	if (out) {
+		const W2 = 1024, H2 = 400, raw = Buffer.alloc((W2 * 3 + 1) * H2);
+		for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
+			const img = x < 512 ? truth : ours, X = (x & 511) >> 1, Y = y >> 1, c = img[Y * 256 + X];
+			const p = c < 0 ? [0, 0, 0] : M.pal[c], o = y * (W2 * 3 + 1) + 1 + x * 3;
+			raw[o] = p[0]; raw[o + 1] = p[1]; raw[o + 2] = p[2];
+		}
+		const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+		const crc32 = b => { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+		const chunk = (t, d) => { const l = Buffer.alloc(4); l.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc32(td)); return Buffer.concat([l, td, c]); };
+		const ih = Buffer.alloc(13); ih.writeUInt32BE(W2, 0); ih.writeUInt32BE(H2, 4); ih[8] = 8; ih[9] = 2;
+		fs.writeFileSync(out, Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ih), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
+	}
+	return { mean: sum / n, big, n };
+}
+// ---- уровни по строкам из малых кругов: круг уровня k — {P : P·s = D_k} на сфере, в мировых
+// координатах неподвижен при данном времени суток (солнце на экваторе, долгота λs = 90° − 360°·
+// daylight); N вершин на круг проецируются как вершины карты, отрезки режутся горизонтом (z = 0),
+// пересечения со строками (y = 4r + 2, Q2) — как у рёбер. Уровень пары: у левого края диска —
+// точно (d края строки), дальше — переключения на пересечениях. Сверка с точным уровнем пары.
+function chains(lonD, latD, zoom, daylight, N) {
+	const R = ZR[zoom], lon0 = lonD * Math.PI / 180, lat0 = latD * Math.PI / 180;
+	const cl = Math.cos(lon0), sl = Math.sin(lon0), cc = Math.cos(lat0), sc = Math.sin(lat0);
+	const ls = Math.PI / 2 - daylight * 2 * Math.PI, sw = [Math.cos(ls), Math.sin(ls), 0];
+	const U = [0, 0, 1], V = [Math.sin(ls), -Math.cos(ls), 0];
+	const proj = ([X, Y, Z]) => { const W = X * cl + Y * sl; return { x: 512 + 4 * R * (Y * cl - X * sl), y: 400 + 4 * R * (cc * Z - sc * W), z: cc * W + sc * Z }; };
+	const s = sunDir(lonD, latD, daylight);
+	// crossings[k][r] — {x (Q2), n}: пересечение полилинии уровня k со строкой r; n — правее
+	// пересечения ночь (по направлению обхода: ночь всегда с одной стороны от хода — U x V
+	// с солнцем, проекция передней полусферы ориентацию не меняет)
+	const cross = Array.from({ length: 10 }, () => Array.from({ length: 200 }, () => []));
+	// ночь справа от хода (экран: y вниз) — для нисходящего отрезка ночь левее (x меньше)
+	const cr3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+	const orient = (() => { const w = cr3(U, V); return w[0] * sw[0] + w[1] * sw[1] + w[2] * sw[2]; })();
+	for (let k = 1; k <= 10; k++) {
+		const D = -TB[k - 1] / 250, rk = Math.sqrt(Math.max(0, 1 - D * D));
+		const P = [];
+		for (let j = 0; j < N; j++) { const th = 2 * Math.PI * j / N, c = Math.cos(th), si = Math.sin(th); P.push(proj([0, 1, 2].map(i => D * sw[i] + rk * (c * U[i] + si * V[i])))); }
+		// сторона ночи: на сфере (снаружи) ночь справа от хода, если (U x V)·s > 0; на экране
+		// (y вниз) «справа» — (−Ty, Tx), зеркально правому на сфере (Ty, −Tx)
+		const nightRight = orient < 0;
+		for (let j = 0; j < N; j++) {
+			let A = P[j], B = P[(j + 1) % N];
+			if (A.z < 0 && B.z < 0) continue;
+			if (A.z < 0 || B.z < 0) { const [F, K] = A.z >= 0 ? [A, B] : [B, A], t = F.z / (F.z - K.z), Q = { x: F.x + (K.x - F.x) * t, y: F.y + (K.y - F.y) * t, z: 0 }; if (A.z < 0) A = Q; else B = Q; }
+			if (A.y === B.y) continue;
+			const down = B.y > A.y, n = down ? !nightRight : nightRight;   // вниз: ночь справа от хода = левее
+			if (!down) { const t = A; A = B; B = t; }
+			const r0 = Math.max(0, Math.floor((A.y + 1) / 4)), r1 = Math.min(199, Math.floor((B.y + 1) / 4) - 1);
+			for (let r = r0; r <= r1; r++) { const yq = 4 * r + 2; cross[k - 1][r].push({ x: A.x + (B.x - A.x) * (yq - A.y) / (B.y - A.y), n }); }
+		}
+	}
+	let diff = 0, tot = 0, far = 0, nCross = 0;
+	for (let y = 0; y < 200; y++) {
+		const Y = y + 0.5 - 100, rho2 = R * R - Y * Y;
+		if (rho2 <= 0) continue;
+		const rho = Math.sqrt(rho2);
+		for (let k = 0; k < 10; k++) nCross += cross[k][y].length;
+		// точный уровень в первой паре строки (край диска или окна) — один на строку
+		let p0 = 0; while (p0 < 128 && (2 * p0 + 0.5 - 128) ** 2 + Y * Y >= R * R) p0++;
+		const X0 = 2 * p0 + 0.5 - 128, e0x = X0 / R, e0y = Y / R, lev0 = p0 < 128 ? Math.floor(shadeOf(e0x * s[0] + e0y * s[1] + Math.sqrt(Math.max(0, 1 - e0x * e0x - e0y * e0y)) * s[2]) / 3) : 0;
+		let p1 = 127; while (p1 > 0 && (2 * p1 + 0.5 - 128) ** 2 + Y * Y >= R * R) p1--;
+		const X1 = 2 * p1 + 0.5 - 128, e1x = X1 / R, lev1 = Math.floor(shadeOf(e1x * s[0] + e0y * s[1] + Math.sqrt(Math.max(0, 1 - e1x * e1x - e0y * e0y)) * s[2]) / 3);
+		for (let p = 0; p < 128; p++) {
+			const X = 2 * p + 0.5 - 128;
+			if (X * X + Y * Y >= R * R) continue;
+			const ex = X / R, ey = Y / R, kx = Math.floor(shadeOf(ex * s[0] + ey * s[1] + Math.sqrt(1 - ex * ex - ey * ey) * s[2]) / 3);
+			// схема: для каждого уровня — ночь у левого края диска, переключения левее пары
+			const xq = 4 * (X + 128) - 2 + 2;       // Q2 точки пары (x = 2p + 0.5 -> Q2 = 4x)
+			let lev = 0;
+			for (let k = 0; k < 10; k++) {
+				const D = -TB[k] / 250;
+				// до первого пересечения правее первой пары — точный уровень первой пары; дальше —
+				// сторона ночи последнего пересечения левее пары
+				// правее последнего пересечения левее последней пары — точный уровень последней пары
+				let night = k < lev0, bx = 4 * (X0 + 128), last = -1e9;
+				const xs = 4 * (2 * p + 0.5), xe = 4 * (X1 + 128);
+				for (const c of cross[k][y]) if (c.x > 4 * (X0 + 128) && c.x <= xe && c.x > last) last = c.x;
+				for (const c of cross[k][y]) if (c.x <= xs && c.x > bx) { bx = c.x; night = c.n; }
+				if (bx >= last && last > -1e9) night = k < lev1;
+				if (night) lev = k + 1;
+			}
+			tot++;
+			if (lev !== kx) { diff++; if (Math.abs(lev - kx) > 1) far++; }
+		}
+	}
+	return { diff, tot, far, nCross };
+}
+
+// тень без ограничения сверху (для вычитания шума — как temp.x до Clamp в getShadowValue)
+function shadeOfRaw(d) {
+	const t = -250 * d;
+	if (t < -110) return -31;
+	if (t > 120) return 50;
+	return grad[Math.trunc(t) + 120];
+}
+
 if (require.main === module) {
 	const a = process.argv.slice(2).map(Number);
-	if (a.length) {
+	if (process.env.CHAINS) {
+		for (const N of [16, 24, 32, 48, 64]) {
+			const line = [];
+			for (let z = 0; z < 6; z++) {
+				let d = 0, t = 0, f = 0, nc = 0, v = 0;
+				for (let lon = 0; lon < 360; lon += 45) for (const lat of [-50, 0, 35]) for (const dl of [0, 0.15, 0.3, 0.45, 0.7, 0.9]) {
+					const r = chains(lon, lat, z, dl, N); d += r.diff; t += r.tot; f += r.far; nc += r.nCross; v++;
+				}
+				line.push(`z${z} ${(100 * d / t).toFixed(2)}% far ${f} cr/view ${(nc / v).toFixed(0)}`);
+			}
+			console.log(`N ${N}: ` + line.join('; '));
+		}
+	} else if (process.env.PIC) {
+		const r = picture(a[0] ?? 0, a[1] ?? 0, a[2] ?? 0, a[3] ?? 0.3, `tmp/shadow_z${a[2] ?? 0}.png`);
+		console.log(`mean |truth - ours| ${r.mean.toFixed(3)} palette steps, >3: ${r.big} of ${r.n} pixels -> tmp/shadow_z${a[2] ?? 0}.png (left OpenXcom, right scheme)`);
+	} else if (a.length) {
 		const r = run(a[0] ?? 0, a[1] ?? 0, a[2] ?? 0, a[3] ?? 0.3);
 		console.log(`sun ${r.s.map(v => v.toFixed(3))}; rows with shadow ${r.bands}, max segments ${r.maxSeg}; level mismatch ${r.diff} of ${r.tot} pairs`);
 	} else {
