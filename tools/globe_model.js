@@ -37,6 +37,12 @@ const GATE = flag('GATE', ENG);             // полная починка то�
 const CHAIN = flag('CHAIN', false);         // починка кучек цепочкой по текстурам (опыт)
 const NOLC = flag('NOLC', false), ITH = +(process.env.ITH || (ENG ? 128 : 256)), INSLIMB = flag('INSLIMB', ENG);
 const INSFIX2 = flag('INSFIX2', ENG);       // вставка в кучку (соседи ближе ITH) на место, согласованное по текстурам; INSLIMB — только зумы 0–1
+const INS2P = flag('INS2P', false);         // INSFIX2 после вставки всех новых рёбер строки и починки пар (опыт)
+const LDEFER = flag('LDEFER', false);       // левая текстура неизвестна — первую пару чинить последней (опыт)
+const DELGATE = flag('DELGATE', false);     // починка и после удаления ребра, если новые соседи несогласованы (опыт)
+const LIMBKEY = flag('LIMBKEY', false);     // события края диска в строке — по ходу вдоль края (опыт)
+const BANDGRID = flag('BANDGRID', false);   // полосы строк без рёбер — текстура по сетке 5° в точке полосы (опыт)
+const bandStat = { n: 0, ok: 0 };
 const INSFIX = flag('INSFIX', false);       // вставка ищет согласованное место среди близких (опыт)
 const Z16 = flag('Z16', ENG);               // z вершин в Q12 (16 бит), иначе Q6
 const EXACT = flag('EXACT', ENG);           // целочисленная арифметика движка
@@ -203,10 +209,13 @@ function render(lonD, latD, zoom, wantTruth) {
 			// пересечение левого края (окна или диска) — событие для строк без рёбер: ниже / выше
 			// точки на краю текстура другой стороны ребра
 			// (в одной точке края — вершина на x = 0: сначала ребро, у которого часть вне окна выше — отсечён верх, потом отсечён низ)
-			const ev = (yq, below, above, ord) => { const r = Math.floor((yq + 1) / 4); if (r < 0 || r > 199) return; const kb = yq * 4 + ord; if (EVY[r] === undefined || kb >= EVY[r]) { EVB[r] = below; EVY[r] = kb; } if (EVYa[r] === undefined || kb <= EVYa[r]) { EVA[r] = above; EVYa[r] = kb; } };
-			if (hb >= 0) { if (A.lb || B.lb) ev(A.y, hb, ha, 1); continue; }
-			if (A.lb) ev(A.y, tl, tr, 0);
-			if (B.lb) ev(B.y, tr, tl, 2);
+			// порядок событий строки: по y; LIMBKEY (зумы 0–1, край диска) — по ходу вдоль края вниз:
+			// в верхней половине x убывает, в нижней растёт (точки в одной строке с разницей в 1 Q2)
+			const ev = (yq, below, above, ord, xq) => { const r = Math.floor((yq + 1) / 4); if (r < 0 || r > 199) return;
+				const kb = LIMBKEY && zoom < 2 ? ((yq < 400 ? 1024 - xq : xq + 1024 - 2 * (512 - 4 * R)) * 4 + (yq & 3)) * 4 + ord : yq * 4 + ord; if (EVY[r] === undefined || kb >= EVY[r]) { EVB[r] = below; EVY[r] = kb; } if (EVYa[r] === undefined || kb <= EVYa[r]) { EVA[r] = above; EVYa[r] = kb; } };
+			if (hb >= 0) { if (A.lb || B.lb) ev(A.y, hb, ha, 1, A.lb ? A.x : B.x); continue; }
+			if (A.lb) ev(A.y, tl, tr, 0, A.x);
+			if (B.lb) ev(B.y, tr, tl, 2, B.x);
 			if (B.y <= A.y) continue;
 			const dx = B.x - A.x, dy = B.y - A.y;
 			let r0 = Math.floor((A.y + 1) / 4), r1 = Math.floor((B.y + 1) / 4) - 1;
@@ -227,6 +236,33 @@ function render(lonD, latD, zoom, wantTruth) {
 			if (r1 < r0) continue;
 			buckets[r0].push({ u, s, last: r1, tl, tr, top: r0, lt: A.lb, lbt: B.lb });
 			nE++;
+		}
+	}
+	// BANDGRID: строка без рёбер — одна область: для полосы таких строк текстура по точке
+	// посередине (обратная проекция) из сетки 5°, если клетка однородна (иначе — по событиям края)
+	const BT = new Int16Array(200).fill(-1);
+	if (BANDGRID) {
+		const cov = new Int16Array(201);
+		for (let r = 0; r < 200; r++) for (const e of buckets[r]) { cov[r]++; cov[e.last + 1]--; }
+		for (let r = 1; r < 200; r++) cov[r] += cov[r - 1];
+		const ex = [-sl, cl, 0], ey = [-sc * cl, -sc * sl, cc], ez = [cc * cl, cc * sl, sc];
+		const sample = (y, p) => {
+			const px = (2 * p + 0.5 - 128) / R, py = (y + 0.5 - 100) / R, rr = px * px + py * py;
+			if (rr >= 1) return -1;
+			const z = Math.sqrt(1 - rr), q = [0, 1, 2].map(k => px * ex[k] + py * ey[k] + z * ez[k]);
+			const lon = ((Math.atan2(q[1], q[0]) * 180 / Math.PI) + 360) % 360, lat = Math.asin(Math.max(-1, Math.min(1, q[2]))) * 180 / Math.PI;
+			const g = G[gt + Math.min(35, Math.floor((lat + 90) / 5)) * 72 + Math.floor(lon / 5) % 72];
+			return g === 0xFE ? -1 : g;
+		};
+		for (let r = 0; r < 200; ) {
+			if (cov[r] || PL[r] > PR[r]) { r++; continue; }
+			let r1 = r; while (r1 + 1 < 200 && !cov[r1 + 1] && PL[r1 + 1] <= PR[r1 + 1]) r1++;
+			const ym = (r + r1) >> 1, a = PL[ym], b = PR[ym];
+			let t = -1;
+			for (const p of [(a + b) >> 1, a + ((b - a) >> 2), b - ((b - a) >> 2)]) { t = sample(ym, p); if (t >= 0) break; }
+			if (t >= 0) for (let y = r; y <= r1; y++) BT[y] = t;
+			bandStat.n++; if (t >= 0) bandStat.ok++;
+			r = r1 + 1;
 		}
 	}
 	// ---- строки
@@ -254,7 +290,7 @@ function render(lonD, latD, zoom, wantTruth) {
 				}
 				if (f >= 0) k = f; else badIns++;
 			}
-			if (INSFIX2 && (!INSLIMB || zoom < 2)) {          // место в кучке (соседи ближе пары) по текстурам
+			if (INSFIX2 && !INS2P && (!INSLIMB || zoom < 2)) {          // место в кучке (соседи ближе пары) по текстурам
 				const lc = EVB[y] >= 0 ? EVB[y] : ltex;
 				const okL = j => j > 0 ? ael[j - 1].tr === e.tl : (NOLC || lc < 0 || lc === e.tl);
 				const okR = j => j >= ael.length || ael[j].tl === e.tr;
@@ -274,6 +310,9 @@ function render(lonD, latD, zoom, wantTruth) {
 			if (process.env.DBGROWS) console.log("  ins row", y, "u", e.u, "s", e.s, "(" + e.tl + "|" + e.tr + ") at", k, "of", ael.length, ael.slice(Math.max(0, k - 2), k + 2).map(q => q.u + "/" + q.s + "(" + q.tl + "|" + q.tr + ")").join(" "));
 			ael.splice(k, 0, e);
 			insNew.push(e);
+		}
+		if (IMM) for (const e of insNew) {
+			const k = ael.indexOf(e);
 			if (IMM) { const lc = EVB[y] >= 0 ? EVB[y] : ltex; for (let d = -2; d <= 1; d++) { const kk = k + d; if (kk < 0 || kk + 1 >= ael.length) continue; const p = ael[kk], q = ael[kk + 1]; if (Math.abs(p.u - q.u) >= 256) continue; const L = kk > 0 ? ael[kk - 1].tr : lc, R = kk + 2 < ael.length ? ael[kk + 2].tl : -1; const eq = (x, y) => x < 0 || y < 0 || x === y; const cur = eq(L, p.tl) && p.tr === q.tl && eq(q.tr, R), sw = eq(L, q.tl) && q.tr === p.tl && eq(p.tr, R); if (!cur && sw) { ael[kk] = q; ael[kk + 1] = p; nRep++; } } }
 		}
 		if (process.env.DBGROWS && ael.length) { const bad = []; for (let k = 0; k + 1 < ael.length; k++) if (ael[k].tr !== ael[k + 1].tl) bad.push(k); if (bad.length) console.log("row", y, ael.map((e, k) => (bad.includes(k) ? "*" : "") + (e.u >> 8) + "(" + e.tl + "|" + e.tr + ")").join(" ")); }
@@ -320,13 +359,45 @@ function render(lonD, latD, zoom, wantTruth) {
 					k0 = k1 + 1;
 				}
 			};
-			if ((!LOCAL && !GATE) || dirtyAll || EVB[y] >= 0 || (GATE && insNew.length)) { if (CHAIN) fixChain(); else for (let k = 0; k + 1 < ael.length; k++) fixPair(k); }
+			// LDEFER: левая текстура неизвестна (первая строка с рёбрами после ждущих) — первую
+			// пару последней: у неё нет левого контекста
+			const fixAll = () => { const k0 = LDEFER && lc < 0 ? 1 : 0; for (let k = k0; k + 1 < ael.length; k++) fixPair(k); if (k0) fixPair(0); };
+			if ((!LOCAL && !GATE) || dirtyAll || EVB[y] >= 0 || (GATE && insNew.length)) { if (CHAIN) fixChain(); else fixAll(); }
 			else if (!IMM) for (const e of insNew) { const k = ael.indexOf(e); for (let d = -2; d <= 1; d++) fixPair(k + d); }
 			dirtyAll = false;
+			// INS2P: INSFIX2 после вставки всех новых рёбер строки и починки пар — новое ребро,
+			// всё ещё несогласованное с соседями, — на лучшее место в своей кучке, потом починка снова
+			if (INSFIX2 && INS2P && (!INSLIMB || zoom < 2)) {
+				let moved = false;
+				for (const e of insNew) {
+					let k = ael.indexOf(e);
+					const okL = j => j > 0 ? ael[j - 1].tr === e.tl : (NOLC || lc < 0 || lc === e.tl);
+					const okR = j => j >= ael.length || ael[j].tl === e.tr;
+					ael.splice(k, 1);
+					if (!(okL(k) && okR(k))) {
+						let lo = k, hi = k;
+						while (lo > 0 && Math.abs(ael[lo - 1].u - e.u) < ITH) lo--;
+						while (hi < ael.length && Math.abs(ael[hi].u - e.u) < ITH) hi++;
+						let best = -1, bs = 0;
+						for (let j = lo; j <= hi; j++) {
+							const sc = (okL(j) ? 2 : 0) + (okR(j) ? 1 : 0);
+							if (sc > bs || (sc === bs && best >= 0 && Math.abs(j - k) < Math.abs(best - k))) { bs = sc; best = j; }
+						}
+						const cur = (okL(k) ? 2 : 0) + (okR(k) ? 1 : 0);
+						if (best >= 0 && bs > cur) { k = best; moved = true; }
+					}
+					ael.splice(k, 0, e);
+				}
+				if (moved) fixAll();
+			}
 		}
 		if (PL[y] <= PR[y]) {
 			if (!ael.length) {
 				if (EVB[y] >= 0) ltex = EVB[y];
+				if (BT[y] >= 0) {                          // текстура полосы по сетке; ждущие выше — ею же
+					ltex = BT[y];
+					if (pend >= 0) { for (let r = pend; r < y; r++) fillRow(r, ltex); pend = -1; }
+				}
 				if (ltex < 0) { if (pend < 0) pend = y; }
 				else fillRow(y, ltex);
 			} else {
@@ -356,6 +427,14 @@ function render(lonD, latD, zoom, wantTruth) {
 			}
 		}
 		for (const e of ael) e.u = EXACT ? (e.u + e.s) & 0xFFFF : e.u + e.s;
+		if (DELGATE) {                                    // после удаления рёбер новые соседи несогласованы — починка в следующей строке
+			let lt = ltex, del = false;
+			for (const e of ael) {
+				if (e.last === y) { del = true; continue; }
+				if (del && lt >= 0 && lt !== e.tl) dirtyAll = true;
+				del = false; lt = e.tr;
+			}
+		}
 		ael = ael.filter(e => e.last !== y);
 		if (MODE !== 'topo')                              // сортировка вставками по x (устойчивая)
 			for (let i = 1; i < ael.length; i++) { const e = ael[i]; let j = i; while (j > 0 && (HITOL ? (ael[j - 1].u >> 8) > (e.u >> 8) + 1 : ael[j - 1].u > e.u + TOL)) { ael[j] = ael[j - 1]; j--; dirtyAll = true; } ael[j] = e; }
@@ -410,7 +489,7 @@ function png(img, zoom, out) {
 	fs.writeFileSync(out, Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ih), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
 }
 
-module.exports = { render, TEX, OCEAN, pal };
+module.exports = { render, TEX, OCEAN, pal, bandStat };
 if (require.main !== module) {} else if (process.env.SWEEP) {
 	let worst = [];
 	for (let zoom = 0; zoom < 6; zoom++) {

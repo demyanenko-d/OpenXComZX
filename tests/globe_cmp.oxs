@@ -1,5 +1,5 @@
 # Снимки глобуса для сверки с эталоном (tools/globe_emucmp.js): зумы 0, 1, 3, 5; после
-# каждого снимка — углы вида (peek ctx.globe_lon/lat). Не проверка «прошёл/нет».
+# каждого снимка — углы вида (peek _ctx+6 — ctx.globe_lon/lat). Не проверка «прошёл/нет».
 #   powershell -File tools\run.ps1 -Script tests\globe_cmp.oxs -Headless
 # Глобус (src/ui/globe.c, globe.md): новая игра -> база -> геоскейп; снимки на зумах 0..5
 # (зум — SS+K / SS+J и кнопки GEOBORD), поворот стрелками, вид вниз (наклон). Строки
@@ -26,27 +26,27 @@ type globe
 key ENTER
 waitmark 32 3000
 shot tmp/shots/globe_cmp/z0.png
-peek 0x56E8 4
+peek _ctx+6 4
 key RIGHT
 waitmark 32 3000
 key DOWN
 waitmark 32 3000
 shot tmp/shots/globe_cmp/z0d.png
-peek 0x56E8 4
+peek _ctx+6 4
 key SS+K
 waitmark 32 3000
 shot tmp/shots/globe_cmp/z1.png
-peek 0x56E8 4
+peek _ctx+6 4
 key SS+K
 waitmark 32 3000
 key SS+K
 waitmark 32 3000
 shot tmp/shots/globe_cmp/z3.png
-peek 0x56E8 4
+peek _ctx+6 4
 key SS+K
 waitmark 32 3000
 key SS+K
 waitmark 32 3000
 shot tmp/shots/globe_cmp/z5.png
-peek 0x56E8 4
+peek _ctx+6 4
 exit 0
