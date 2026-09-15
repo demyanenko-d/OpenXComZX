@@ -78,6 +78,7 @@ static const int16_t zoom_r[GLOBE_ZOOMS] = { 90, 120, 180, 280, 450, 720 };   //
 
 static uint8_t work = PG_NONE, epage = PG_NONE, strip_set = 0xFF;
 static uint8_t valid, v_zoom = 0xFF, bg_zoom = 0xFF, row_zoom = 0xFF, ocean, v_sun = 0xFF;
+static uint8_t geom;                       // страница рёбер держит геометрию вида v_lon/v_lat/v_zoom
 static uint16_t v_lon;
 static int16_t v_lat, R;
 static uint8_t strip = PG_NONE;
@@ -292,6 +293,24 @@ static void render(uint16_t lon, int16_t lat, uint8_t z, uint16_t sun)
 	R = zoom_r[z];
 	ocean = res_game() == 2 ? 16 : 192;       // globe.rul oceanPalette: TFTD 1, UFO 12
 	if (set != ss) build_strips(rt.phys, set);
+	// Вид тот же (перерисовка по эпохе солнца): геометрия в странице рёбер годна — проход строк
+	// её только читает (записи, корзины, события края, полосы, строки), а слоты и порядок
+	// заводит сам. Считаем заново лишь тень (globe_sh.c) и проход строк.
+	uint8_t vz = v_zoom;                      // копии: SDCC портит сравнение байта с глобальной
+	uint16_t vlon = v_lon;
+	int16_t vlat = v_lat;
+	if (geom && z == vz && lon == vlon && lat == vlat) {
+		pg_map3(epage);
+		uint8_t sp2 = globe_shadow(lon, lat, z, sun, ocean);
+		if (sp2 != PG_NONE) far_copy(FAR(epage, EP_SHF), FAR(sp2, GLOBE_SH_FLG), GLOBE_H);
+		else far_fill(FAR(epage, EP_SHF), 0, GLOBE_H);
+		gl_rows();
+		pg_map3(work);
+		dma_wait();
+		dbg_puts("globe: sun only, frames "); dbg_dec((uint16_t)(frames - t0));
+		dbg_puts(", sun "); dbg_dec(sun); dbg_puts("\n");
+		return;
+	}
 	pg_map3(epage);                            // страница рёбер: строки (при смене зума), события
 	if (z != rz) { rows_init(); row_zoom = z; }
 	memset((void *)(0xC000 + EP_EVB), 0xFE, 0x200);
@@ -367,6 +386,7 @@ static void render(uint16_t lon, int16_t lat, uint8_t z, uint16_t sun)
 	pg_map3(work);
 	dma_wait();
 	valid = 1;
+	geom = 1;
 	dbg_puts("globe: zoom "); dbg_dec(z);
 	dbg_puts(", cells "); dbg_dec(ncells);
 	dbg_puts(", edges "); dbg_dec(gl_nedge);
@@ -391,6 +411,7 @@ static void blit(void)
 void globe_invalidate(void) __banked
 {
 	valid = 0;
+	geom = 0;
 	bg_zoom = 0xFF;
 	v_zoom = 0xFF;
 	row_zoom = 0xFF;
