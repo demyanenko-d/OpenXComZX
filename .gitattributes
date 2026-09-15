@@ -1,0 +1,5 @@
+# Файлы проекта — с LF (как в рабочем дереве): сценарии эмулятора, ассемблер, скрипты
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.png binary
+*.pdf binary
