@@ -36,7 +36,7 @@
 	.optsdcc -mz80 sdcccall(1)
 
 	.globl	_gl_edges, edge1, edge1s, e_rows, e_fast, hclip, lerpz, xclip, lerpx, div32, eslope, bord_ev, e_store
-	.globl	_gl_bands, _gl_nb, _gl_bl, gb_end, ai_put, ai_redo
+	.globl	_gl_bands, _gl_nb, _gl_bl, gb_end, ai_put, ai_redo, rw_emit_s, em_run_s
 	.globl	_gl_rows, ael_ins, ai_fix2, f2_near, f2_score, ai_cmp, ael_fix, fx_pair, rw_emit, rw_band, rw_pfill, rw_flush, ael_step, ael_sort
 	.globl	_gl_eb
 	.globl	_gl_ec
@@ -77,7 +77,8 @@ EP_ORD		= 0xC000 + 0x1200	; порядок по x: слоты, старшие б
 EP_OUH		= 0xC000 + 0x1300
 EP_FREE		= 0xC000 + 0x1400	; свободные слоты
 EP_BUCKET	= 0xC000 + 0x1500	; корзины (копия из рабочей страницы после рёбер)
-EP_POOL		= 0xC000 + 0x1700	; записи рёбер (копии буфера рабочей страницы по ячейкам)
+EP_SHF		= 0xC000 + 0x1700	; флаги строк с тенью (globe.c: globe_shadow)
+EP_POOL		= 0xC000 + 0x1800	; записи рёбер (копии буфера рабочей страницы по ячейкам)
 WB_BUCKET	= 0xC000 + 0x3080	; рабочая страница: корзины на время рёбер
 WB_COV		= 0xC000 + 0x3300	;   покрытие строк рёбрами (разности, globe.c)
 EP_END		= 0xC000 + 0x4000 - 10
@@ -133,6 +134,7 @@ em_start: .ds	1			; пары: начало отрезка, правый край
 em_pr:	.ds	1
 em_tex:	.ds	1			; текстура отрезка
 em_first: .ds	1			; 1 — в строке уже был отрезок (регистры DMA продолжаются)
+em_row:	.ds	1			; rw_flush: строка (флаг тени EP_SHF)
 pf_t:	.ds	1
 fx_l:	.ds	1			; починка: текстура левее пары, справа от пары
 fx_r:	.ds	1
@@ -1232,6 +1234,9 @@ rw_row:
 	ld	(em_first), a
 	ld	a, (_gl_gtex)
 	ld	(em_tex), a
+	ld	a, #GH
+	sub	a, b
+	ld	(em_row), a
 	ld	a, 1 (ix)
 	call	rw_flush
 3$:	ld	de, #6
@@ -2044,6 +2049,12 @@ rw_emit:
 	ld	a, (rw_pend)
 	cp	a, #0xFF
 	call	nz, rw_pfill
+	ld	a, (rw_y)		; строка с тенью — свой вывод
+	ld	l, a
+	ld	h, #>EP_SHF
+	ld	a, (hl)
+	or	a, a
+	jp	nz, rw_emit_s
 	ld	bc, #0x27AF		; адреса DMA строки — после конца прошлого отрезка
 1$:	in	a, (c)
 	jp	m, 1$
@@ -2152,6 +2163,125 @@ rw_emit:
 	exx
 	ret
 
+;; Строка с тенью (EP_SHF): как rw_emit, отрезок — em_run_s (суша — BLT2 узора на подкладку
+;; суши L, океан — копия цвета O из x + 256 той же строки заднего буфера; globe_sh.c)
+rw_emit_s:
+	ld	bc, #0x27AF		; адреса DMA строки — после конца прошлого отрезка
+1$:	in	a, (c)
+	jp	m, 1$
+	ld	a, 0 (ix)
+	add	a, a
+	ld	b, #0x1A
+	out	(c), a			; SAL
+	ld	b, #0x1D
+	out	(c), a			; DAL
+	ld	a, 5 (ix)
+	ld	b, #0x1C
+	out	(c), a			; SAX
+	ld	a, 2 (ix)
+	ld	b, #0x1E
+	out	(c), a			; DAH
+	ld	a, 3 (ix)
+	inc	b
+	out	(c), a			; DAX
+	exx
+	ld	c, #0xAF
+	ld	d, 4 (ix)		; блок строки
+	ld	a, 1 (ix)
+	inc	a
+	ld	e, a			; pr + 1
+	exx
+	ld	a, (rw_lt)
+	ld	c, a			; текстура отрезка
+	ld	d, 0 (ix)		; начало — pl
+	ld	a, (rw_n)
+	ld	b, a
+	ld	hl, #EP_ORD
+2$:	ld	e, (hl)			; слот
+	inc	h
+	ld	a, (hl)			; граница (OUH)
+	dec	h
+	inc	l
+	push	hl
+	ld	l, e
+	ld	h, #>EP_STR
+	ld	e, (hl)			; E — справа
+	pop	hl
+	cp	a, d
+	jr	c, 6$			; не правее начала: только текстура
+	jr	z, 6$
+	exx
+	cp	a, e
+	exx
+	jr	nc, 8$			; за правым краем — дальше не смотреть
+	ex	af, af'
+	ld	a, e
+	cp	a, c
+	jr	z, 7$			; текстура не меняется
+	ex	af, af'			; A — граница: отрезок [D, A - 1] текстуры C
+	push	hl
+	ld	h, a
+	sub	a, d
+	dec	a
+	ld	l, a			; слов - 1
+	ld	a, c
+	call	em_run_s
+	ld	d, h			; новое начало — граница
+	ld	c, e			; текстура — справа от ребра
+	pop	hl
+	djnz	2$
+	jr	8$
+6$:	ld	c, e
+7$:	djnz	2$
+8$:	exx				; последний отрезок [D, pr]
+	ld	a, e
+	exx
+	dec	a
+	sub	a, d
+	ret	c
+	ld	l, a			; слов - 1
+	ld	a, c
+	jp	em_run_s
+
+;; Отрезок строки с тенью: A — текстура, L — слов − 1 (основной набор); второй набор — как в
+;; rw_emit (C' = #AF, D' — блок строки). Младший байт адреса источника продолжается: у узора и
+;; у x + 256 строки он тот же, что у приёмника.
+em_run_s:
+	exx
+	cp	a, #13
+	jr	z, 2$
+	add	a, d
+	ld	b, #0x27
+1$:	in	h, (c)			; ждать конца прошлого
+	jp	m, 1$
+	ld	b, #0x1B
+	out	(c), a			; SAH — блок узора
+	ld	a, 5 (ix)
+	ld	b, #0x1C
+	out	(c), a			; SAX — страница узоров строки
+	ld	h, #0x46		; BLT2 по полубайтам с насыщением: узор + L = getLandShadow
+	jr	4$
+2$:	ld	b, #0x27
+3$:	in	h, (c)
+	jp	m, 3$
+	ld	a, 2 (ix)
+	inc	a
+	ld	b, #0x1B
+	out	(c), a			; SAH — x + 256 строки заднего буфера (цвет океана)
+	ld	a, 3 (ix)
+	ld	b, #0x1C
+	out	(c), a			; SAX — страница строки
+	ld	h, #1			; копия
+4$:	exx
+	ld	a, l
+	exx
+	ld	b, #0x26
+	out	(c), a			; DMALen
+	inc	b
+	out	(c), h			; DMACtrl
+	exx
+	ret
+
 ;; Строка без рёбер: событие края строки, иначе текстура края прошлой строки; неизвестна —
 ;; строка ждёт первой строки с рёбрами
 rw_band:
@@ -2177,6 +2307,8 @@ rw_band:
 	ld	(rw_pend), a
 	ret
 2$:	ld	(em_tex), a
+	ld	a, (rw_y)
+	ld	(em_row), a
 	ld	a, (em_pr)
 	jp	rw_flush
 
@@ -2207,6 +2339,9 @@ rw_pfill:
 	ld	(em_first), a
 	ld	a, (pf_t)
 	ld	(em_tex), a
+	ld	a, c
+	dec	a
+	ld	(em_row), a
 	ld	a, 1 (ix)
 	call	rw_flush
 3$:	pop	bc
@@ -2258,13 +2393,44 @@ rw_flush:
 	ld	a, 3 (ix)
 	inc	b
 	out	(c), a			; DAX
-4$:	ld	b, #0x1B
+4$:	ld	a, (em_row)		; строка с тенью (EP_SHF)
+	push	hl
+	ld	l, a
+	ld	h, #>EP_SHF
+	ld	a, (hl)
+	pop	hl
+	or	a, a
+	jr	nz, 5$
+	ld	b, #0x1B
 	out	(c), d			; SAH — блок
 	ld	b, #0x26
 	out	(c), e			; DMALen
 	inc	b
 	ld	a, #1
 	out	(c), a			; DMACtrl: RAM -> RAM, старт
+	ret
+5$:	ld	a, (em_tex)		; тень: суша — BLT2 узора на подкладку L, океан — копия x + 256
+	cp	a, #13
+	jr	z, 6$
+	ld	b, #0x1B
+	out	(c), d			; SAH — блок
+	ld	a, 5 (ix)
+	ld	b, #0x1C
+	out	(c), a			; SAX — страница узоров
+	ld	a, #0x46		; BLT2 по полубайтам, насыщение
+	jr	7$
+6$:	ld	a, 2 (ix)
+	inc	a
+	ld	b, #0x1B
+	out	(c), a			; SAH — x + 256 строки заднего буфера
+	ld	a, 3 (ix)
+	ld	b, #0x1C
+	out	(c), a			; SAX
+	ld	a, #1
+7$:	ld	b, #0x26
+	out	(c), e			; DMALen
+	inc	b
+	out	(c), a			; DMACtrl
 	ret
 
 ;; Шаг рёбер по порядку: u += шаг (новый старший байт — в OUH); ребро, у которого строка

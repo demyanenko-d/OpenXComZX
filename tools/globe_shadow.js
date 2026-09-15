@@ -104,6 +104,7 @@ function picture(lonD, latD, zoom, daylight, out) {
 	let seed = 12345; const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) >>> 16;
 	const noise60 = Array.from({ length: 3600 }, () => rnd() % 4);
 	const pat = Array.from({ length: 256 }, () => rnd() % 4), shift = Array.from({ length: 200 }, () => rnd() & 0xFE);
+	const pat2 = Array.from({ length: 256 }, () => rnd() & 1);
 	const isOcean = c => c >= M.OCEAN && c < M.OCEAN + 32;
 	const land = (c, sh) => { if (!sh) return c; const d = c & 0xF0, e = c + Math.floor(sh / 3); return e > d + 15 ? d + 15 : e; };
 	const truth = new Int16Array(256 * 200).fill(-1), ours = new Int16Array(256 * 200).fill(-1);
@@ -119,7 +120,9 @@ function picture(lonD, latD, zoom, daylight, out) {
 		truth[y * 256 + x] = isOcean(c) ? M.OCEAN + sh : land(c, sh);
 		// схема: уровень по левому пикселю пары
 		const xp = x & ~1, exp = (xp + 0.5 - 128) / R, qp = exp * exp + ey * ey;
-		const k = qp < 1 ? Math.floor(shadeOf(exp * s[0] + ey * s[1] + Math.sqrt(1 - qp) * s[2]) / 3) : Math.floor(shadeOf(dd) / 3);
+		let k = qp < 1 ? Math.floor(shadeOf(exp * s[0] + ey * s[1] + Math.sqrt(1 - qp) * s[2]) / 3) : Math.floor(shadeOf(dd) / 3);
+		// MERGE: полоса b = число границ 1,3,5,7,9 (уровни 2b−1, 2b); узор — растр 50/50 из двух
+		if (process.env.MERGE) { const b = [1, 3, 5, 7, 9].filter(q => k >= q).length; k = b === 0 ? 0 : 2 * b - ((pat2[(x + shift[y] * 3) & 255]) ? 1 : 0); }
 		const vk = k === 10 ? 31 : 3 * k + 1, nn = pat[(x + shift[y]) & 255], sv = Math.max(0, vk - nn);
 		ours[y * 256 + x] = isOcean(c) ? M.OCEAN + sv : (() => { const d = c & 0xF0, e = c + Math.floor(sv / 3); return e > d + 15 ? d + 15 : e; })();
 		// разница в шагах тени (для суши — в шагах полубайта, океан — в шагах 0..31)
@@ -215,6 +218,104 @@ function chains(lonD, latD, zoom, daylight, N) {
 	return { diff, tot, far, nCross };
 }
 
+// ---- уровни по строкам таблицей пролётов (схема движка). Эллипс уровня k на экране —
+// сдвиг R·D_k·(sx, sy) и масштаб a_k = √(1 − D_k²) ≈ 1 эллипса E0 (проекция большого круга
+// ⟂ s). Таблица E0 на кадр: для смещения v (пиксели, целые) от центра —
+// X = (−sx·sy·v ∓ |sz|·√(A2·R² − v²)) / A2, A2 = 1 − sy². Строка y, уровень k:
+// v = (Y − cy_k) / a_k (накопитель 8.8 по строкам), x = cx_k + a_k·T[v]. Видимость: дуга
+// уровня между точками касания края (z = 0) — по сторонам L/R диапазоны v. Порядок
+// пересечений — вложенность (солнце к зрителю, sz > 0 — ночь по краям строки: L — k по
+// убыванию, уровень −1; R — по возрастанию, +1; sz < 0 — наоборот). Концы строки — точный
+// уровень крайних пар (таблицы t = TX + TY + TZ в движке). MERGE — только границы 1,3,5,7,9
+// (полосы по два уровня, растр); HOLD — считать чётные строки, нечётные повторяют.
+function spans(lonD, latD, zoom, daylight, opt = {}) {
+	const R = ZR[zoom], s = sunDir(lonD, latD, daylight), [sx, sy, sz] = s;
+	const A2 = Math.max(1e-9, sx * sx + sz * sz), asz = Math.abs(sz);
+	const ks = opt.merge ? [1, 3, 5, 7, 9] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+	const H = Math.sqrt(A2) * R;                         // полувысота E0 (пиксели)
+	const tab0 = v => {                                  // E0: X левого / правого (пиксели) или null
+		const q = A2 * R * R - v * v;
+		if (q < 0) return null;
+		const xc = -sx * sy * v / A2, w = asz * Math.sqrt(q) / A2;
+		return [xc - w, xc + w];
+	};
+	// GRID — таблица в узлах через GRID строк, между ними — линейно (узел за краем — край)
+	const G = opt.grid || 1;
+	const tab = G === 1 ? tab0 : v => {
+		const a = Math.floor(v / G) * G, f = (v - a) / G, t0 = tab0(a), t1 = tab0(a + G);
+		if (t0 && t1) return [t0[0] + (t1[0] - t0[0]) * f, t0[1] + (t1[1] - t0[1]) * f];
+		return tab0(v) && (t0 || t1) ? (t0 || t1) : null;
+	};
+	// точка E0 (единичный круг ⟂ s) по смещению η (доли R) и стороне — z для видимости
+	const lev = ks.map(k => {
+		const D = -TB[k - 1] / 250, a = Math.sqrt(1 - D * D);
+		// видимость стороны: z точки уровня = D·sz + a·qz ≥ 0; qz на E0 при q.y = η:
+		// L: −sy·η·sz/A2 + sx·sgn(sz)·W/A2, R: −sy·η·sz/A2 − sx·sgn(sz)·W/A2, W = √(A2 − η²)
+		const sg = sz >= 0 ? 1 : -1;
+		const vis = (eta, side) => { const W = Math.sqrt(Math.max(0, A2 - eta * eta)); return D * sz + a * (-sy * eta * sz + (side ? -1 : 1) * sx * sg * W) / A2 >= 0; };
+		return { k, D, a, cx: R * D * sx, cy: R * D * sy, vis };
+	});
+	const Lsign = sz >= 0 ? -1 : 1;                      // смена уровня на пересечении L (R — обратная)
+	const exactLev = (p, y) => {
+		const X = 2 * p + 0.5 - 128, Y = y + 0.5 - 100, q = (X * X + Y * Y) / (R * R);
+		if (q >= 1) return -1;
+		const l = Math.floor(shadeOf((X * sx + Y * sy) / R + Math.sqrt(1 - q) * sz) / 3);
+		return opt.merge ? [1, 3, 5, 7, 9].filter(k => l >= k).length : l;
+	};
+	const out = new Int8Array(128 * 200).fill(-1);      // уровень (или полоса) пары
+	let nInt = 0;
+	for (let y = 0; y < 200; y++) {
+		const Y = y + 0.5 - 100;
+		let p0 = -1, p1 = -1;
+		for (let p = 0; p < 128; p++) if (exactLev(p, y) >= 0) { if (p0 < 0) p0 = p; p1 = p; }
+		if (p0 < 0) continue;
+		const yc = opt.hold ? (y & ~1) : y, Yc = yc + 0.5 - 100;   // строка расчёта
+		const lf = exactLev(p0, y), ll = exactLev(p1, y);
+		const cL = [], cR = [];
+		for (const L of lev) {
+			const v = (Yc - L.cy) / L.a;
+			let vi = Math.round(v), t = tab(vi);
+			if (opt.interp) {                            // линейно между целыми v (дробь 1/SUB)
+				const sub = opt.interp, vq = Math.floor(v * sub) / sub, v0 = Math.floor(vq), f = vq - v0, t0 = tab(v0), t1 = tab(v0 + 1);
+				if (t0 && t1) { t = [t0[0] + (t1[0] - t0[0]) * f, t0[1] + (t1[1] - t0[1]) * f]; vi = vq; }
+				else if (t0 || t1) { t = t0 || t1; vi = t0 ? v0 : v0 + 1; }
+			}
+			if (!t) continue;
+			const eta = vi / R;
+			for (let side = 0; side < 2; side++) {
+				if (!L.vis(eta, side)) continue;
+				const xq = 512 + 4 * (L.cx + L.a * t[side]);
+				const pc = Math.ceil((xq - 2) / 8);
+				(side ? cR : cL).push({ k: L.k, pc });
+			}
+		}
+		// порядок по вложенности, монотонно
+		const ordL = sz >= 0 ? (a, b) => b.k - a.k : (a, b) => a.k - b.k, ordR = sz >= 0 ? (a, b) => a.k - b.k : (a, b) => b.k - a.k;
+		cL.sort(ordL); cR.sort(ordR);
+		const cr = [...cL.map(c => ({ pc: c.pc, d: Lsign })), ...cR.map(c => ({ pc: c.pc, d: -Lsign }))];
+		let m = -1e9; for (const c of cr) { if (c.pc < m) c.pc = m; m = c.pc; }
+		const act = cr.filter(c => c.pc > p0 && c.pc <= p1);
+		let cur = lf, ci = 0, prev = -1;
+		const top = opt.merge ? 5 : 10;
+		for (let p = p0; p <= p1; p++) {
+			while (ci < act.length && act[ci].pc <= p) { cur = Math.max(0, Math.min(top, cur + act[ci].d)); ci++; }
+			const l = ci === act.length && act.length ? ll : cur;
+			out[y * 128 + p] = l;
+			if (l !== prev) { nInt++; prev = l; }
+		}
+	}
+	// сверка с точным уровнем пары
+	let diff = 0, tot = 0, far = 0;
+	for (let y = 0; y < 200; y++) for (let p = 0; p < 128; p++) {
+		const e = exactLev(p, y);
+		if (e < 0) continue;
+		tot++;
+		const d = Math.abs(out[y * 128 + p] - e);
+		if (d) { diff++; if (d > 1) far++; }
+	}
+	return { diff, tot, far, nInt, out };
+}
+
 // тень без ограничения сверху (для вычитания шума — как temp.x до Clamp в getShadowValue)
 function shadeOfRaw(d) {
 	const t = -250 * d;
@@ -225,7 +326,19 @@ function shadeOfRaw(d) {
 
 if (require.main === module) {
 	const a = process.argv.slice(2).map(Number);
-	if (process.env.CHAINS) {
+	if (process.env.SPANS) {
+		for (const hold of [false, true]) {
+			const line = [];
+			for (let z = 0; z < 6; z++) {
+				let d = 0, t = 0, f = 0, ni = 0, v = 0;
+				for (let lon = 0; lon < 360; lon += 45) for (const lat of [-50, 0, 35]) for (const dl of [0, 0.15, 0.3, 0.45, 0.7, 0.9]) {
+					const r = spans(lon, lat, z, dl, { merge: z >= 3, hold }); d += r.diff; t += r.tot; f += r.far; ni += r.nInt; v++;
+				}
+				line.push(`z${z} ${(100 * d / t).toFixed(2)}% far ${f} int/view ${(ni / v).toFixed(0)}`);
+			}
+			console.log(`hold ${hold}: ` + line.join('; '));
+		}
+	} else if (process.env.CHAINS) {
 		for (const N of [16, 24, 32, 48, 64]) {
 			const line = [];
 			for (let z = 0; z < 6; z++) {

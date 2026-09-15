@@ -79,6 +79,66 @@ ${rows(atan, 16)}
 #endif
 `);
 
+// Тень (src/ui/globe_sh.c, банк 25): по зумам 0..5 и строкам 0..199 — пары диска pl, pr (как
+// globe.c rows_init; строки нет — 255, 0) и z крайних пар (доли R x 255; пиксель вне диска —
+// 0) для точного уровня тени на концах строки
+const ZRAD = [90, 120, 180, 280, 450, 720];
+const shPL = [], shPR = [], shZF = [], shZL = [], shRH = [];
+for (const R of ZRAD) {
+	for (let y = 0; y < 200; y++) {
+		const v = 2 * y + 1 - 200, d = 4 * R * R - v * v;
+		let pl = 255, pr = 0;
+		if (d > 0) {
+			let s = 0; while ((s + 1) * (s + 1) < d) s++;
+			const a = Math.max(0, (255 - s + 1) >> 1), b = Math.min(255, (255 + s) >> 1);
+			if (a <= b) { pl = a >> 1; pr = b >> 1; }
+		}
+		// первая пара — правый пиксель (левый у края диска бывает вне диска), последняя — левый
+		const z8 = X => { const Y = y + 0.5 - 100, q = 1 - (X * X + Y * Y) / (R * R); return q > 0 ? Math.min(255, Math.round(255 * Math.sqrt(q))) : 0; };
+		shPL.push(pl); shPR.push(pr); shZF.push(pl <= pr ? z8(2 * pl + 1.5 - 128) : 0); shZL.push(pl <= pr ? z8(2 * pr + 0.5 - 128) : 0);
+		shRH.push(z8(0));                        // полухорда строки ρ / R x 255 (экстремум тени вдоль строки)
+	}
+}
+// пороги уровней в t (ночь уровня k — t > TB_k, как (Sint16) в shade_gradient)
+const TBK = [-34, -12, -8, -5, -2, 2, 5, 8, 14, 39];
+const shLutFull = [], shLutPair = [];
+for (let i = 0; i < 256; i++) {
+	const t = i - 128;
+	shLutFull.push(TBK.filter(b => t >= b).length);
+	shLutPair.push(TBK.filter((b, k) => !(k & 1) && t >= b).length);
+}
+let seed = 0x5A17;
+const shShift = [];
+for (let y = 0; y < 200; y++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; shShift.push((seed >> 16) & 0xFE); }
+fs.writeFileSync(path.join(__dirname, '..', 'src', 'ui', 'globe_sh_tab.h'), `// Сгенерировано tools/gen_globe_tab.js — не править вручную.
+// Тень глобуса (src/ui/globe_sh.c, банк 25): [зум * 200 + строка] — пары диска pl, pr (как
+// rows_init; строки нет — 255, 0), z крайних пар в долях R x 255 (первая — правый пиксель пары,
+// последняя — левый).
+#ifndef GLOBE_SH_TAB_H
+#define GLOBE_SH_TAB_H
+
+#include <stdint.h>
+
+// [(зум * 200 + строка) * 5]: pl, pr, zf, zl, rh — rh = ρ / R x 255, полухорда строки (уровень в
+// экстремуме e·s вдоль строки, зумы 0–1)
+const uint8_t sh_row[6000] = {
+${rows(shPL.map((v, i) => [v, shPR[i], shZF[i], shZL[i], shRH[i]]).flat(), 25)}
+};
+// Уровень тени по t = i − 128 (целое): все 10 порогов / только 1, 3, 5, 7, 9 (полосы по два)
+const uint8_t sh_lut_full[256] = {
+${rows(shLutFull, 16)}
+};
+const uint8_t sh_lut_pair[256] = {
+${rows(shLutPair, 16)}
+};
+// Сдвиг строки-образца шума по строке экрана (чётный: DMA пишет словами)
+const uint8_t sh_shift[200] = {
+${rows(shShift, 25)}
+};
+
+#endif
+`);
+
 // Четверти квадратов floor(n^2 / 4), n = 0..511 — для умножения 8x8 (a*b = q(a+b) - q(|a-b|)):
 // младшие байты — страницы 0 и 1, старшие — 2 и 3 области _GTAB (адрес кратен 256, банк 24).
 const lo = [], hi = [];

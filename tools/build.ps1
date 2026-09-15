@@ -47,6 +47,7 @@ $banks = @(
     @{ n = 22; page = 0x45; files = @('game\dogfight') }   # воздушный бой: логика
     @{ n = 23; page = 0x46; files = @('ui\scr_dogf') }     # воздушный бой: окна
     @{ n = 24; page = 0x47; files = @('ui\globe', 'ui\globe_s', 'ui\globe_sq'); tab = 0xBC00 }   # глобус (globe.md): globe_s.s — асм, globe_sq.s — таблица _GTAB с #BC00
+    @{ n = 25; page = 0x48; files = @('ui\globe_sh', 'ui\globe_sh_s') }   # тень глобуса (globe.md §6.4): globe_sh_s.s — асм
 )
 
 # Пакеты данных игры: выход конвертера OxzConv (tmp\sd\OXZ\<игра>), вшиваются в SPG.

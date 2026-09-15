@@ -24,28 +24,36 @@ click L
 waitmark 42 3000
 type globe
 key ENTER
+wait 8
 waitmark 32 3000
 shot tmp/shots/globe_cmp/z0.png
 peek _ctx+6 4
 key RIGHT
+wait 8
 waitmark 32 3000
 key DOWN
+wait 8
 waitmark 32 3000
 shot tmp/shots/globe_cmp/z0d.png
 peek _ctx+6 4
 key SS+K
+wait 8
 waitmark 32 3000
 shot tmp/shots/globe_cmp/z1.png
 peek _ctx+6 4
 key SS+K
+wait 8
 waitmark 32 3000
 key SS+K
+wait 8
 waitmark 32 3000
 shot tmp/shots/globe_cmp/z3.png
 peek _ctx+6 4
 key SS+K
+wait 8
 waitmark 32 3000
 key SS+K
+wait 8
 waitmark 32 3000
 shot tmp/shots/globe_cmp/z5.png
 peek _ctx+6 4

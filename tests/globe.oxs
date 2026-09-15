@@ -21,29 +21,37 @@ click L
 waitmark 42 3000
 type globe
 key ENTER
+wait 8
 waitmark 32 3000
 wait 10
 shot tmp/shots/globe/z0.png
 # поворот вправо и вниз (к югу)
 key RIGHT
+wait 8
 waitmark 32 3000
 shot tmp/shots/globe/z0_right.png
 key DOWN
+wait 8
 waitmark 32 3000
 shot tmp/shots/globe/z0_down.png
 key UP
+wait 8
 waitmark 32 3000
 # зумы 1..5 (SS+K), кнопка зума у GEOBORD — последний
 key SS+K
+wait 8
 waitmark 32 3000
 shot tmp/shots/globe/z1.png
 key SS+K
+wait 8
 waitmark 32 3000
 shot tmp/shots/globe/z2.png
 key SS+K
+wait 8
 waitmark 32 3000
 shot tmp/shots/globe/z3.png
 key SS+K
+wait 8
 waitmark 32 3000
 shot tmp/shots/globe/z4.png
 pokew _cursor_x 306
@@ -54,12 +62,16 @@ shot tmp/shots/globe/z5.png
 expect 06:0048 5
 # обратно на зум 0 (SS+J и кнопка)
 key SS+J
+wait 8
 waitmark 32 3000
 key SS+J
+wait 8
 waitmark 32 3000
 key SS+J
+wait 8
 waitmark 32 3000
 key SS+J
+wait 8
 waitmark 32 3000
 pokew _cursor_x 306
 pokew _cursor_y 190

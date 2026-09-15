@@ -54,7 +54,8 @@
 #define EP_BT     0x0000                // страница рёбер: текстура полосы строк без рёбер (#FE — нет)
 #define MAXCV     150                   // вершин / рёбер в ячейке (конвертер: до 144)
 #define EP_BUCKET 0x1500                // страница рёбер: корзины (копия из рабочей),
-#define EP_POOL   0x1700                //   записи рёбер
+#define EP_SHF    0x1700                //   флаги строк с тенью (globe_shadow),
+#define EP_POOL   0x1800                //   записи рёбер
 #define EP_ROW    0x0200                // страница рёбер (globe_s.s): записи строк (6 байт),
 #define EP_EVB    0x0700                //   события края: текстура ниже, выше, ключи
 #define EP_EVKB   0x0900
@@ -76,7 +77,7 @@ int32_t __mulsint2slong(int16_t a, int16_t b);
 static const int16_t zoom_r[GLOBE_ZOOMS] = { 90, 120, 180, 280, 450, 720 };   // Globe::setupRadii
 
 static uint8_t work = PG_NONE, epage = PG_NONE, strip_set = 0xFF;
-static uint8_t valid, v_zoom = 0xFF, bg_zoom = 0xFF, row_zoom = 0xFF, ocean;
+static uint8_t valid, v_zoom = 0xFF, bg_zoom = 0xFF, row_zoom = 0xFF, ocean, v_sun = 0xFF;
 static uint16_t v_lon;
 static int16_t v_lat, R;
 static uint8_t strip = PG_NONE;
@@ -278,7 +279,7 @@ static void bands(far_t gt, uint16_t lon, int16_t lat)
 
 extern volatile uint16_t frames;
 
-static void render(uint16_t lon, int16_t lat, uint8_t z)
+static void render(uint16_t lon, int16_t lat, uint8_t z, uint16_t sun)
 {
 	res_t rg, rt;
 	uint16_t h[3];
@@ -358,6 +359,10 @@ static void render(uint16_t lon, int16_t lat, uint8_t z)
 	far_copy(FAR(epage, EP_BT), FAR(work, WB_COV), 256);
 	pg_map3(epage);
 	bands(gt, lon, lat);
+	// тень (банк 25): подкладка суши и цвет океана строк заднего буфера, флаги строк
+	uint8_t sp = globe_shadow(lon, lat, z, sun, ocean);
+	if (sp != PG_NONE) far_copy(FAR(epage, EP_SHF), FAR(sp, GLOBE_SH_FLG), GLOBE_H);
+	else far_fill(FAR(epage, EP_SHF), 0, GLOBE_H);
 	gl_rows();
 	pg_map3(work);
 	dma_wait();
@@ -366,6 +371,8 @@ static void render(uint16_t lon, int16_t lat, uint8_t z)
 	dbg_puts(", cells "); dbg_dec(ncells);
 	dbg_puts(", edges "); dbg_dec(gl_nedge);
 	dbg_puts(", frames "); dbg_dec((uint16_t)(frames - t0));
+	dbg_puts(", view "); dbg_dec(lon); dbg_puts(" "); dbg_dec((uint16_t)lat);
+	dbg_puts(", sun "); dbg_dec(sun); dbg_puts(", shp "); dbg_dec(sp);
 	dbg_puts("\n");
 }
 
@@ -387,6 +394,7 @@ void globe_invalidate(void) __banked
 	bg_zoom = 0xFF;
 	v_zoom = 0xFF;
 	row_zoom = 0xFF;
+	v_sun = 0xFF;
 }
 
 void globe_draw(void) __banked
@@ -399,9 +407,10 @@ void globe_draw(void) __banked
 	if (strip == PG_NONE) strip = pg_alloc(8, 1);
 	if (epage == PG_NONE) epage = pg_alloc(1, 1);
 	if (work == PG_NONE || strip == PG_NONE || epage == PG_NONE) { dbg_puts("globe: no pages\n"); return; }
+	uint16_t sun = globe_sunlon();                // ST ещё в Win3
 	uint8_t old = pg_win3();
-	uint8_t vz = v_zoom;
-	if (!valid || z != vz || lon != v_lon || lat != v_lat) render(lon, lat, z);
+	uint8_t vz = v_zoom, se = (uint8_t)(sun >> 7), vs = v_sun;   // эпоха солнца: 0.7°
+	if (!valid || z != vz || lon != v_lon || lat != v_lat || se != vs) { render(lon, lat, z, sun); v_sun = se; }
 	blit();
 	pg_map3(old);
 }

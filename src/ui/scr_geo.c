@@ -21,6 +21,7 @@
 static char t1[80], t2[80];
 static char big_tmp[256];                // промежуточные str_fmt (список стран отчёта, сообщения с {2})
 static uint16_t tick_at;                 // кадр последнего такта времени (такт — раз в 5 кадров)
+static uint8_t geo_sun;                  // эпоха солнца (globe_sunlon >> 7) последней перерисовки тени
 static uint8_t icons_on;                 // нарисованы значки свёрнутых боёв
 uint8_t geo_dbg_attack;                  // сценарии: poke _geo_dbg_attack <база + 1> — штурм подставным НЛО
 extern uint8_t df_dbg_type;              // dogfight.c: тип подставного НЛО
@@ -859,6 +860,9 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			if (ST->minute != mi) ui_dirty(4);
 			if (ST->hour != h) ui_dirty(2);
 			if (ST->day != d) { ui_dirty(6); ui_dirty(7); ui_dirty(8); ui_dirty(9); }
+			// тень: солнце сдвинулось на эпоху (0.7°) — глобус перерисовать
+			uint8_t se = (uint8_t)(globe_sunlon() >> 7), gs = geo_sun;
+			if (se != gs) { geo_sun = se; ui_dirty(10); }
 			return 0;
 		}
 		break;
