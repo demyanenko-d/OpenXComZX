@@ -80,10 +80,10 @@ ${rows(atan, 16)}
 `);
 
 // Тень (src/ui/globe_sh.c, банк 25): по зумам 0..5 и строкам 0..199 — пары диска pl, pr (как
-// globe.c rows_init; строки нет — 255, 0) и z крайних пар (доли R x 255; пиксель вне диска —
-// 0) для точного уровня тени на концах строки
+// globe.c rows_init; строки нет — 255, 0); z центров блоков 8x4 (доли R x 255, вне диска — 0):
+// четверть — столбцы 0..15 (X = 8c − 124), строки блоков 0..24 (Y = 4b − 98), остальное зеркально
 const ZRAD = [90, 120, 180, 280, 450, 720];
-const shPL = [], shPR = [], shZF = [], shZL = [], shRH = [];
+const shRow = [], shZ8 = [];
 for (const R of ZRAD) {
 	for (let y = 0; y < 200; y++) {
 		const v = 2 * y + 1 - 200, d = 4 * R * R - v * v;
@@ -93,43 +93,31 @@ for (const R of ZRAD) {
 			const a = Math.max(0, (255 - s + 1) >> 1), b = Math.min(255, (255 + s) >> 1);
 			if (a <= b) { pl = a >> 1; pr = b >> 1; }
 		}
-		// первая пара — правый пиксель (левый у края диска бывает вне диска), последняя — левый
-		const z8 = X => { const Y = y + 0.5 - 100, q = 1 - (X * X + Y * Y) / (R * R); return q > 0 ? Math.min(255, Math.round(255 * Math.sqrt(q))) : 0; };
-		shPL.push(pl); shPR.push(pr); shZF.push(pl <= pr ? z8(2 * pl + 1.5 - 128) : 0); shZL.push(pl <= pr ? z8(2 * pr + 0.5 - 128) : 0);
-		shRH.push(z8(0));                        // полухорда строки ρ / R x 255 (экстремум тени вдоль строки)
+		shRow.push(pl, pr);
 	}
-}
-// пороги уровней в t (ночь уровня k — t > TB_k, как (Sint16) в shade_gradient)
-const TBK = [-34, -12, -8, -5, -2, 2, 5, 8, 14, 39];
-const shLutFull = [], shLutPair = [];
-for (let i = 0; i < 256; i++) {
-	const t = i - 128;
-	shLutFull.push(TBK.filter(b => t >= b).length);
-	shLutPair.push(TBK.filter((b, k) => !(k & 1) && t >= b).length);
+	for (let b = 0; b < 25; b++) for (let c = 0; c < 16; c++) {
+		const X = 8 * c - 124, Y = 4 * b - 98, q = 1 - (X * X + Y * Y) / (R * R);
+		shZ8.push(q > 0 ? Math.min(255, Math.round(255 * Math.sqrt(q))) : 0);
+	}
 }
 let seed = 0x5A17;
 const shShift = [];
 for (let y = 0; y < 200; y++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; shShift.push((seed >> 16) & 0xFE); }
 fs.writeFileSync(path.join(__dirname, '..', 'src', 'ui', 'globe_sh_tab.h'), `// Сгенерировано tools/gen_globe_tab.js — не править вручную.
-// Тень глобуса (src/ui/globe_sh.c, банк 25): [зум * 200 + строка] — пары диска pl, pr (как
-// rows_init; строки нет — 255, 0), z крайних пар в долях R x 255 (первая — правый пиксель пары,
-// последняя — левый).
+// Тень глобуса (src/ui/globe_sh.c, банк 25): пары диска по строкам, z центров блоков 8x4.
 #ifndef GLOBE_SH_TAB_H
 #define GLOBE_SH_TAB_H
 
 #include <stdint.h>
 
-// [(зум * 200 + строка) * 5]: pl, pr, zf, zl, rh — rh = ρ / R x 255, полухорда строки (уровень в
-// экстремуме e·s вдоль строки, зумы 0–1)
-const uint8_t sh_row[6000] = {
-${rows(shPL.map((v, i) => [v, shPR[i], shZF[i], shZL[i], shRH[i]]).flat(), 25)}
+// [(зум * 200 + строка) * 2]: pl, pr (как rows_init; строки нет — 255, 0)
+const uint8_t sh_row[2400] = {
+${rows(shRow, 20)}
 };
-// Уровень тени по t = i − 128 (целое): все 10 порогов / только 1, 3, 5, 7, 9 (полосы по два)
-const uint8_t sh_lut_full[256] = {
-${rows(shLutFull, 16)}
-};
-const uint8_t sh_lut_pair[256] = {
-${rows(shLutPair, 16)}
+// [зум * 400 + b * 16 + c]: z центра блока (столбец c 0..15, строка блоков b 0..24 — четверть;
+// столбцы 16..31 и строки 25..49 — зеркально) в долях R x 255, вне диска — 0
+const uint8_t sh_z8[2400] = {
+${rows(shZ8, 16)}
 };
 // Сдвиг строки-образца шума по строке экрана (чётный: DMA пишет словами)
 const uint8_t sh_shift[200] = {

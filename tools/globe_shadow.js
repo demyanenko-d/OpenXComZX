@@ -121,10 +121,21 @@ function picture(lonD, latD, zoom, daylight, out) {
 		// схема: уровень по левому пикселю пары
 		const xp = x & ~1, exp = (xp + 0.5 - 128) / R, qp = exp * exp + ey * ey;
 		let k = qp < 1 ? Math.floor(shadeOf(exp * s[0] + ey * s[1] + Math.sqrt(1 - qp) * s[2]) / 3) : Math.floor(shadeOf(dd) / 3);
+		// BLOCK=WxH: уровень блока — по его центру (за краем диска — точка края), ступенчато;
+		// OCEAN32 — ровная заливка (океан) берёт тень блока целиком (0..31), а не v_k уровня
+		let s32 = -1;
+		if (process.env.BLOCK) {
+			const [bw, bh] = process.env.BLOCK.split('x').map(Number);
+			const cx = Math.floor(x / bw) * bw + bw / 2, cy = Math.floor(y / bh) * bh + bh / 2;
+			const bx = (cx - 128) / R, by = (cy - 100) / R, bq = Math.min(1, bx * bx + by * by);
+			const sb = shadeOf(bx * s[0] + by * s[1] + Math.sqrt(1 - bq) * s[2]);
+			k = Math.floor(sb / 3);
+			if (process.env.OCEAN32) s32 = sb;
+		}
 		// MERGE: полоса b = число границ 1,3,5,7,9 (уровни 2b−1, 2b); узор — растр 50/50 из двух
 		if (process.env.MERGE) { const b = [1, 3, 5, 7, 9].filter(q => k >= q).length; k = b === 0 ? 0 : 2 * b - ((pat2[(x + shift[y] * 3) & 255]) ? 1 : 0); }
-		const vk = k === 10 ? 31 : 3 * k + 1, nn = pat[(x + shift[y]) & 255], sv = Math.max(0, vk - nn);
-		ours[y * 256 + x] = isOcean(c) ? M.OCEAN + sv : (() => { const d = c & 0xF0, e = c + Math.floor(sv / 3); return e > d + 15 ? d + 15 : e; })();
+		const vk = k === 10 ? 31 : 3 * k + 1, nn = process.env.NONOISE ? 0 : pat[(x + shift[y]) & 255], sv = Math.max(0, vk - nn);
+		ours[y * 256 + x] = isOcean(c) ? M.OCEAN + (s32 >= 0 ? Math.max(0, s32 - nn) : sv) : (() => { const d = c & 0xF0, e = c + Math.floor(sv / 3); return e > d + 15 ? d + 15 : e; })();
 		// разница в шагах тени (для суши — в шагах полубайта, океан — в шагах 0..31)
 		const dv = Math.abs(truth[y * 256 + x] - ours[y * 256 + x]);
 		sum += dv; n++; if (dv > 3) big++;
