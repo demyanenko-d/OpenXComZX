@@ -24,12 +24,13 @@ foreach ($z in $Zooms) {
 		'click L', 'waitmark 42 3000', 'type prof', 'key ENTER', 'waitmark 32 3000')
 	for ($i = 0; $i -lt $z; $i++) { $lines += @('key SS+K', 'wait 8', 'waitmark 32 3000') }
 	if ($Hour -ge 0) { $lines += @("poke 06:0038 $Hour", 'wait 300') }   # ST->hour; смена эпохи солнца — перерисовка
-	$lines += @('wait 10', 'profile on', 'key RIGHT', 'wait 8', 'waitmark 32 3000', 'profile off 200', 'exit 0')
+	$lines += @('wait 10', 'profile on', 'key RIGHT', 'wait 8', 'waitmark 32 3000', 'profile off 200 ops', 'exit 0')
 	$scr = "tmp\globeprof_z$z.oxs"                 # run.ps1 ждёт путь от корня проекта
 	[IO.File]::WriteAllText((Join-Path $root $scr), ($lines -join "`n") + "`n")
 	Push-Location $root
 	$outp = & powershell -File (Join-Path $root 'tools\run.ps1') -Script $scr -Headless 2>&1 | Out-String
 	Pop-Location
+	[IO.File]::WriteAllText((Join-Path $root "tmp\prof_z$z.txt"), $outp)   # для tools\globeprof_sum.js
 	$tot = 0; $sum = @{}; foreach ($g in $groups.Keys) { $sum[$g] = 0 }; $other = 0
 	foreach ($l in ($outp -split "`n")) {
 		if ($l -match 'OXZ: profile (\d+) T') { $tot = [double]$Matches[1] }
