@@ -25,6 +25,14 @@ static uint8_t icons_on;                 // нарисованы значки с
 uint8_t geo_dbg_attack;                  // сценарии: poke _geo_dbg_attack <база + 1> — штурм подставным НЛО
 extern uint8_t df_dbg_type;              // dogfight.c: тип подставного НЛО
 extern volatile uint16_t frames;         // crt0.s
+// Удержание кнопок поворота и зума (GEOBORD) мышью — повтор, как в OpenXcom (btnRotate*Press):
+// кнопка (30..35), кадр следующего повтора; прямоугольники кнопок (как HOT ниже)
+static uint8_t rep_arg;
+static uint16_t rep_at;
+static const uint8_t rep_box[6][4] = {
+	{ 259, 176, 12, 10 }, { 283, 176, 12, 10 }, { 271, 162, 13, 12 }, { 271, 187, 13, 12 },
+	{ 295, 156, 23, 23 }, { 300, 182, 13, 17 },
+};
 
 // ---------------------------------------------------------------- правила
 
@@ -810,8 +818,12 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			else if (arg == 10) globe_click();
 			else if (arg == 11) { ST->speed = 0; ctx.base = ST->sel_base; UI_GO(A_PUSH, SCR_BASESCAPE); }   // timerReset
 			else if (arg == 12) { ctx.tkind = TGT_NONE; ctx.flag = 0; UI_GO(A_PUSH, SCR_INTERCEPT); }   // без цели -> выбор цели
-			else if (arg >= 30 && arg <= 33) rotate(arg - 30);
-			else if (arg == 34 || arg == 35) zoom(arg == 34 ? 1 : -1);
+			else if (arg >= 30 && arg <= 35) {
+				if (arg <= 33) rotate(arg - 30);
+				else zoom(arg == 34 ? 1 : -1);
+				rep_arg = arg;                       // удержание мышью — повтор через 12 кадров
+				rep_at = frames + 12;
+			}
 		}
 		if (ev == EVT_KEY) {                       // стрелки ZX (CS+5..8) — вращение (keyGeoLeft …)
 			static const uint8_t dir[4] = { 0, 3, 2, 1 };   // влево, вниз, вверх, вправо
@@ -819,6 +831,17 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			break;
 		}
 		if (ev == EVT_TICK) {
+			if (rep_arg) {                           // кнопка поворота / зума держится
+				uint8_t a = rep_arg;
+				const uint8_t *r = rep_box[a - 30];
+				if (!(mouse_buttons & 1)) rep_arg = 0;
+				else if ((int16_t)(frames - rep_at) >= 0 && cursor_x >= r[0] && cursor_x < r[0] + r[2] &&
+					cursor_y >= r[1] && cursor_y < r[1] + r[3]) {
+					rep_at = frames + 2;
+					if (a <= 33) rotate(a - 30);
+					else zoom(a == 34 ? 1 : -1);
+				}
+			}
 			if (geo_dbg_attack) { dbg_attack(geo_dbg_attack - 1); geo_dbg_attack = 0; }
 			if (gev_n) { show_event(); break; }     // сначала — непоказанные события
 			if (df_count) {                          // бои: развёрнутый — окна, время стоит

@@ -34,7 +34,7 @@
 	.optsdcc -mz80 sdcccall(1)
 
 	.globl	_gl_edges, edge1, edge1s, e_rows, e_fast, hclip, lerpz, xclip, lerpx, div32, eslope, bord_ev, e_store
-	.globl	_gl_rows, ael_ins, ai_cmp, ael_fix, fx_pair, rw_emit, rw_band, rw_pfill, rw_flush, ael_step, ael_sort
+	.globl	_gl_rows, ael_ins, ai_fix2, f2_near, f2_score, ai_cmp, ael_fix, fx_pair, rw_emit, rw_band, rw_pfill, rw_flush, ael_step, ael_sort
 	.globl	_gl_eb
 	.globl	_gl_ec
 	.globl	_gl_res
@@ -43,6 +43,7 @@
 	.globl	_gl_eptr
 	.globl	_gl_nedge
 	.globl	_gl_limb
+	.globl	_gl_sptr
 	.globl	_gl_gtex
 	.globl	_recip_tab
 	.globl	_gl_project, kt_put16, kt_lo16, mul8e, mulu16
@@ -51,7 +52,6 @@
 	.globl	_gl_pd
 	.globl	_gl_pn
 	.globl	_gl_ktab
-	.globl	_gl_ztab
 	.globl	_gl_k
 	.globl	_gl_kpg
 	.globl	_gl_sq
@@ -71,8 +71,9 @@ EP_STR		= 0xC000 + 0x1100
 EP_ORD		= 0xC000 + 0x1200	; порядок по x: слоты, старшие байты u (страница выше)
 EP_OUH		= 0xC000 + 0x1300
 EP_FREE		= 0xC000 + 0x1400	; свободные слоты
-EP_BUCKET	= 0xC000 + 0x2210	; корзины и рёбра — с тех же смещений в рабочей странице
-EP_POOL		= 0xC000 + 0x23A0	;   (запись рёбер), потом копия DMA в страницу рёбер
+EP_BUCKET	= 0xC000 + 0x1500	; корзины (копия из рабочей страницы после рёбер)
+EP_POOL		= 0xC000 + 0x1700	; записи рёбер (копии буфера рабочей страницы по ячейкам)
+WB_BUCKET	= 0xC000 + 0x3080	; рабочая страница: корзины на время рёбер
 EP_END		= 0xC000 + 0x4000 - 10
 AEL_MAX		= 127
 PAGE3_PORT	= 0x13AF
@@ -94,8 +95,8 @@ e_xa:	.ds	2			; концы (Q2)
 e_ya:	.ds	2
 e_xb:	.ds	2
 e_yb:	.ds	2
-e_za:	.ds	1			; z концов (Q6)
-e_zb:	.ds	1
+e_za:	.ds	2			; z концов (Q12)
+e_zb:	.ds	2
 e_lba:	.ds	1			; 1 — конец на левом краю (окна или диска)
 e_lbb:	.ds	1
 e_r0:	.ds	2			; первая / последняя строка
@@ -105,9 +106,8 @@ e_u:	.ds	2			; u первой строки
 e_neg:	.ds	1
 e_dy:	.ds	2			; быстрый путь: dy, |dx| (младший байт)
 e_dxl:	.ds	1
-lz_a:	.ds	1
-lz_d:	.ds	1
-lz_lo:	.ds	2
+lz_a:	.ds	2			; горизонт: z переднего конца, разность z
+lz_d:	.ds	2
 lx_s:	.ds	1
 mu_a:	.ds	2
 mu_b:	.ds	2
@@ -141,6 +141,9 @@ ai_sl:	.ds	1			; вставка: слот, старший байт u, место
 ai_uh:	.ds	1
 ai_k:	.ds	1
 fx_k:	.ds	1			; починка: место p
+f2_bs:	.ds	1			; вставка в кучку: лучшая оценка, место, границы
+f2_bk:	.ds	1
+f2_hi:	.ds	1
 
 	.area	_BANK24
 
@@ -171,7 +174,7 @@ _gl_edges::
 	pop	ix
 	ret
 
-;; Концы (x, y, z) из проекций по смещению DE -> (IX + 0..4)
+;; Концы (x, y, z) из проекций по смещению DE -> X, Y, Z
 	.macro	VLOAD	X, Y, Z
 	ld	hl, (_gl_res)
 	add	hl, de
@@ -185,8 +188,10 @@ _gl_edges::
 	ld	d, (hl)
 	inc	hl
 	ld	(Y), de
-	ld	a, (hl)
-	ld	(Z), a
+	ld	e, (hl)
+	inc	hl
+	ld	d, (hl)
+	ld	(Z), de
 	.endm
 
 ;; Быстрый путь: оба конца перед горизонтом, x обоих в [0, 1023], не горизонтальное —
@@ -213,14 +218,14 @@ edge1:
 	ld	bc, (_gl_res)
 	add	hl, bc			; HL = &A
 	push	hl
-	ld	hl, #4
+	ld	hl, #5
 	add	hl, de
-	ld	a, (hl)			; zb
+	ld	a, (hl)			; zb (старший байт)
 	pop	hl
 	push	hl
-	ld	bc, #4
+	ld	bc, #5
 	add	hl, bc
-	ld	c, (hl)			; za
+	ld	c, (hl)			; za (старший байт)
 	pop	hl
 	ld	b, a
 	and	a, c
@@ -675,9 +680,11 @@ e_fast:
 	ld	hl, #0
 	ld	(e_r0), hl
 
-;; Запись ребра (e_u, e_s, e_r1, e_tl, e_tr) в корзину строки e_r0
+;; Запись ребра (e_u, e_s, e_r1, e_tl, e_tr) в корзину строки e_r0: байты — в буфер рабочей
+;; страницы (_gl_sptr), адрес записи и связи — в странице рёбер (_gl_eptr; буфер туда копирует
+;; globe.c после ячейки), корзины — в рабочей странице (WB_BUCKET)
 e_store:
-	ld	hl, (_gl_eptr)
+	ld	hl, (_gl_sptr)
 	ld	de, (e_u)
 	ld	(hl), e
 	inc	hl
@@ -701,7 +708,7 @@ e_store:
 	ex	de, hl			; DE = +8
 	ld	hl, (e_r0)		; корзина первой строки
 	add	hl, hl
-	ld	bc, #EP_BUCKET
+	ld	bc, #WB_BUCKET
 	add	hl, bc
 	ld	c, (hl)			; прежнее первое -> +8
 	inc	hl
@@ -710,19 +717,22 @@ e_store:
 	ld	(hl), c
 	inc	hl
 	ld	(hl), b
-	ld	bc, #-9
-	add	hl, bc			; начало записи
+	ld	bc, (_gl_eptr)		; в корзину — адрес записи в странице рёбер
 	ex	de, hl
-	ld	(hl), d			; в корзину
+	ld	(hl), b
 	dec	hl
-	ld	(hl), e
-	ld	hl, #10
+	ld	(hl), c
+	ld	de, #10
+	ld	hl, (_gl_sptr)
+	add	hl, de
+	ld	(_gl_sptr), hl
+	ld	hl, (_gl_eptr)
 	add	hl, de
 	ld	(_gl_eptr), hl
 	ld	hl, (_gl_nedge)
 	inc	hl
 	ld	(_gl_nedge), hl
-1$:	ret
+	ret
 
 ;; Событие левого края: точка края y = HL (Q2) — ниже неё текстура D, выше E; порядок C
 ;; (в одной точке: 0 — у ребра отсечён верх, 1 — горизонтальное, 2 — отсечён низ). Строка
@@ -770,13 +780,13 @@ bord_ev:
 	out	(c), a
 	ret
 
-;; Горизонт (z в Q6): оба конца за ним — NZ (ребро не нужно); один — заменяется точкой
+;; Горизонт (z в Q12): оба конца за ним — NZ (ребро не нужно); один — заменяется точкой
 ;; ребра с z = 0: P = F + (K - F) · zF / (zF - zK) (проекция линейна по 3D; F — передний
 ;; конец, K — задний); на зумах 0–1 (_gl_limb) точка левее центра — на левом краю диска.
 hclip:
-	ld	a, (e_za)
+	ld	a, (e_za + 1)
 	ld	c, a
-	ld	a, (e_zb)
+	ld	a, (e_zb + 1)
 	ld	b, a
 	and	a, c
 	rlca
@@ -789,14 +799,16 @@ hclip:
 	jr	nz, 3$
 	xor	a, a
 	ret
-2$:	ld	a, b			; A за горизонтом: F = B
-	sub	a, c
-	ld	(lz_d), a		; zB - zA
+2$:	ld	hl, (e_zb)		; A за горизонтом: F = B
+	ld	(lz_a), hl
+	ld	de, (e_za)
+	or	a, a
+	sbc	hl, de
+	ld	(lz_d), hl		; zB - zA
 	ld	hl, (e_xa)
 	ld	de, (e_xb)
 	or	a, a
 	sbc	hl, de
-	ld	a, (e_zb)
 	call	lerpz
 	ld	de, (e_xb)
 	add	hl, de
@@ -807,21 +819,22 @@ hclip:
 	ld	de, (e_yb)
 	or	a, a
 	sbc	hl, de
-	ld	a, (e_zb)
 	call	lerpz
 	ld	de, (e_yb)
 	add	hl, de
 	ld	(e_ya), hl
 	xor	a, a
 	ret
-3$:	ld	a, c			; B за горизонтом: F = A
-	sub	a, b
-	ld	(lz_d), a		; zA - zB
+3$:	ld	hl, (e_za)		; B за горизонтом: F = A
+	ld	(lz_a), hl
+	ld	de, (e_zb)
+	or	a, a
+	sbc	hl, de
+	ld	(lz_d), hl		; zA - zB
 	ld	hl, (e_xb)
 	ld	de, (e_xa)
 	or	a, a
 	sbc	hl, de
-	ld	a, (e_za)
 	call	lerpz
 	ld	de, (e_xa)
 	add	hl, de
@@ -832,7 +845,6 @@ hclip:
 	ld	de, (e_ya)
 	or	a, a
 	sbc	hl, de
-	ld	a, (e_za)
 	call	lerpz
 	ld	de, (e_ya)
 	add	hl, de
@@ -853,55 +865,28 @@ limb_l:
 	inc	a
 	ret
 
-;; HL = HL * A / lz_d (HL со знаком, A — 0..64, lz_d — 1..128), к нулю
+;; HL = HL · lz_a / lz_d (HL со знаком, 0 <= lz_a <= lz_d < 32768), частное к нулю
 lerpz:
-	ld	(lz_a), a
-	ld	b, #0
+	ld	a, h
+	ld	(lx_s), a
 	bit	7, h
 	jr	z, 1$
 	ex	de, hl
 	ld	hl, #0
 	or	a, a
 	sbc	hl, de
-	inc	b
-1$:	push	bc
-	push	hl
-	ld	b, a
-	ld	c, l
-	call	mul8e			; младший байт * A
-	ld	(lz_lo), de
-	pop	hl
-	ld	a, (lz_a)
-	ld	b, a
-	ld	c, h
-	call	mul8e			; старший * A (<< 8)
-	ld	a, (lz_lo + 1)
-	add	a, e
-	ld	h, a
-	ld	a, (lz_lo)
-	ld	l, a
-	ld	a, d
-	adc	a, #0
-	ld	e, a			; E:HL — произведение
-	ld	a, (lz_d)
-	ld	c, a
-	xor	a, a			; E:HL / C (24 / 8, с восстановлением)
-	ld	b, #24
-2$:	add	hl, hl
-	rl	e
-	rla
-	cp	a, c
-	jr	c, 3$
-	sub	a, c
-	inc	l
-3$:	djnz	2$
-	pop	bc
-	bit	0, b
-	ret	z
-	ex	de, hl
+1$:	ld	de, (lz_a)
+	call	mulu16			; HL:DE = |HL| · zF
+	ld	bc, (lz_d)
+	call	div32			; DE = частное (<= |HL|)
+	ld	a, (lx_s)
+	rlca
+	jr	nc, 2$
 	ld	hl, #0
 	or	a, a
 	sbc	hl, de
+	ex	de, hl
+2$:	ex	de, hl
 	ret
 
 ;; Окно по x: [0, XR] (Q2). Оба конца левее / правее — NZ. Конец за краем заменяется точкой
@@ -1312,6 +1297,11 @@ ael_ins:
 	djnz	2$
 5$:	ld	a, l			; k
 	ld	(ai_k), a
+	ld	a, (_gl_limb)
+	or	a, a
+	call	nz, ai_fix2
+	ld	a, (ai_k)
+	ld	l, a
 	ld	a, (rw_n)		; сдвиг [k, n) вправо в ORD и OUH
 	sub	a, l
 	jr	z, 6$
@@ -1345,6 +1335,155 @@ ael_ins:
 	inc	(hl)
 	pop	de
 	jp	1$
+
+;; Зумы 0–1: место ai_k не согласовано по текстурам (слева — «справа» левого соседа или
+;; текстура края строки; справа — «слева» правого) — лучшее место среди соседей ближе
+;; полупары (|u - u нового| < 128): оценка 2 · слева + справа, при равной — ближе к ai_k.
+ai_fix2:
+	ld	a, (ai_k)
+	call	f2_score
+	cp	a, #3
+	ret	z			; согласовано
+	ld	(f2_bs), a
+	ld	a, (ai_k)
+	ld	(f2_bk), a
+	ld	c, a			; C = lo: влево, пока сосед близко
+1$:	ld	a, c
+	or	a, a
+	jr	z, 2$
+	dec	a
+	call	f2_near
+	jr	nc, 2$
+	dec	c
+	jr	1$
+2$:	ld	a, (ai_k)		; hi: вправо, пока сосед близко
+	ld	b, a
+3$:	ld	a, (rw_n)
+	cp	a, b
+	jr	z, 4$
+	ld	a, b
+	call	f2_near
+	jr	nc, 4$
+	inc	b
+	jr	3$
+4$:	ld	a, b
+	ld	(f2_hi), a
+5$:	ld	a, c			; места lo..hi
+	push	bc
+	call	f2_score
+	pop	bc
+	ld	e, a
+	ld	a, (f2_bs)
+	cp	a, e
+	jr	c, 6$			; лучше
+	jr	nz, 7$
+	ld	a, (ai_k)		; равная оценка: ближе к ai_k
+	sub	a, c
+	jr	nc, 51$
+	neg
+51$:	ld	d, a
+	ld	a, (ai_k)
+	ld	hl, #f2_bk
+	sub	a, (hl)
+	jr	nc, 52$
+	neg
+52$:	cp	a, d
+	jr	c, 7$
+	jr	z, 7$
+6$:	ld	a, e
+	ld	(f2_bs), a
+	ld	a, c
+	ld	(f2_bk), a
+7$:	ld	a, (f2_hi)
+	cp	a, c
+	jr	z, 8$
+	inc	c
+	jr	5$
+8$:	ld	a, (f2_bk)
+	ld	(ai_k), a
+	ret
+
+;; C — сосед на месте A (ORD) ближе полупары к новому: |u - u нового| < 128
+f2_near:
+	push	bc
+	ld	l, a
+	ld	h, #>EP_ORD
+	ld	l, (hl)			; слот соседа
+	ld	a, (ai_sl)
+	ld	e, a
+	ld	h, #>EP_SUL
+	ld	d, h
+	ld	a, (de)
+	sub	a, (hl)
+	ld	c, a
+	ld	h, #>EP_SUH
+	ld	d, h
+	ld	a, (de)
+	sbc	a, (hl)			; A:C = u нового - u соседа
+	jr	z, 1$
+	inc	a
+	jr	nz, 2$			; |разность| >= 256
+	ld	a, c			; -256 < разность < 0: близко, если >= -127 (C >= #81)
+	cp	a, #0x81
+	ccf
+	jr	3$
+1$:	ld	a, c
+	cp	a, #0x80		; 0 <= разность < 128
+	jr	3$
+2$:	or	a, a			; далеко: C = 0
+3$:	pop	bc
+	ret
+
+;; A = оценка места j = A: 2 — слева согласовано, +1 — справа (без изменения BC, IX)
+f2_score:
+	push	bc
+	ld	b, a
+	ld	a, (ai_sl)
+	ld	e, a
+	ld	c, #0
+	ld	a, b			; справа: j == n или STL[ORD[j]] == tr нового
+	ld	hl, #rw_n
+	cp	a, (hl)
+	jr	z, 1$
+	ld	l, b
+	ld	h, #>EP_ORD
+	ld	l, (hl)
+	ld	h, #>EP_STL
+	ld	a, (hl)
+	ld	d, #>EP_STR
+	ex	de, hl
+	cp	a, (hl)
+	ex	de, hl
+	jr	nz, 2$
+1$:	inc	c
+2$:	ld	a, b			; слева: STR[ORD[j - 1]] или текстура края == tl нового
+	or	a, a
+	jr	nz, 3$
+	ld	a, (rw_y)
+	ld	l, a
+	ld	h, #>EP_EVB
+	ld	a, (hl)
+	cp	a, #0xFE
+	jr	nz, 4$
+	ld	a, (rw_lt)
+	cp	a, #0xFE
+	jr	z, 5$			; края не знаем — согласовано
+	jr	4$
+3$:	dec	a
+	ld	l, a
+	ld	h, #>EP_ORD
+	ld	l, (hl)
+	ld	h, #>EP_STR
+	ld	a, (hl)
+4$:	ld	l, e
+	ld	h, #>EP_STL
+	cp	a, (hl)
+	jr	nz, 6$
+5$:	inc	c
+	inc	c
+6$:	ld	a, c
+	pop	bc
+	ret
 
 ;; Старшие байты u равны: C — ребро на месте HL (OUH) больше нового по (u, шаг со знаком).
 ;; Сохраняет BC, DE, HL.
@@ -1938,8 +2077,8 @@ ael_sort:
 ;; берётся в L один раз для всех констант: x копится в IX, y — в IY, z — в A'.
 ;;   x = 512 + K0·X + K1·Y         (страницы #C0.., #C4..)
 ;;   y = 400 + K2·X + K3·Y + K4·Z  (#C8.., #CC.., #D0..)
-;;   z = k5·X + k6·Y + k7·Z        (#D4, #D5, #D6); _gl_noz = 1 — ячейка вся на передней
-;;                                  стороне, z не считается (64)
+;;   z = k5·X + k6·Y + k7·Z        (#D4.., #D8.., #DC.., Q12; копится в HL'); _gl_noz = 1 —
+;;                                  ячейка вся на передней стороне, z не считается (4096)
 ;; Страницы константы K: P, P+1 — T_hi (младшие, старшие байты), P+2, P+3 — T_lo.
 
 PK0	= 0xC0
@@ -1948,6 +2087,8 @@ PK2	= 0xC8
 PK3	= 0xCC
 PK4	= 0xD0
 PZ0	= 0xD4
+PZ1	= 0xD8
+PZ2	= 0xDC
 
 	.macro	TADD	P, R			; R (IX / IY) += слово таблицы P по индексу L
 	ld	h, #P
@@ -1957,21 +2098,34 @@ PZ0	= 0xD4
 	add	R, bc
 	.endm
 
-	.macro	ZADD	P			; A' += байт таблицы P по индексу L
+	.macro	ZADD	P			; HL' += слово таблицы P по индексу L
 	ld	h, #P
-	ex	af, af'
-	add	a, (hl)
-	ex	af, af'
+	ld	c, (hl)
+	inc	h
+	ld	b, (hl)
+	push	bc
+	exx
+	pop	bc
+	add	hl, bc
+	exx
 	.endm
 
-	.macro	PJXY	ZX		; x, y (и z, если ZX = 1) вершины (DE) -> (pj_dst)
+	.macro	PJXY	ZX		; x, y (и z, если ZX = 1) вершины (DE) -> (pj_dst), 6 байт
 	ld	ix, #512
 	ld	iy, #400
+	.if	ZX
+	exx
+	ld	hl, #0
+	exx
+	.endif
 	ld	a, (de)			; X & 127
 	inc	de
 	ld	l, a
 	TADD	PK0+2, ix
 	TADD	PK2+2, iy
+	.if	ZX
+	ZADD	PZ0+2
+	.endif
 	ld	a, (de)			; X >> 7
 	inc	de
 	ld	l, a
@@ -1985,24 +2139,30 @@ PZ0	= 0xD4
 	ld	l, a
 	TADD	PK1+2, ix
 	TADD	PK3+2, iy
+	.if	ZX
+	ZADD	PZ1+2
+	.endif
 	ld	a, (de)			; Y >> 7
 	inc	de
 	ld	l, a
 	TADD	PK1, ix
 	TADD	PK3, iy
 	.if	ZX
-	ZADD	PZ0+1
+	ZADD	PZ1
 	.endif
 	ld	a, (de)			; Z & 127
 	inc	de
 	ld	l, a
 	TADD	PK4+2, iy
+	.if	ZX
+	ZADD	PZ2+2
+	.endif
 	ld	a, (de)			; Z >> 7
 	inc	de
 	ld	l, a
 	TADD	PK4, iy
 	.if	ZX
-	ZADD	PZ0+2
+	ZADD	PZ2
 	.endif
 	ld	hl, (pj_dst)
 	push	ix
@@ -2018,10 +2178,17 @@ PZ0	= 0xD4
 	ld	(hl), b
 	inc	hl
 	.if	ZX
-	ex	af, af'
-	ld	(hl), a
+	exx
+	push	hl
+	exx
+	pop	bc
+	ld	(hl), c
+	inc	hl
+	ld	(hl), b
 	.else
-	ld	(hl), #64
+	ld	(hl), #0
+	inc	hl
+	ld	(hl), #0x10
 	.endif
 	inc	hl
 	ld	(pj_dst), hl
@@ -2040,10 +2207,7 @@ _gl_project::
 	ld	a, (_gl_noz)
 	or	a, a
 	jp	nz, 5$
-1$:	ex	af, af'
-	xor	a, a
-	ex	af, af'
-	PJXY	1
+1$:	PJXY	1
 	ld	hl, #pj_n
 	dec	(hl)
 	jp	nz, 1$
@@ -2082,19 +2246,6 @@ _gl_ktab::
 	ld	a, (_gl_kpg)
 	add	a, #2
 	jp	kt_lo16
-
-;; 8-битная таблица на k = _gl_k (int16, Q14) в странице _gl_kpg: t[j] = round(k·j / 2^15),
-;; j = -128..127 — z в Q6 (младший байт значения; старшие байты — в следующую страницу, её
-;; затирает следующая таблица, за последней — свободная #D7)
-_gl_ztab::
-	ld	hl, (_gl_k)
-	ld	a, h
-	rlca
-	sbc	a, a
-	ld	d, a
-	ld	e, a			; DE — знак k
-	add	hl, hl			; шаг — 2k (16.16)
-	ld	a, (_gl_kpg)
 
 ;; T[j], j = 0..127 (индексы 0..127) и -1..-128 (255..128), страницы A (младшие байты) и
 ;; A + 1 (старшие); шаг DE:HL (16.16, DE — старшее слово)

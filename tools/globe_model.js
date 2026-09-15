@@ -1,8 +1,8 @@
 // Модель рендера глобуса М4в (плоская карта GLOBE, src/ui/globe_s.s) и сверка с эталоном —
 // попиксельным «художником» по многоугольникам WORLD.DAT (как OpenXcom). Данные — tmp/sd после
 // сборки. node tools\globe_model.js [lon lat zoom] — PNG в tmp/ (кадр, эталон, расхождения);
-// GAME=UFO — вторая игра; SWEEP=1 — прогон по сетке видов; ключи алгоритма как в движке —
-// NOLOOK=1 HITOL=1 (LOCAL/IMM — починка только около вставок, MODE=topo — без пересортировки).
+// GAME=UFO — вторая игра; SWEEP=1 — прогон по сетке видов; ключи алгоритма по умолчанию —
+// как в движке (OLD=1 — выключить все и включать по одному: EXACT=1 Z16=1 …).
 'use strict';
 let nRep = 0;
 const fs = require('fs'), zlib = require('zlib');
@@ -25,14 +25,22 @@ const nCell = G.readUInt16LE(0), nVert = G.readUInt16LE(2), nEdge = G.readUInt16
 const ct = 6, bt = ct + nCell * 16, gt = bt + nVert * 6 + nEdge * 6;
 const rdv = o => { const r = []; for (let k = 0; k < 3; k++) { const lo = G[o + k * 2], hi = G.readInt8(o + k * 2 + 1); r.push((hi * 128 + lo) / 16384); } return r; };
 const ZR = [90, 120, 180, 280, 450, 720];
-const MODE = process.env.MODE || 'sort';
-const HITOL = !!process.env.HITOL;
+// По умолчанию — как движок (globe_s.s); OLD=1 — все ключи выключены (опыты): тогда их
+// включают по одному (EXACT=1 Z16=1 …)
+const ENG = !process.env.OLD;
+const flag = (n, d) => process.env[n] !== undefined ? !!+process.env[n] || process.env[n] === 'true' : d;
+const MODE = process.env.MODE || 'sort';    // sort — пересортировка по x каждую строку; topo — порядок вставки
+const HITOL = flag('HITOL', ENG);           // допуск сортировки по старшим байтам u (разница > 1)
 const TOL = +(process.env.TOL ?? 64);
-const LOCAL = !!process.env.LOCAL, IMM = !!process.env.IMM, GATE = !!process.env.GATE;   // GATE — полная починка только в строке со вставками, после сдвига сортировкой, при событии края (как в движке)
-const CHAIN = !!process.env.CHAIN;          // CHAIN — починка кучек цепочкой по текстурам
-const INSFIX = !!process.env.INSFIX;        // INSFIX — вставка ищет согласованное место среди близких (как в движке)
-const EXACT = !!process.env.EXACT;          // EXACT — целочисленная арифметика движка
-const REPAIR = !process.env.NOREPAIR, LOOK = !process.env.NOLOOK;          // sort — пересортировка по x каждую строку; topo — порядок вставки
+const LOCAL = flag('LOCAL', false), IMM = flag('IMM', false);
+const GATE = flag('GATE', ENG);             // полная починка только в строке со вставками, после сдвига сортировкой, при событии края
+const CHAIN = flag('CHAIN', false);         // починка кучек цепочкой по текстурам (опыт)
+const NOLC = flag('NOLC', false), ITH = +(process.env.ITH || (ENG ? 128 : 256)), INSLIMB = flag('INSLIMB', ENG);
+const INSFIX2 = flag('INSFIX2', ENG);       // вставка в кучку (соседи ближе ITH) на место, согласованное по текстурам; INSLIMB — только зумы 0–1
+const INSFIX = flag('INSFIX', false);       // вставка ищет согласованное место среди близких (опыт)
+const Z16 = flag('Z16', ENG);               // z вершин в Q12 (16 бит), иначе Q6
+const EXACT = flag('EXACT', ENG);           // целочисленная арифметика движка
+const REPAIR = !flag('NOREPAIR', false), LOOK = !flag('NOLOOK', ENG);   // LOOK — «tl следующего» при несогласованности (опыт)
 
 // ---- эталон: многоугольники файла, проба «последний содержащий» (чёт-нечет в гномонической)
 const dat = fs.readFileSync(dir + '/GEODATA/WORLD.DAT');
@@ -110,11 +118,14 @@ function render(lonD, latD, zoom, wantTruth) {
 		const K = [R * -sl, R * cl, R * -shr14(sc * cl), R * -shr14(sc * sl), R * cc];
 		const TH = K.map(ktHi), TL = K.map(ktLo);
 		const TZ = [ztab(shr14(cc * cl)), ztab(shr14(cc * sl)), ztab(sc)];
+		const KZ = [shr14(cc * cl) * 1024, shr14(cc * sl) * 1024, sc * 1024];
+		const TZH = KZ.map(ktHi), TZL = KZ.map(ktLo);
 		projE = (o, noz) => {                       // вершина — 6 байт по смещению o в G
 			const lo = [G[o], G[o + 2], G[o + 4]], hi = [G[o + 1], G[o + 3], G[o + 5]];
 			const x = s16(512 + TH[0][hi[0]] + TL[0][lo[0]] + TH[1][hi[1]] + TL[1][lo[1]]);
 			const y = s16(400 + TH[2][hi[0]] + TL[2][lo[0]] + TH[3][hi[1]] + TL[3][lo[1]] + TH[4][hi[2]] + TL[4][lo[2]]);
-			const z = noz ? 64 : s8(TZ[0][hi[0]] + TZ[1][hi[1]] + TZ[2][hi[2]]);
+			const z = Z16 ? (noz ? 4096 : s16(TZH[0][hi[0]] + TZL[0][lo[0]] + TZH[1][hi[1]] + TZL[1][lo[1]] + TZH[2][hi[2]] + TZL[2][lo[2]]))
+				: (noz ? 64 : s8(TZ[0][hi[0]] + TZ[1][hi[1]] + TZ[2][hi[2]]));
 			return { x, y, z };
 		};
 	}
@@ -142,13 +153,13 @@ function render(lonD, latD, zoom, wantTruth) {
 		if (EXACT) {
 			const sri = G.readInt16LE(o + 14), q = projE(o + 8, false);
 			if (sri < 16384) {
-				if (s8(q.z + (sri >> 8)) < -1) continue;
+				if (Z16 ? q.z + (sri >> 2) < -64 : s8(q.z + (sri >> 8)) < -1) continue;
 				let mm = shr14(R * sri); mm += (mm >> 3) + 2;
 				const xc = q.x >> 2, yc = q.y >> 2;
 				if (xc + mm < 0 || xc - mm >= 256 || yc + mm < 0 || yc - mm >= 200) continue;
 			}
 			if (vn > 150 || en > 150) continue;
-			noz = sri < 16384 && s8(q.z - (sri >> 8)) > 1;
+			noz = sri < 16384 && (Z16 ? q.z - (sri >> 2) > 64 : s8(q.z - (sri >> 8)) > 1);
 		} else {
 			const sr = G.readInt16LE(o + 14) / 16384, q = proj(rdv(o + 8));
 			if (sr < 1) {
@@ -163,7 +174,7 @@ function render(lonD, latD, zoom, wantTruth) {
 		nV += vn;
 		for (let e = 0; e < en; e++) {
 			const eo = bo + vn * 6 + e * 6;
-			let A = { ...P[G.readUInt16LE(eo) / 5], lb: 0 }, B = { ...P[G.readUInt16LE(eo + 2) / 5], lb: 0 };
+			let A = { ...P[G.readUInt16LE(eo) / 6], lb: 0 }, B = { ...P[G.readUInt16LE(eo + 2) / 6], lb: 0 };
 			const texL = G[eo + 4], texR = G[eo + 5];
 			if (A.z < 0 && B.z < 0) continue;
 			if (A.z < 0 || B.z < 0) {                    // горизонт: линейно в 3D
@@ -242,6 +253,23 @@ function render(lonD, latD, zoom, wantTruth) {
 					if (ok(j)) { f = j; break; }
 				}
 				if (f >= 0) k = f; else badIns++;
+			}
+			if (INSFIX2 && (!INSLIMB || zoom < 2)) {          // место в кучке (соседи ближе пары) по текстурам
+				const lc = EVB[y] >= 0 ? EVB[y] : ltex;
+				const okL = j => j > 0 ? ael[j - 1].tr === e.tl : (NOLC || lc < 0 || lc === e.tl);
+				const okR = j => j >= ael.length || ael[j].tl === e.tr;
+				if (!(okL(k) && okR(k))) {
+					let lo = k, hi = k;
+					while (lo > 0 && Math.abs(ael[lo - 1].u - e.u) < ITH) lo--;
+					while (hi < ael.length && Math.abs(ael[hi].u - e.u) < ITH) hi++;
+					let best = -1, bs = 0;
+					for (let j = lo; j <= hi; j++) {
+						const sc = (okL(j) ? 2 : 0) + (okR(j) ? 1 : 0);
+						if (sc > bs || (sc === bs && best >= 0 && Math.abs(j - k) < Math.abs(best - k))) { bs = sc; best = j; }
+					}
+					const cur = (okL(k) ? 2 : 0) + (okR(k) ? 1 : 0);
+					if (best >= 0 && bs > cur) k = best;
+				}
 			}
 			if (process.env.DBGROWS) console.log("  ins row", y, "u", e.u, "s", e.s, "(" + e.tl + "|" + e.tr + ") at", k, "of", ael.length, ael.slice(Math.max(0, k - 2), k + 2).map(q => q.u + "/" + q.s + "(" + q.tl + "|" + q.tr + ")").join(" "));
 			ael.splice(k, 0, e);

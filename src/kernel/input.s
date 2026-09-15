@@ -3,7 +3,8 @@
 ;; банк 11) — долгая перерисовка между опросами их не теряет. Портит AF, BC, DE, HL.
 ;; Матрица ZX: полуряды #FEFE..#7FFE, биты 0..4. CAPS SHIFT — модификатор:
 ;; CS+буква — заглавная, CS+0 — KEY_DEL, CS+SPACE (BREAK) — KEY_ESC, CS+5..8 — стрелки.
-;; SYMBOL SHIFT: SS+K — '+', SS+J — '-'.
+;; SYMBOL SHIFT: SS+K — '+', SS+J — '-'. Стрелки и +/- при удержании повторяются
+;; (поворот и зум глобуса), остальные клавиши — одно нажатие.
 
 	.module input
 	.globl	input_isr
@@ -17,6 +18,8 @@ KEY_ENTER	= 13
 KEY_SPACE	= 32
 KEY_DEL		= 8
 KEY_LEFT	= 0x1C			; + 1 вниз, + 2 вверх, + 3 вправо (input.h)
+REP_DELAY	= 12			; автоповтор стрелок и +/-: первый через 12 кадров,
+REP_RATE	= 2			;   дальше каждые 2 (защёлка — одно нажатие до опроса)
 
 	.area	_DATA
 _in_prev_btn::	.ds	1		; кнопки прошлого кадра
@@ -25,6 +28,7 @@ _in_btn_latch::	.ds	1		; нажатия до опроса
 _in_key_latch::	.ds	1
 rk_cs:		.ds	1
 rk_ss:		.ds	1
+in_rep:		.ds	1		; кадров до автоповтора удерживаемой клавиши
 
 	.area	_CODE
 
@@ -132,9 +136,31 @@ input_isr:
 	call	read_key
 	ld	hl, #_in_prev_keys
 	cp	(hl)
-	ret	z
-	ld	(hl), a
+	jr	z, 1$
+	ld	(hl), a			; новая клавиша (или отпущена)
+	ld	b, a
+	ld	a, #REP_DELAY
+	ld	(in_rep), a
+	ld	a, b
 	or	a
 	ret	z
+	ld	(_in_key_latch), a
+	ret
+1$:	or	a			; держится: автоповтор стрелок и +/- (поворот и зум глобуса)
+	ret	z
+	ld	b, a
+	cp	#KEY_LEFT
+	jr	c, 2$
+	cp	#KEY_LEFT + 4
+	jr	c, 3$
+2$:	cp	#'+'
+	jr	z, 3$
+	cp	#'-'
+	ret	nz
+3$:	ld	hl, #in_rep
+	dec	(hl)
+	ret	nz
+	ld	(hl), #REP_RATE
+	ld	a, b
 	ld	(_in_key_latch), a
 	ret

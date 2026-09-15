@@ -40,7 +40,7 @@
 //       отсекать)                                                                  16 байт
 //   блоки ячеек (движок копирует блок одним DMA): вершины ячейки vn x 6 байт — X, Y, Z по
 //       2 байта: v & 127, v >> 7; затем рёбра en x 6 байт — u16 va, vb (номер вершины в
-//       ячейке * 5 — запись проекции движка), u8 texL, texR (слева / справа от va -> vb
+//       ячейке * 6 — запись проекции движка: x, y, z), u8 texL, texR (слева / справа от va -> vb
 //       на экране; 13 — океан)
 //   grid[36][72]: u8
 using System;
@@ -52,7 +52,7 @@ namespace OxzConv
 	static class GlobeData
 	{
 		const int CellLon = 12, CellLat = 6, NCell = CellLon * CellLat;
-		const int VRec = 5;                       // запись проекции вершины в движке: x, y, z
+		const int VRec = 6;                       // запись проекции вершины в движке: x, y, z (по 2 байта)
 		const int GridLon = 72, GridLat = 36;
 		const double TolT = 3e-4;                 // притяжение вершины к ребру (рад)
 		const double TolV = 1e-9;                 // совпадение вершин

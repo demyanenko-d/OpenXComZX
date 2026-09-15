@@ -18,16 +18,16 @@
 // Проекция (Globe::polarToCart в векторах): X = cosφ cosλ, Y = cosφ sinλ, Z = sinφ (Q14),
 // W = X cosλ0 + Y sinλ0: x = 128 + R(Y cosλ0 − X sinλ0), y = 100 + R(cosC·Z − sinC·W),
 // z = cosC·W + sinC·Z; x, y — в четвертях пикселя (Q2). Умножение значения v (Q14) на
-// константу K — таблицы T_hi[v >> 7] + T_lo[v & 127] (globe_s.s gl_ktab), для z — только
-// T_hi (8 бит, Q6).
+// константу K — таблицы T_hi[v >> 7] + T_lo[v & 127] (globe_s.s gl_ktab), z — так же, в Q12
+// (для отсечения по горизонту; ячейки целиком спереди — без z).
 //
 // Рабочая страница пула (Win3 на время проекции и рёбер):
-//   #0000    таблицы: 5 констант x/y по 4 страницы (T_hi и T_lo: младшие, старшие байты),
-//            3 константы z по странице (+1 служебная)
-//   #1800    проекции вершин ячейки: x, y (Q2), z (Q6) — 5 байт
-//   #1AF0    блок ячейки из ресурса (одно DMA): векторы вершин, затем рёбра
-//   #2210    корзины строк, #23A0.. — записи рёбер (globe_s.s), затем копия DMA в страницу
-//            рёбер с тех же смещений
+//   #0000    таблицы: 5 констант x/y и 3 константы z по 4 страницы (T_hi и T_lo: младшие,
+//            старшие байты)
+//   #2000    проекции вершин ячейки: x, y (Q2), z (Q12) — 6 байт
+//   #2390    блок ячейки из ресурса (одно DMA): векторы вершин, затем рёбра
+//   #2AA0    записи рёбер ячейки (globe_s.s) — затем DMA в страницу рёбер
+//   #3080    корзины строк (адреса записей в странице рёбер) — в конце DMA туда же
 // Страница рёбер — globe_s.s (корзины, записи строк, события края, список, рёбра).
 #include <stdint.h>
 #include <string.h>
@@ -45,12 +45,14 @@
 #include "globe.h"
 #include "globe_tab.h"
 
-#define RES_OFF   0x1800                // рабочая страница: проекции вершин ячейки (5 байт)
-#define VREC      5
-#define VSRC      0x1AF0                //   блок ячейки (DMA из ресурса): вершины, рёбра (по 6 байт)
+#define RES_OFF   0x2000                // рабочая страница: проекции вершин ячейки (x, y, z — 6 байт)
+#define VREC      6
+#define VSRC      0x2390                //   блок ячейки (DMA из ресурса): вершины, рёбра (по 6 байт)
+#define STG       0x2AA0                //   записи рёбер ячейки (globe_s.s), затем DMA в страницу рёбер
+#define WB_BUCKET 0x3080                //   корзины строк (адреса записей в странице рёбер)
 #define MAXCV     150                   // вершин / рёбер в ячейке (конвертер: до 144)
-#define EP_BUCKET 0x2210                // корзины строк и записи рёбер: пишутся в рабочую
-#define EP_POOL   0x23A0                //   страницу, потом копия DMA в страницу рёбер
+#define EP_BUCKET 0x1500                // страница рёбер: корзины (копия из рабочей),
+#define EP_POOL   0x1700                //   записи рёбер
 #define EP_ROW    0x0200                // страница рёбер (globe_s.s): записи строк (6 байт),
 #define EP_EVB    0x0700                //   события края: текстура ниже, выше, ключи
 #define EP_EVKB   0x0900
@@ -83,21 +85,20 @@ static uint8_t strip = PG_NONE;
 // текстура, если в окне нет ни одного ребра (сетка 5° ресурса в центре вида).
 const uint8_t *gl_eb;
 uint8_t gl_ec, gl_wpg, gl_epg, gl_limb, gl_gtex;
-uint16_t gl_res, gl_eptr, gl_nedge;
+uint16_t gl_res, gl_eptr, gl_sptr, gl_nedge;
 void gl_edges(void);
 void gl_rows(void);
 // Проекция (globe_s.s): gl_pn векторов (по 2 байта на X, Y, Z: v & 127, v >> 7) с gl_pv
-// -> {x, y (Q2), z8} с gl_pd
+// -> {x, y (Q2), z (Q12)} с gl_pd (6 байт)
 const uint8_t *gl_pv;
 uint8_t *gl_pd;
 uint8_t gl_pn, gl_noz;                  // gl_noz = 1 — z не считать (ячейка вся спереди)
 void gl_project(void);
 // Таблицы произведений (globe_s.s): gl_ktab — на K (int32 = R·c, c в Q14) в 4 страницы
-// с gl_kpg (адрес страницы Win3); gl_ztab — на k (Q14) в страницу gl_kpg (z в Q6)
+// с gl_kpg (адрес страницы Win3)
 int32_t gl_k;
 uint8_t gl_kpg;
 void gl_ktab(void);
-void gl_ztab(void);
 
 // Синус 16-битного угла (Q14) — src/ui/globe_ui.c, банк 2
 #define sin16(a) globe_sin((uint16_t)(a))
@@ -192,8 +193,8 @@ static void bg_restore(void)
 }
 
 // Таблицы произведений на 8 констант вида (λ0, наклон C, радиус R). Win3 = work.
-// x/y: K = R·c (c — Q14), страницы 4k..4k+3: kxX, kxY, kyX, kyY, kyZ; z: k (Q14),
-// страницы 20..22: kzX, kzY, kzZ (23 — служебная, старшие байты последней z).
+// x/y: K = R·c (c — Q14), страницы 4k..4k+3: kxX, kxY, kyX, kyY, kyZ; z (Q12): K = k·1024
+// (k — Q14), страницы 20..31: kzX, kzY, kzZ.
 static void tables(uint16_t lon, int16_t lat)
 {
 	int16_t cl = cos16(lon), sl = sin16(lon), cc = cos16((uint16_t)lat), sc = sin16((uint16_t)lat);
@@ -208,9 +209,9 @@ static void tables(uint16_t lon, int16_t lat)
 		gl_kpg = 0xC0 + i * 4;
 		gl_ktab();
 	}
-	gl_k = SHR14(MUL(cc, cl)); gl_kpg = (uint8_t)(0xC0 + 20); gl_ztab();   // z: cosC cosλ0 · X
-	gl_k = SHR14(MUL(cc, sl)); gl_kpg = (uint8_t)(0xC0 + 21); gl_ztab();   //    cosC sinλ0 · Y
-	gl_k = sc;                 gl_kpg = (uint8_t)(0xC0 + 22); gl_ztab();   //    sinC · Z
+	gl_k = (int32_t)SHR14(MUL(cc, cl)) << 10; gl_kpg = (uint8_t)(0xC0 + 20); gl_ktab();   // z: cosC cosλ0 · X
+	gl_k = (int32_t)SHR14(MUL(cc, sl)) << 10; gl_kpg = (uint8_t)(0xC0 + 24); gl_ktab();   //    cosC sinλ0 · Y
+	gl_k = (int32_t)sc << 10;                 gl_kpg = (uint8_t)(0xC0 + 28); gl_ktab();   //    sinC · Z
 }
 
 // ---------------------------------------------------------------- кадр
@@ -238,7 +239,7 @@ static void render(uint16_t lon, int16_t lat, uint8_t z)
 	gl_eptr = 0xC000 + EP_POOL;
 	gl_nedge = 0;
 	pg_map3(work);
-	memset((void *)(0xC000 + EP_BUCKET), 0, GLOBE_H * 2);
+	memset((void *)(0xC000 + WB_BUCKET), 0, GLOBE_H * 2);
 	if (z >= 2) bg_zoom = 0xFF;                // диск закрывает окно — фон затёрт
 	else if (bz != z) { bg_restore(); bg_zoom = z; }
 	v_lon = lon; v_lat = lat; v_zoom = z;
@@ -246,7 +247,7 @@ static void render(uint16_t lon, int16_t lat, uint8_t z)
 	// центры ячеек — той же проекцией (x, y в Q2, z в Q6)
 	uint16_t cr[NCELL][8];                    // блок, vn, en, 0, центр (6 байт), sinRho
 	uint8_t cv[NCELL][6];
-	uint8_t cp[NCELL][VREC];
+	uint8_t cp[NCELL][VREC];                  // x, y (Q2), z (Q12)
 	far_read(ct, cr, h[0] * 16u);
 	for (uint8_t c = 0; c < h[0]; c++) memcpy(cv[c], &cr[c][4], 6);
 	gl_pv = &cv[0][0]; gl_pd = &cp[0][0]; gl_pn = (uint8_t)h[0]; gl_noz = 0;
@@ -255,16 +256,16 @@ static void render(uint16_t lon, int16_t lat, uint8_t z)
 	gl_wpg = work; gl_epg = epage;
 	gl_res = 0xC000 + RES_OFF;
 	uint8_t ncells = 0;
-	far_t fsrc = FAR(work, VSRC);
+	far_t fsrc = FAR(work, VSRC), fstg = FAR(work, STG);
 	for (uint8_t c = 0; c < h[0]; c++) {
 		uint16_t vn = cr[c][1], en = cr[c][2];
 		if (!en) continue;
 		int16_t sr = (int16_t)cr[c][7];
+		int16_t zc = (int16_t)(cp[c][4] | (cp[c][5] << 8)), sr4 = (int16_t)cr[c][7] >> 2;
 		if (sr < 16384) {
 			const uint8_t *q = cp[c];
-			// вся ячейка на задней стороне: z центра + sinρ < -1 (Q6, байтами: SDCC 4.5 путает
-			// байты в -(sr >> 8) - 1 со знаковым расширением — findings_log)
-			if ((int8_t)(q[4] + (uint8_t)(sr >> 8)) < -1) continue;
+			int16_t t = zc + sr4;                  // вся ячейка на задней стороне: z центра + sinρ < -1/64 (Q12)
+			if (t < -64) continue;
 			// окно: проекция не длиннее хорды (2R·sin(ρ/2) <= 1.1·R·sinρ при ρ < 49°)
 			int16_t m = SHR14(MUL(R, sr));
 			int16_t xc = (int16_t)(q[0] | (q[1] << 8)) >> 2, yc = (int16_t)(q[2] | (q[3] << 8)) >> 2;
@@ -275,12 +276,15 @@ static void render(uint16_t lon, int16_t lat, uint8_t z)
 		if (gl_eptr > 0xC000 + 0x4000 - 10 * en) { dbg_puts("globe: edge pool full\n"); break; }
 		ncells++;
 		// вся ячейка на передней стороне — z вершин не нужен
-		gl_noz = sr < 16384 && (int8_t)(cp[c][4] - (uint8_t)(sr >> 8)) > 1;
+		gl_noz = sr < 16384 && (int16_t)(zc - sr4) > 64;
 		far_copy(fsrc, bt + cr[c][0], (vn + en) * 6u);   // блок ячейки: вершины, рёбра
 		gl_pv = (const uint8_t *)(0xC000 + VSRC); gl_pd = (uint8_t *)(0xC000 + RES_OFF); gl_pn = (uint8_t)vn;
 		gl_project();
 		gl_eb = (const uint8_t *)(0xC000 + VSRC) + vn * 6u; gl_ec = (uint8_t)en;
+		uint16_t e0 = gl_eptr;
+		gl_sptr = 0xC000 + STG;
 		gl_edges();
+		if (gl_eptr != e0) far_copy(FAR(epage, e0 - 0xC000), fstg, gl_eptr - e0);   // записи ячейки -> страница рёбер
 	}
 	// сетка 5° (72 x 36 от λ = 0, φ = −90°) в центре вида — если в окне нет рёбер
 	uint8_t gx = (uint8_t)(((uint32_t)lon * 72) >> 16), gy = (uint8_t)(((uint32_t)(lat + 16384) * 36) >> 15);
@@ -289,7 +293,7 @@ static void render(uint16_t lon, int16_t lat, uint8_t z)
 	gl_gtex = g == 0xFE ? NTEX : g;
 	// корзины и рёбра -> страница рёбер (те же смещения); строки: активные рёбра -> отрезки
 	// DMA в задний буфер
-	far_copy(FAR(epage, EP_BUCKET), FAR(work, EP_BUCKET), gl_eptr - (0xC000 + EP_BUCKET));
+	far_copy(FAR(epage, EP_BUCKET), FAR(work, WB_BUCKET), GLOBE_H * 2);
 	pg_map3(epage);
 	gl_rows();
 	pg_map3(work);
