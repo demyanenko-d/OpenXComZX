@@ -1,0 +1,52 @@
+# Снимки глобуса для сверки с эталоном (tools/globe_emucmp.js): зумы 0, 1, 3, 5; после
+# каждого снимка — углы вида (peek ctx.globe_lon/lat). Не проверка «прошёл/нет».
+#   powershell -File tools\run.ps1 -Script tests\globe_cmp.oxs -Headless
+# Глобус (src/ui/globe.c, globe.md): новая игра -> база -> геоскейп; снимки на зумах 0..5
+# (зум — SS+K / SS+J и кнопки GEOBORD), поворот стрелками, вид вниз (наклон). Строки
+# «globe:» консоли — ячейки, многоугольники, отрезки, кадров на рендер. Снимки —
+# tmp/shots/globe/ (сравнение версий — tools/shotdiff.ps1). ST->zoom — #0048.
+# Запуск: powershell -File tools\run.ps1 -Script tests\globe.oxs -Headless
+#   (сборка -Game UFO — те же шаги, снимки перезапишутся)
+
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 3000
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 3000
+type globe
+key ENTER
+waitmark 32 3000
+shot tmp/shots/globe_cmp/z0.png
+peek 0x56E8 4
+key RIGHT
+waitmark 32 3000
+key DOWN
+waitmark 32 3000
+shot tmp/shots/globe_cmp/z0d.png
+peek 0x56E8 4
+key SS+K
+waitmark 32 3000
+shot tmp/shots/globe_cmp/z1.png
+peek 0x56E8 4
+key SS+K
+waitmark 32 3000
+key SS+K
+waitmark 32 3000
+shot tmp/shots/globe_cmp/z3.png
+peek 0x56E8 4
+key SS+K
+waitmark 32 3000
+key SS+K
+waitmark 32 3000
+shot tmp/shots/globe_cmp/z5.png
+peek 0x56E8 4
+exit 0
