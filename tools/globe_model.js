@@ -28,7 +28,10 @@ const ZR = [90, 120, 180, 280, 450, 720];
 const MODE = process.env.MODE || 'sort';
 const HITOL = !!process.env.HITOL;
 const TOL = +(process.env.TOL ?? 64);
-const LOCAL = !!process.env.LOCAL, IMM = !!process.env.IMM;
+const LOCAL = !!process.env.LOCAL, IMM = !!process.env.IMM, GATE = !!process.env.GATE;   // GATE — полная починка только в строке со вставками, после сдвига сортировкой, при событии края (как в движке)
+const CHAIN = !!process.env.CHAIN;          // CHAIN — починка кучек цепочкой по текстурам
+const INSFIX = !!process.env.INSFIX;        // INSFIX — вставка ищет согласованное место среди близких (как в движке)
+const EXACT = !!process.env.EXACT;          // EXACT — целочисленная арифметика движка
 const REPAIR = !process.env.NOREPAIR, LOOK = !process.env.NOLOOK;          // sort — пересортировка по x каждую строку; topo — порядок вставки
 
 // ---- эталон: многоугольники файла, проба «последний содержащий» (чёт-нечет в гномонической)
@@ -60,10 +63,61 @@ function truthAt(p) {
 	return 13;
 }
 
+// ---- арифметика движка (globe.c tables, globe_s.s gl_ktab/gl_ztab/gl_project, eslope)
+const SINQ = []; for (let i = 0; i <= 1024; i++) SINQ.push(Math.round(Math.sin(i / 1024 * Math.PI / 2) * 16384));
+const sin16 = a => { a &= 0xFFFF; const i = (a >> 4) & 1023; const v = (a & 0x4000) ? SINQ[1024 - i] : SINQ[i]; return (a & 0x8000) ? -v : v; };
+const cos16 = a => sin16(a + 0x4000);
+const RECIP = [0, 0]; for (let d = 2; d < 512; d++) RECIP.push(Math.round(65536 / d));
+const shr14 = v => Math.floor(v * 4 / 65536);
+const hiw = acc => { let h = Math.floor(acc / 65536); h = ((h % 65536) + 65536) % 65536; return h >= 32768 ? h - 65536 : h; };
+function ktHi(K) {                                  // T_hi: шаг K >> 3, значение — старшее слово
+	const st = Math.floor(K / 8), T = new Int32Array(256);
+	let acc = 0x8000; for (let j = 0; j < 128; j++) { T[j] = hiw(acc); acc += st; }
+	acc = 0x8000; for (let j = 1; j <= 128; j++) { acc -= st; T[256 - j] = hiw(acc); }
+	return T;
+}
+function ktLo(K) {                                  // T_lo: шаг K >> 10, i = 0..127
+	const st = Math.floor(K / 1024), T = new Int32Array(128);
+	let acc = 0x8000; for (let i = 0; i < 128; i++) { T[i] = hiw(acc); acc += st; }
+	return T;
+}
+function ztab(k) {                                  // z: шаг 2k, младший байт значения (со знаком)
+	const T = ktHi(2 * k * 8);                      // ktHi делит на 8
+	return T.map(v => ((v & 255) >= 128 ? (v & 255) - 256 : (v & 255)));
+}
+const s16 = v => { v = ((v % 65536) + 65536) % 65536; return v >= 32768 ? v - 65536 : v; };
+const s8 = v => { v = ((v % 256) + 256) % 256; return v >= 128 ? v - 256 : v; };
+function slopeE(dx, dy) {                           // eslope / быстрый путь e_fast
+	const neg = dx < 0; let ax = Math.abs(dx), d = dy, B = 1;
+	while (d >= 512) { d >>= 1; B++; }
+	const r = RECIP[d] || 0;
+	let s;
+	if (!r) s = ax < 256 ? ax * 128 : 32767;
+	else if (ax < 256) s = (ax * (r >> 8) + ((ax * (r & 255)) >> 8) + 1) >> B;
+	else { let p = ax * r + 256; p = Math.floor(p / 256); p >>= B; s = p > 32767 ? 32767 : p; }
+	return neg ? -s : s;
+}
+const lerpT = (d, a, den) => { const q = Math.floor(Math.abs(d) * a / den); return d < 0 ? -q : q; };
+
 function render(lonD, latD, zoom, wantTruth) {
 	const lon0 = lonD * Math.PI / 180, lat0 = latD * Math.PI / 180, R = ZR[zoom];
 	const cl = Math.cos(lon0), sl = Math.sin(lon0), cc = Math.cos(lat0), sc = Math.sin(lat0);
 	const proj = ([X, Y, Z]) => { const W = X * cl + Y * sl; return { x: Math.floor(512 + 4 * R * (Y * cl - X * sl)), y: Math.floor(400 + 4 * R * (cc * Z - sc * W)), z: cc * W + sc * Z }; };
+	const lon16 = Math.round(lonD * 65536 / 360) & 0xFFFF, lat16 = Math.round(latD * 65536 / 360);
+	let projE = null;
+	if (EXACT) {
+		const cl = cos16(lon16), sl = sin16(lon16), cc = cos16(lat16), sc = sin16(lat16);
+		const K = [R * -sl, R * cl, R * -shr14(sc * cl), R * -shr14(sc * sl), R * cc];
+		const TH = K.map(ktHi), TL = K.map(ktLo);
+		const TZ = [ztab(shr14(cc * cl)), ztab(shr14(cc * sl)), ztab(sc)];
+		projE = (o, noz) => {                       // вершина — 6 байт по смещению o в G
+			const lo = [G[o], G[o + 2], G[o + 4]], hi = [G[o + 1], G[o + 3], G[o + 5]];
+			const x = s16(512 + TH[0][hi[0]] + TL[0][lo[0]] + TH[1][hi[1]] + TL[1][lo[1]]);
+			const y = s16(400 + TH[2][hi[0]] + TL[2][lo[0]] + TH[3][hi[1]] + TL[3][lo[1]] + TH[4][hi[2]] + TL[4][lo[2]]);
+			const z = noz ? 64 : s8(TZ[0][hi[0]] + TZ[1][hi[1]] + TZ[2][hi[2]]);
+			return { x, y, z };
+		};
+	}
 	// диск по строкам (пары), как rows_init
 	const PL = new Int16Array(200), PR = new Int16Array(200);
 	for (let y = 0; y < 200; y++) {
@@ -84,15 +138,28 @@ function render(lonD, latD, zoom, wantTruth) {
 		const o = ct + c * 16;
 		const bo = bt + G.readUInt16LE(o), vn = G.readUInt16LE(o + 2), en = G.readUInt16LE(o + 4);
 		if (!en) continue;
-		const sr = G.readInt16LE(o + 14) / 16384, q = proj(rdv(o + 8));
-		if (sr < 1) {
-			if (q.z < -sr - 1 / 64) continue;
-			let m = R * sr; m += m / 8 + 2;
-			const xc = q.x / 4, yc = q.y / 4;
-			if (xc + m < 0 || xc - m >= 256 || yc + m < 0 || yc - m >= 200) continue;
+		let noz = false;
+		if (EXACT) {
+			const sri = G.readInt16LE(o + 14), q = projE(o + 8, false);
+			if (sri < 16384) {
+				if (s8(q.z + (sri >> 8)) < -1) continue;
+				let mm = shr14(R * sri); mm += (mm >> 3) + 2;
+				const xc = q.x >> 2, yc = q.y >> 2;
+				if (xc + mm < 0 || xc - mm >= 256 || yc + mm < 0 || yc - mm >= 200) continue;
+			}
+			if (vn > 150 || en > 150) continue;
+			noz = sri < 16384 && s8(q.z - (sri >> 8)) > 1;
+		} else {
+			const sr = G.readInt16LE(o + 14) / 16384, q = proj(rdv(o + 8));
+			if (sr < 1) {
+				if (q.z < -sr - 1 / 64) continue;
+				let m = R * sr; m += m / 8 + 2;
+				const xc = q.x / 4, yc = q.y / 4;
+				if (xc + m < 0 || xc - m >= 256 || yc + m < 0 || yc - m >= 200) continue;
+			}
 		}
 		nCells++;
-		const P = []; for (let v = 0; v < vn; v++) P.push(proj(rdv(bo + v * 6)));
+		const P = []; for (let v = 0; v < vn; v++) P.push(EXACT ? projE(bo + v * 6, noz) : proj(rdv(bo + v * 6)));
 		nV += vn;
 		for (let e = 0; e < en; e++) {
 			const eo = bo + vn * 6 + e * 6;
@@ -101,9 +168,10 @@ function render(lonD, latD, zoom, wantTruth) {
 			if (A.z < 0 && B.z < 0) continue;
 			if (A.z < 0 || B.z < 0) {                    // горизонт: линейно в 3D
 				const [F, K] = A.z >= 0 ? [A, B] : [B, A];
-				const t = F.z / (F.z - K.z);
-				const Q = { x: Math.trunc(F.x + (K.x - F.x) * t), y: Math.trunc(F.y + (K.y - F.y) * t), z: 0, lb: 0 };
-				Q.lb = Q.x < 512 ? 1 : 0;                      // на левом краю диска
+				let Q;
+				if (EXACT) Q = { x: F.x + lerpT(K.x - F.x, F.z, F.z - K.z), y: F.y + lerpT(K.y - F.y, F.z, F.z - K.z), z: 0, lb: 0 };
+				else { const t = F.z / (F.z - K.z); Q = { x: Math.trunc(F.x + (K.x - F.x) * t), y: Math.trunc(F.y + (K.y - F.y) * t), z: 0, lb: 0 }; }
+				Q.lb = zoom < 2 && Q.x < 512 ? 1 : 0;          // на левом краю диска (зумы 0–1)
 				if (A.z < 0) A = Q; else B = Q;
 			}
 			// стороны на экране: вниз — слева texR; вверх — слева texL; горизонтальное вправо — снизу texR
@@ -132,9 +200,18 @@ function render(lonD, latD, zoom, wantTruth) {
 			const dx = B.x - A.x, dy = B.y - A.y;
 			let r0 = Math.floor((A.y + 1) / 4), r1 = Math.floor((B.y + 1) / 4) - 1;
 			if (r1 < r0) continue;
-			const s = Math.round(128 * dx / dy);        // пары / строку, 8.8
-			let u = 32 * A.x + 192 + Math.trunc(((4 * r0 + 2 - A.y) * s) / 4);
-			if (r0 < 0) { u += -r0 * s; r0 = 0; }
+			let s, u;
+			if (EXACT) {
+				s = slopeE(dx, dy);
+				const off = (2 - (A.y & 3)) & 3;
+				const t = off === 0 ? 0 : off === 1 ? s >> 2 : off === 2 ? s >> 1 : (s >> 1) + (s >> 2);
+				u = (32 * A.x + 192 + t) & 0xFFFF;
+				if (r0 < 0) { u = (u + (-r0) * s) & 0xFFFF; r0 = 0; }
+			} else {
+				s = Math.round(128 * dx / dy);        // пары / строку, 8.8
+				u = 32 * A.x + 192 + Math.trunc(((4 * r0 + 2 - A.y) * s) / 4);
+				if (r0 < 0) { u += -r0 * s; r0 = 0; }
+			}
 			if (r1 > 199) r1 = 199;
 			if (r1 < r0) continue;
 			buckets[r0].push({ u, s, last: r1, tl, tr, top: r0, lt: A.lb, lbt: B.lb });
@@ -155,7 +232,7 @@ function render(lonD, latD, zoom, wantTruth) {
 			// нет ребра — край диска или окна, текстура там меняется) — справа (tr нового = tl правого)
 			// или новое ребро открывает область внутри (tl нового = tl правого)
 			const ok = j => j > 0 ? ael[j - 1].tr === e.tl : (!ael.length || ael[0].tl === e.tl || ael[0].tl === e.tr);
-			if (MODE === 'topo' && !ok(k)) {
+			if ((MODE === 'topo' || INSFIX) && !ok(k)) {
 				let f = -1;
 				for (const d of [-1, 1, -2, 2, -3, 3]) {
 					const j = k + d;
@@ -186,7 +263,36 @@ function render(lonD, latD, zoom, wantTruth) {
 				const cur = eq(L, p.tl) && p.tr === q.tl && eq(q.tr, R), sw = eq(L, q.tl) && q.tr === p.tl && eq(p.tr, R);
 				if (!cur && sw) { ael[k] = q; ael[k + 1] = p; nRep++; }
 			};
-			if (!LOCAL || dirtyAll || EVB[y] >= 0) for (let k = 0; k + 1 < ael.length; k++) fixPair(k);
+			// CHAIN — кучка соседей ближе пары с несогласованностью внутри переставляется цепочкой:
+			// от текстуры левее кучки — ребро с такой «слева» (левейшее), дальше — от его «справа»
+			const fixChain = () => {
+				for (let k0 = 0; k0 + 1 < ael.length; ) {
+					let k1 = k0;
+					while (k1 + 1 < ael.length && Math.abs(ael[k1 + 1].u - ael[k1].u) < 256) k1++;
+					if (k1 > k0) {
+						let bad = false;
+						const L0 = k0 > 0 ? ael[k0 - 1].tr : lc;
+						if (L0 >= 0 && ael[k0].tl !== L0) bad = true;
+						for (let k = k0; k < k1; k++) if (ael[k].tr !== ael[k + 1].tl) bad = true;
+						if (bad) {
+							let cur = L0;
+							if (cur < 0) {                          // левее — «слева», которой нет среди «справа»
+								const trs = ael.slice(k0, k1 + 1).map(e => e.tr);
+								const c = ael.slice(k0, k1 + 1).find(e => !trs.includes(e.tl));
+								cur = c ? c.tl : ael[k0].tl;
+							}
+							for (let i = k0; i <= k1; i++) {
+								let j = i; while (j <= k1 && ael[j].tl !== cur) j++;
+								if (j > k1) break;
+								if (j !== i) { const e = ael[j]; ael.splice(j, 1); ael.splice(i, 0, e); nRep++; }
+								cur = ael[i].tr;
+							}
+						}
+					}
+					k0 = k1 + 1;
+				}
+			};
+			if ((!LOCAL && !GATE) || dirtyAll || EVB[y] >= 0 || (GATE && insNew.length)) { if (CHAIN) fixChain(); else for (let k = 0; k + 1 < ael.length; k++) fixPair(k); }
 			else if (!IMM) for (const e of insNew) { const k = ael.indexOf(e); for (let d = -2; d <= 1; d++) fixPair(k + d); }
 			dirtyAll = false;
 		}
@@ -221,14 +327,14 @@ function render(lonD, latD, zoom, wantTruth) {
 				put(y, cur, pr, tex);
 			}
 		}
-		for (const e of ael) e.u += e.s;
+		for (const e of ael) e.u = EXACT ? (e.u + e.s) & 0xFFFF : e.u + e.s;
 		ael = ael.filter(e => e.last !== y);
 		if (MODE !== 'topo')                              // сортировка вставками по x (устойчивая)
 			for (let i = 1; i < ael.length; i++) { const e = ael[i]; let j = i; while (j > 0 && (HITOL ? (ael[j - 1].u >> 8) > (e.u >> 8) + 1 : ael[j - 1].u > e.u + TOL)) { ael[j] = ael[j - 1]; j--; dirtyAll = true; } ael[j] = e; }
 	}
 	let gridTex = -1;
 	if (pend >= 0) {                                   // рёбер в окне нет: сетка 5° в центре вида
-		const gx = Math.floor((((lonD % 360) + 360) % 360) / 5) % 72, gy = Math.min(35, Math.max(0, Math.floor((latD + 90) / 5)));
+		const gx = EXACT ? (lon16 * 72) >> 16 : Math.floor((((lonD % 360) + 360) % 360) / 5) % 72, gy = EXACT ? Math.min(35, ((lat16 + 16384) * 36) >> 15) : Math.min(35, Math.max(0, Math.floor((latD + 90) / 5)));
 		gridTex = G[gt + gy * 72 + gx];
 		for (let r = pend; r < 200; r++) if (PL[r] <= PR[r]) fillRow(r, gridTex === 0xFE ? 13 : gridTex);
 	}
