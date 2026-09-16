@@ -191,10 +191,14 @@ namespace OxzConv
 				geo.Add(ids.Id("WORLDMAP"), ResType.Blob, map, mixed);
 				report.Add($"WORLDMAP: {mixed} coastal cells, {Kb(map.Length)} KB");
 				nGeo++;
-				var (globe, info) = GlobeData.Build(gfs.Read("GEODATA/WORLD.DAT"));
+				GlobeArcs arcs;
+				var (globe, info) = GlobeData.Build(gfs.Read("GEODATA/WORLD.DAT"), out arcs);
 				geo.Add(ids.Id("GLOBE"), ResType.Blob, globe);
 				report.Add($"GLOBE: {info}, {Kb(globe.Length)} KB");
 				nGeo++;
+				// предрасчитанные виды глобуса (зумы 0–2) на карту — globe.md §12.5
+				var gv = GlobeViews.Build(arcs, Path.Combine(OutDir, "GVIEW.PAK"));
+				report.Add($"GVIEW.PAK: {gv.info}; {gv.bytes / 1048576.0:0.0} MB");
 				// узоры глобуса: 39 кадров 32x32 как есть (3 набора по 13, зумы 4–5, 2–3, 0–1)
 				var tex = gfs.Read("GEOGRAPH/TEXTURE.DAT");
 				geo.Add(ids.Id("TEXTURE.DAT"), ResType.Blob, tex, tex.Length / 1024);

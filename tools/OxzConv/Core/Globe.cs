@@ -124,7 +124,9 @@ namespace OxzConv
 			}
 		}
 
-		public static (byte[] data, string info) Build(byte[] dat)
+		public static (byte[] data, string info) Build(byte[] dat) => Build(dat, out _);
+
+		public static (byte[] data, string info) Build(byte[] dat, out GlobeArcs arcs)
 		{
 			// ---- многоугольники файла, вершины по ключу (1/8°)
 			var verts = new List<V>();
@@ -385,6 +387,35 @@ namespace OxzConv
 					if (touched[g]) { grid[g] = Mixed; nMixed++; continue; }
 					grid[g] = TexAt(Vec((gx * 5 + 2.5) * Math.PI / 180, (gy * 5 - 90 + 2.5) * Math.PI / 180));
 				}
+
+			// ---- 7. дуги для растеризатора видов (GlobeViews.cs): точные векторы, без Q14
+			{
+				int n = edgesAll.Count;
+				arcs = new GlobeArcs
+				{
+					N = n,
+					Ax = new double[n], Ay = new double[n], Az = new double[n],
+					Bx = new double[n], By = new double[n], Bz = new double[n],
+					Nx = new double[n], Ny = new double[n], Nz = new double[n],
+					Mx = new double[n], My = new double[n], Mz = new double[n],
+					Ct = new double[n], St = new double[n],
+					TL = new byte[n], TR = new byte[n],
+					Grid = grid,
+					TexAt = (x, y, z) => TexAt(new V(x, y, z)),
+				};
+				for (int i = 0; i < n; i++)
+				{
+					var e = edgesAll[i];
+					V A = verts[e.a], B = verts[e.b], N = V.Cross(A, B).Norm(), M = V.Cross(N, A);
+					double t = Ang(A, B);
+					arcs.Ax[i] = A.X; arcs.Ay[i] = A.Y; arcs.Az[i] = A.Z;
+					arcs.Bx[i] = B.X; arcs.By[i] = B.Y; arcs.Bz[i] = B.Z;
+					arcs.Nx[i] = N.X; arcs.Ny[i] = N.Y; arcs.Nz[i] = N.Z;
+					arcs.Mx[i] = M.X; arcs.My[i] = M.Y; arcs.Mz[i] = M.Z;
+					arcs.Ct[i] = Math.Cos(t); arcs.St[i] = Math.Sin(t);
+					arcs.TL[i] = e.tl; arcs.TR[i] = e.tr;
+				}
+			}
 
 			var o2 = new List<byte>();
 			W16(o2, NCell); W16(o2, nVert); W16(o2, nEdge);

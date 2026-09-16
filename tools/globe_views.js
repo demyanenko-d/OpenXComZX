@@ -166,6 +166,51 @@ function draw(rows) {
 
 const zooms = (process.argv[2] || '0,2,5').split(',').map(Number);
 
+// Проверка GVIEW.PAK конвертера: разбор вида из пакета и сверка с эталоном (PAK=1 [шаг])
+if (process.env.PAK) {
+	const gv = fs.readFileSync(`tmp/sd/OXZ/${game}/GVIEW.PAK`);
+	if (gv.readUInt32LE(0) !== 0x31575647) throw 'не GVW1';
+	const nZ = gv.readUInt16LE(4), z0 = gv.readUInt16LE(6);
+	const step = +(process.env.PAK) || 1;
+	let worst = 0, worstAt = '', nv = 0;
+	for (let zi = 0; zi < nZ; zi++) {
+		const o = 8 + zi * 16;
+		const nLon = gv.readUInt16LE(o), nTilt = gv.readUInt16LE(o + 2), tsQ = gv.readUInt16LE(o + 4);
+		const R = gv.readUInt16LE(o + 6), idxSec = gv.readUInt32LE(o + 8), datSec = gv.readUInt32LE(o + 12);
+		const z = z0 + zi, k = (nTilt - 1) >> 1, lonStep = 360 / nLon, tiltStep = tsQ * 360 / 65536;
+		let sum = 0, cnt = 0;
+		for (let j = 0; j < nTilt; j += step)
+			for (let i = 0; i < nLon; i += step) {
+				const vi = j * nLon + i, sOff = gv.readUInt16LE(idxSec * 512 + vi * 2);
+				let p = (datSec + sOff) * 512;
+				const img = new Int16Array(256 * 200).fill(-1);
+				for (let y = 0; y < 200; y++) {
+					const nr = gv[p++];
+					if (!nr) continue;
+					const pr = discPairs(R, y);
+					let x = pr[0] * 2;
+					for (let r = 0; r < nr; r++) {
+						const len = gv[p++] + 1, tex = gv[p++];
+						for (let q = 0; q < len * 2; q++, x++) if (x >= 0 && x < 256) img[y * 256 + x] = tex;
+					}
+				}
+				const t = M.render(i * lonStep, (j - k) * tiltStep, z, true);
+				let d = 0, n = 0;
+				for (let q = 0; q < 256 * 200; q++) {
+					if (t.truth[q] < 0) continue;
+					n++;
+					if (img[q] !== (t.truth[q] === 255 ? 13 : t.truth[q])) d++;
+				}
+				const pc = 100 * d / n;
+				sum += pc; cnt++; nv++;
+				if (pc > worst) { worst = pc; worstAt = `зум ${z}, λ0 ${(i * lonStep).toFixed(1)}°, наклон ${((j - k) * tiltStep).toFixed(1)}°`; }
+			}
+		console.log(`зум ${z}: ${nLon} x ${nTilt}, R ${R}; проверено ${cnt} видов, среднее расхождение ${(sum / cnt).toFixed(3)} %`);
+	}
+	console.log(`всего ${nv} видов, худший ${worst.toFixed(2)} % (${worstAt})`);
+	process.exit(0);
+}
+
 // Сетка видов: поворот 15° / (зум + 1) (scr_geo.c rotate), наклон — 0.6 от шага поворота,
 // в пределах ±TILTMAX (по умолчанию 27° — «30 % от полного»)
 const TILTMAX = +(process.env.TILTMAX ?? 27), TILTMIN = +(process.env.TILTMIN ?? 3);
