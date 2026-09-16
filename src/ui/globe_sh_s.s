@@ -59,6 +59,7 @@ sr_dah:	.ds	1
 sr_dax:	.ds	1
 sr_sh:	.ds	1
 sr_ii:	.ds	1
+dsc_p:	.ds	2			; куда класть следующий дескриптор отрезка (sh_dsc)
 
 	.area	_BANK25
 
@@ -402,6 +403,8 @@ edge:
 build:
 	xor	a, a
 	ld	(sr_ni), a
+	ld	hl, #sh_dsc
+	ld	(dsc_p), hl
 	ld	a, (sr_pl)
 	ld	d, a			; D — начало отрезка
 	rrca
@@ -430,27 +433,65 @@ build:
 	ld	b, a
 	ld	d, c
 	jr	1$
-3$:	call	iv_put			; последний [D, pr]
+3$:	ld	a, (sr_pr)		; последний отрезок — до pr + 1
+	inc	a
+	ld	c, a
+	call	iv_put
 	jp	iv_dma
 
-;; Отрезок [D, …) уровня B -> список (портит A, HL)
+;; Отрезок [D, C) уровня B -> дескриптор DMA (5 байт: SAL, SAH, SAX, DAL, DMALen) в ОЗУ банка:
+;; оно кэшируется, в отличие от страницы тени в окне 3, и вывод в порты идёт коротким циклом
 iv_put:
-	ld	a, (sr_ni)
-	add	a, #<SH_IVP
-	ld	l, a
-	ld	h, #>SH_IVP
-	ld	(hl), d
-	add	a, #<SH_IVL - <SH_IVP
-	ld	l, a
-	ld	(hl), b
+	push	bc
+	push	de
+	ld	hl, (dsc_p)
+	ld	a, d			; DAL = 2 · начало (пары -> байты)
+	add	a, a
+	ld	e, a
+	ld	a, (sr_sh)		; SAL = сдвиг образца + DAL (заворот внутри 256 байт образца)
+	add	a, e
+	ld	(hl), a
+	inc	l
+	ld	a, b			; SAH = (уровень % 8) · 8 + строка образца · 2
+	and	a, #7
+	add	a, a
+	add	a, a
+	add	a, a
+	ld	d, a
+	ld	a, (sr_rp2)
+	add	a, d
+	ld	(hl), a
+	inc	l
+	ld	a, b			; SAX = страница образцов + (уровень >= 8)
+	cp	a, #8
+	ccf
+	ld	a, (_sh_page)
+	adc	a, #0
+	ld	(hl), a
+	inc	l
+	ld	(hl), e			; DAL
+	inc	l
+	pop	de
+	ld	a, c			; DMALen = слов − 1
+	sub	a, d
+	dec	a
+	ld	(hl), a
+	inc	l
+	ld	(dsc_p), hl
 	ld	hl, #sr_ni
 	inc	(hl)
+	pop	bc
 	ret
 
 ;; DMA отрезков: источник — образец уровня k (страница _sh_page + k / 8, смещение (k % 8)·2048 +
 ;; строка·512: L, O через 256) со сдвигом строки блоков, приёмник — строка sr_y заднего буфера
 ;; (x, x + 256); DMANum — 1 (строка) или 7 (4 строки)
+;; (x, x + 256); DMANum — 1 (строка) или 7 (4 строки). Дескрипторы готовит iv_put, здесь —
+;; только ожидание конца прошлой передачи и восемь записей в порты.
 iv_dma:
+	ld	a, (sr_ni)
+	or	a, a
+	ret	z
 	ld	a, (sr_y)		; строка экрана 280 + y: DAH = (row & 31) << 1, DAX = 16 + row >> 5
 	ld	l, a
 	ld	h, #0
@@ -459,88 +500,54 @@ iv_dma:
 	ld	a, l
 	and	a, #31
 	add	a, a
-	ld	(sr_dah), a
+	ld	d, a			; D — DAH строки
 	add	hl, hl
 	add	hl, hl
 	add	hl, hl			; row << 3: старший байт = row >> 5
 	ld	a, h
 	add	a, #SCREEN_PAGE
-	ld	(sr_dax), a
-	xor	a, a
-	ld	(sr_ii), a
-1$:	ld	a, (sr_ii)
-	add	a, #<SH_IVP
-	ld	l, a
-	ld	h, #>SH_IVP
-	ld	d, (hl)			; p0
-	ld	a, (sr_ii)
-	inc	a
-	ld	hl, #sr_ni
-	cp	a, (hl)
-	ld	a, (sr_pr)
-	inc	a			; конец — pr + 1 (inc не трогает CY)
-	jr	nc, 2$
-	ld	a, (sr_ii)
-	add	a, #<SH_IVP + 1
-	ld	l, a
-	ld	h, #>SH_IVP
-	ld	a, (hl)			; p1 — начало следующего
-2$:	sub	a, d			; слов
-	jr	z, 5$
-	jr	c, 5$
-	dec	a
-	ld	e, a			; DMALen
-	ld	a, (sr_ii)
-	add	a, #<SH_IVL
-	ld	l, a
-	ld	h, #>SH_IVL
-	ld	a, (hl)			; k
-	ld	c, a
-	cp	a, #8			; SAX = страница + (k ≥ 8)
-	ccf
-	ld	a, (_sh_page)
-	adc	a, #0
-	ld	(sr_sax), a
-	ld	a, c			; SAH = (k % 8)·8 + строка·2
-	and	a, #7
-	add	a, a
-	add	a, a
-	add	a, a
-	ld	h, a
-	ld	a, (sr_rp2)
-	add	a, h
-	ld	h, a
-	ld	a, d
-	add	a, a
-	ld	l, a			; L — DAL = 2 · p0
-	ld	bc, #0x27AF
-3$:	in	a, (c)
-	jp	m, 3$
-	ld	a, (sr_sh)
-	add	a, l
-	ld	b, #0x1A
-	out	(c), a			; SAL
-	inc	b
-	out	(c), h			; SAH
-	ld	a, (sr_sax)
-	inc	b
-	out	(c), a			; SAX
-	inc	b
-	out	(c), l			; DAL
-	ld	a, (sr_dah)
-	inc	b
-	out	(c), a			; DAH
-	ld	a, (sr_dax)
-	inc	b
-	out	(c), a			; DAX
-	ld	b, #0x26
-	out	(c), e			; DMALen
-	inc	b
-	ld	a, #0x31		; RAM -> RAM, S_ALGN | D_ALGN
-	out	(c), a
-5$:	ld	hl, #sr_ii
-	inc	(hl)
+	ld	e, a			; E — DAX строки
 	ld	a, (sr_ni)
-	cp	a, (hl)
-	jp	nz, 1$
+	ld	(sr_ii), a		; счётчик отрезков
+	ld	hl, #sh_dsc
+1$:	ld	bc, #0x27AF
+2$:	in	a, (c)			; дождаться конца прошлой передачи
+	jp	m, 2$
+	ld	b, #0x1A
+	ld	a, (hl)			; SAL
+	inc	l
+	out	(c), a
+	inc	b
+	ld	a, (hl)			; SAH
+	inc	l
+	out	(c), a
+	inc	b
+	ld	a, (hl)			; SAX
+	inc	l
+	out	(c), a
+	inc	b
+	ld	a, (hl)			; DAL
+	inc	l
+	out	(c), a
+	inc	b
+	out	(c), d			; DAH
+	inc	b
+	out	(c), e			; DAX
+	ld	b, #0x26
+	ld	a, (hl)			; DMALen
+	inc	l
+	out	(c), a
+	inc	b
+	ld	a, #0x31		; RAM -> RAM, S_ALGN | D_ALGN — пуск
+	out	(c), a
+	ld	a, (sr_ii)
+	dec	a
+	ld	(sr_ii), a
+	jr	nz, 1$
 	ret
+
+	.area	_BANK25
+
+;; Дескрипторы отрезков строки (5 байт: SAL, SAH, SAX, DAL, DMALen) — в ОЗУ банка: окно 2
+;; кэшируется, в отличие от страницы тени в окне 3 (чтение оттуда — 5–6 тактов вместо 3)
+sh_dsc:	.ds	200
