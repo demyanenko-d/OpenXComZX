@@ -13,9 +13,10 @@ const nCell=G.readUInt16LE(0);
 const ct=6, bt=ct+nCell*16;
 const rdv=o=>{const r=[];for(let k=0;k<3;k++){const lo=G[o+k*2],hi=G.readInt8(o+k*2+1);r.push((hi*128+lo)/16384);}return r;};
 const edges=[];
-for(let c=0;c<nCell;c++){const r=ct+c*16, off=G.readUInt16LE(r), vn=G.readUInt16LE(r+2), en=G.readUInt16LE(r+4);
- const vb=bt+off, V=[];for(let i=0;i<vn;i++)V.push(rdv(vb+i*6));
- for(let i=0;i<en;i++){const eo=vb+vn*6+i*6;edges.push([V[G.readUInt16LE(eo)/6],V[G.readUInt16LE(eo+2)/6]]);}}
+for(let c=0;c<nCell;c++){const cr=ct+c*16, cb=bt+G.readUInt16LE(cr); if(!G.readUInt16LE(cr+2))continue; // ресурс v6: подблоки
+ for(let k=0;k<G[cb];k++){const r=cb+2+k*16, vn=G.readUInt16LE(r+2), en=G.readUInt16LE(r+4);
+ const vb=cb+G.readUInt16LE(r), V=[];for(let i=0;i<vn;i++)V.push(rdv(vb+i*6));
+ for(let i=0;i<en;i++){const eo=vb+vn*6+i*6;edges.push([V[G.readUInt16LE(eo)/6],V[G.readUInt16LE(eo+2)/6]]);}}}
 const ang=(a,b)=>Math.acos(Math.max(-1,Math.min(1,a[0]*b[0]+a[1]*b[1]+a[2]*b[2])));
 const L=edges.map(([a,b])=>ang(a,b)*180/Math.PI).sort((x,y)=>x-y);
 console.log(game,'edges',edges.length,'length deg: median',L[L.length>>1].toFixed(2),'p90',L[L.length*0.9|0].toFixed(2),'max',L[L.length-1].toFixed(2));

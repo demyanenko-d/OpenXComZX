@@ -33,15 +33,18 @@
 // (зумы 3–5 посреди океана или суши): вписанный в окно круг на зуме 5 — 8°, клетка
 // с центром вида целиком в нём.
 //
-// Формат v5 (little-endian):
-//   u16 nCell (72), nVert, nEdge (всего)
-//   cell[nCell]: u16 смещение блока ячейки (от начала блоков), vn, en, 0; вектор центра
-//       (6 байт как у вершин); i16 sinRho (радиус шапки, Q14; 16384 и больше — не
-//       отсекать)                                                                  16 байт
-//   блоки ячеек (движок копирует блок одним DMA): вершины ячейки vn x 6 байт — X, Y, Z по
-//       2 байта: v & 127, v >> 7; затем рёбра en x 6 байт — u16 va, vb (номер вершины в
-//       ячейке * 6 — запись проекции движка: x, y, z), u8 texL, texR (слева / справа от va -> vb
-//       на экране; 13 — океан)
+// Формат v6 (little-endian; globe.md §12.10):
+//   u16 nCell (72), размер блоков / 6, 0
+//   cell[nCell]: u16 смещение блока ячейки (от начала блоков), u16 размер шапки блока (0 — рёбер
+//       нет), u16 рёбер всего, 0; вектор центра (6 байт как у вершин); i16 sinRho (радиус шапки,
+//       Q14; 16384 и больше — не отсекать)                                           16 байт
+//   блок ячейки: шапка — u8 ns (подблоков 15° с рёбрами, 1..4), 0; записи подблоков ns x 16 байт
+//       (как у ячейки, но u16 смещение данных подблока от начала блока, vn, en, 0; центр; sinRho);
+//       m зумов 3, 4, 5 — три массива ns x u16 (m = v + (v >> 3) + 2, v = (R · sinRho) >> 14 —
+//       отсев подблоков движком без умножений); затем данные подблоков: вершины vn x 6 байт —
+//       X, Y, Z по 2 байта: v & 127, v >> 7; рёбра en x 6 байт — u16 va, vb (номер вершины в
+//       подблоке * 6 — запись проекции движка: x, y, z), u8 texL, texR (слева / справа от va -> vb
+//       на экране; 13 — океан). Все смещения чётные (DMA не видит бит 0 адреса).
 //   grid[36][72]: u8
 using System;
 using System.Collections.Generic;
@@ -62,7 +65,9 @@ namespace OxzConv
 
 	static class GlobeData
 	{
-		const int CellLon = 12, CellLat = 6, NCell = CellLon * CellLat;
+		const int CellLon = 12, CellLat = 6, NCell = CellLon * CellLat, NSub = 4;
+		const int MaxSub = 150;                    // вершин / рёбер в подблоке (MAXCV движка)
+		static readonly int[] ZoomR = { 90, 120, 180, 280, 450, 720 };
 		const int VRec = 6;                       // запись проекции вершины в движке: x, y, z (по 2 байта)
 		const int GridLon = 72, GridLat = 36;
 		const double TolT = 3e-4;                 // притяжение вершины к ребру (рад)
@@ -300,68 +305,97 @@ namespace OxzConv
 			}
 			var edgesAll = Enumerable.Range(0, arr.Length).Where(i => alive[i]).Select(i => arr[i]).ToList();
 
-			// ---- 5. ячейки по середине ребра; вершины ячейки; шапка
-			int CellOf(V p)
+			// ---- 5. ячейки 30° по середине ребра, внутри — подблоки 15° (2 x 2); вершины подблока, шапки
+			int Cell15(V p, out int sub)
 			{
 				double lon = Math.Atan2(p.Y, p.X) * 180 / Math.PI, lat = Math.Asin(Math.Max(-1, Math.Min(1, p.Z))) * 180 / Math.PI;
-				int cl = (int)Math.Floor(((lon % 360) + 360) % 360 / 30.0) % CellLon;
-				int cb = Math.Min(CellLat - 1, Math.Max(0, (int)Math.Floor((lat + 90) / 30.0)));
-				return cb * CellLon + cl;
+				int l15 = (int)Math.Floor(((lon % 360) + 360) % 360 / 15.0) % (CellLon * 2);
+				int b15 = Math.Min(CellLat * 2 - 1, Math.Max(0, (int)Math.Floor((lat + 90) / 15.0)));
+				sub = (b15 % 2) * 2 + l15 % 2;
+				return (b15 / 2) * CellLon + l15 / 2;
 			}
-			var cellEdges = new List<(int a, int b, byte tl, byte tr)>[NCell];
-			for (int c = 0; c < NCell; c++) cellEdges[c] = new List<(int, int, byte, byte)>();
-			foreach (var e in edgesAll) cellEdges[CellOf((verts[e.a] + verts[e.b]).Norm())].Add(e);
+			var cellEdges = new List<(int a, int b, byte tl, byte tr)>[NCell, NSub];
+			for (int c = 0; c < NCell; c++) for (int k = 0; k < NSub; k++) cellEdges[c, k] = new List<(int, int, byte, byte)>();
+			foreach (var e in edgesAll) { int c = Cell15((verts[e.a] + verts[e.b]).Norm(), out int k); cellEdges[c, k].Add(e); }
 			var bOut = new List<byte>(); var cOut = new List<byte>();
 			void W16(List<byte> o, int x) { o.Add((byte)x); o.Add((byte)(x >> 8)); }
 			void WVec(List<byte> o, V q)
 			{
 				foreach (double c in new[] { q.X, q.Y, q.Z }) { int v = Q14(c); o.Add((byte)(v & 127)); o.Add((byte)(v >> 7)); }
 			}
-			int nVert = 0, nEdge = 0, maxCellVerts = 0, maxCellEdges = 0, nDrop = 0;
-			double maxRho = 0;
+			// шапка: центр (нормированная сумма концов), sinρ (Q14, 16384 — не отсекать)
+			(V cc, int sinRho, double rho) Cap(List<(int a, int b, byte tl, byte tr)> es)
+			{
+				var sum = new V();
+				foreach (var e in es) sum = sum + verts[e.a] + verts[e.b];
+				if (es.Count == 0 || sum.Len <= 1e-9) return (new V(1, 0, 0), 16384, 0);
+				V cc = sum.Norm();
+				double rho = 0;
+				foreach (var e in es) rho = Math.Max(rho, Math.Max(Ang(cc, verts[e.a]), Ang(cc, verts[e.b])));
+				rho += 0.5 * Math.PI / 180;                          // запас на округления проекции
+				return (cc, rho >= Math.PI / 2 ? 16384 : (int)Math.Ceiling(Math.Sin(rho) * 16384), rho);
+			}
+			int nVert = 0, nEdge = 0, maxSubVerts = 0, maxSubEdges = 0, nDrop = 0, maxHdr = 0, nSubs = 0;
+			double maxRho = 0, maxSubRho = 0;
 			for (int c = 0; c < NCell; c++)
 			{
-				int v0 = nVert, e0 = nEdge;
-				var vOut = new List<byte>(); var eOut = new List<byte>();
-				var vmap = new Dictionary<int, int>();
-				var qmap = new Dictionary<(int, int, int), int>();   // совпавшие после Q14
-				int Loc(int g)
+				var all = new List<(int a, int b, byte tl, byte tr)>();
+				var subRec = new List<byte>(); var subM = new List<byte>[3]; var subData = new List<byte>();
+				for (int z = 0; z < 3; z++) subM[z] = new List<byte>();
+				int nsb = 0, cellEn = 0;
+				for (int k = 0; k < NSub; k++) if (cellEdges[c, k].Count > 0) nsb++;
+				int hdr = 2 + nsb * (16 + 6);                         // u8 число, u8 0; записи; m зумов 3–5
+				for (int k = 0; k < NSub; k++)
 				{
-					if (vmap.TryGetValue(g, out int i)) return i;
-					V q = verts[g];
-					var key = (Q14(q.X), Q14(q.Y), Q14(q.Z));
-					if (!qmap.TryGetValue(key, out i)) { i = nVert++; qmap[key] = i; WVec(vOut, q); }
-					vmap[g] = i;
-					return i;
+					var es = cellEdges[c, k];
+					if (es.Count == 0) continue;
+					var vOut = new List<byte>(); var eOut = new List<byte>();
+					var qmap = new Dictionary<(int, int, int), int>();   // совпавшие после Q14
+					int vn = 0;
+					int Loc(int g)
+					{
+						V q = verts[g];
+						var key = (Q14(q.X), Q14(q.Y), Q14(q.Z));
+						if (!qmap.TryGetValue(key, out int i)) { i = vn++; qmap[key] = i; WVec(vOut, q); }
+						return i;
+					}
+					var keptE = new List<(int a, int b, byte tl, byte tr)>();
+					foreach (var e in es)
+					{
+						int la = Loc(e.a), lb = Loc(e.b);
+						if (la == lb) { nDrop++; continue; }
+						W16(eOut, la * VRec); W16(eOut, lb * VRec); eOut.Add(e.tl); eOut.Add(e.tr);
+						keptE.Add(e);
+					}
+					int en = keptE.Count;
+					if (vn > MaxSub || en > MaxSub) throw new Exception($"globe: sub-block {c}/{k}: {vn} vertices, {en} edges > {MaxSub}");
+					nVert += vn; nEdge += en; cellEn += en; nSubs++;
+					maxSubVerts = Math.Max(maxSubVerts, vn); maxSubEdges = Math.Max(maxSubEdges, en);
+					all.AddRange(keptE);
+					var (cc, sinRho, rho) = Cap(keptE);
+					maxSubRho = Math.Max(maxSubRho, rho);
+					W16(subRec, hdr + subData.Count); W16(subRec, vn); W16(subRec, en); W16(subRec, 0);
+					WVec(subRec, cc); W16(subRec, sinRho);
+					// m = v + (v >> 3) + 2, v = (R · sinρ) >> 14 — как cm_fill движка (sinρ >= 16384: v = 0)
+					for (int z = 0; z < 3; z++)
+					{
+						int v = sinRho >= 16384 ? 0 : (ZoomR[3 + z] * sinRho) >> 14;
+						W16(subM[z], v + (v >> 3) + 2);
+					}
+					subData.AddRange(vOut); subData.AddRange(eOut);
 				}
-				var sum = new V();
-				var cv = new List<V>();
-				foreach (var e in cellEdges[c])
-				{
-					int la = Loc(e.a), lb = Loc(e.b);
-					if (la == lb) { nDrop++; continue; }
-					W16(eOut, (la - v0) * VRec); W16(eOut, (lb - v0) * VRec); eOut.Add(e.tl); eOut.Add(e.tr);
-					nEdge++;
-					cv.Add(verts[e.a]); cv.Add(verts[e.b]);
-					sum = sum + verts[e.a] + verts[e.b];
-				}
-				int vn = nVert - v0, en = nEdge - e0;
-				maxCellVerts = Math.Max(maxCellVerts, vn); maxCellEdges = Math.Max(maxCellEdges, en);
-				V cc = new V(1, 0, 0);
-				int sinRho = 16384;
-				if (cv.Count > 0 && sum.Len > 1e-9)
-				{
-					cc = sum.Norm();
-					double rho = 0;
-					foreach (var q in cv) rho = Math.Max(rho, Ang(cc, q));
-					rho += 0.5 * Math.PI / 180;                      // запас на округления проекции
-					maxRho = Math.Max(maxRho, rho);
-					sinRho = rho >= Math.PI / 2 ? 16384 : (int)Math.Ceiling(Math.Sin(rho) * 16384);
-				}
-				W16(cOut, bOut.Count); W16(cOut, vn); W16(cOut, en); W16(cOut, 0);
-				WVec(cOut, cc); W16(cOut, sinRho);
-				bOut.AddRange(vOut); bOut.AddRange(eOut);             // блок ячейки: вершины, рёбра
+				var cap = Cap(all);
+				maxRho = Math.Max(maxRho, cap.rho);
+				maxHdr = Math.Max(maxHdr, hdr);
+				// запись ячейки: смещение блока, размер шапки, рёбер всего, 0; центр; sinρ
+				W16(cOut, bOut.Count); W16(cOut, nsb > 0 ? hdr : 0); W16(cOut, cellEn); W16(cOut, 0);
+				WVec(cOut, cap.cc); W16(cOut, cap.sinRho);
+				if (nsb == 0) continue;
+				bOut.Add((byte)nsb); bOut.Add(0);
+				bOut.AddRange(subRec); foreach (var m in subM) bOut.AddRange(m);
+				bOut.AddRange(subData);
 			}
+			while (bOut.Count % 6 != 0) bOut.Add(0);                 // блоки кратны 6: движок берёт размер как h1 · 6
 
 			// ---- 6. сетка 5°: клетки, куда заходит ребро, — #FE; остальные — текстура центра
 			var grid = new byte[GridLat * GridLon];
@@ -418,11 +452,12 @@ namespace OxzConv
 			}
 
 			var o2 = new List<byte>();
-			W16(o2, NCell); W16(o2, nVert); W16(o2, nEdge);
+			W16(o2, NCell); W16(o2, bOut.Count / 6); W16(o2, 0);
 			o2.AddRange(cOut); o2.AddRange(bOut); o2.AddRange(grid);
 			string info = $"{polys.Count} polygons ({nDegenerate} degenerate), {nTj} near-T-junctions, {nCross} crossings, " +
 				$"{nPieces} pieces -> {kept.Count} texture boundaries -> {nEdge} edges ({nMerged} merged, {nDrop} dropped), " +
-				$"{nVert} vertices ({maxCellVerts} / {maxCellEdges} max in a cell), grid {nMixed} mixed, max cell radius {maxRho * 180 / Math.PI:F0}°";
+				$"{nVert} vertices in {nSubs} sub-blocks ({maxSubVerts} / {maxSubEdges} max in a sub-block, cell header {maxHdr} max), grid {nMixed} mixed, " +
+				$"max radius cell {maxRho * 180 / Math.PI:F0}° / sub-block {maxSubRho * 180 / Math.PI:F0}°, blocks {bOut.Count} B";
 			return (o2.ToArray(), info);
 		}
 	}

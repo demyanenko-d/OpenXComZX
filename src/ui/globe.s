@@ -45,7 +45,11 @@ b_globe_draw		= 24
 b_globe_invalidate	= 24
 
 RES_OFF		= 0x2000		; рабочая страница: проекции вершин ячейки
-VSRC		= 0x2390		;   блок ячейки (DMA из ресурса)
+VSRC		= 0x2390		;   шапка блока ячейки: подблоки (DMA из ресурса)
+VDAT		= 0x2400		;   данные подблока: вершины, рёбра (DMA из ресурса)
+SUBC		= 0x3950		;   центры подблоков ячейки [4 x 6]
+SUBP		= 0x3970		;   их проекции [4 x 6]
+SUBV		= 0x3990		;   видимые подблоки [4]
 STG		= 0x2AA0		;   записи рёбер ячейки
 WB_BUCKET	= 0x3080		;   корзины строк
 WB_COV		= 0x3300		;   покрытие строк рёбрами
@@ -164,6 +168,14 @@ r_cr:		.ds	2		; массивы кадра на стеке
 r_cv:		.ds	2
 r_cp:		.ds	2
 r_v:		.ds	1
+r_nvc:		.ds	1		; видимых ячеек (_gl_nvis портит отсев подблоков)
+r_ns:		.ds	1		; подблоков в ячейке, видимых, текущий
+r_nsv:		.ds	1
+r_sv:		.ds	1
+r_boff:		.ds	2		; смещение блока ячейки в странице блоков
+r_whole:	.ds	1
+r_dp:		.ds	2		; данные текущего подблока в рабочей странице		; 1 — данные всех подблоков ячейки уже в VDAT (зумы 0–2)
+r_hdr:		.ds	2		; размер шапки блока ячейки
 r_cv8:		.ds	1
 r_vn:		.ds	2
 r_en:		.ds	2
@@ -1666,10 +1678,12 @@ r_edges:	; ---- рёберный путь
 	ld	hl, #0xC000 + WB_VIS
 	ld	(_gl_vsp), hl
 	call	_gl_cull
+	ld	a, (_gl_nvis)
+	ld	(r_nvc), a
 	xor	a, a
 	ld	(r_v), a
 rc_loop:				; видимые ячейки
-	ld	a, (_gl_nvis)
+	ld	a, (r_nvc)
 	ld	b, a
 	ld	a, (r_v)
 	cp	a, b
@@ -1691,24 +1705,9 @@ rc_loop:				; видимые ячейки
 	add	hl, de
 	push	hl
 	pop	ix				; IX — запись ячейки
-	ld	l, 2 (ix)
-	ld	h, 3 (ix)
-	ld	(r_vn), hl
-	ld	l, 4 (ix)
+	ld	l, 4 (ix)			; рёбер в ячейке всего
 	ld	h, 5 (ix)
 	ld	(r_en), hl
-	ld	hl, (r_vn)			; вершин или рёбер больше 150
-	ld	de, #MAXCV + 1
-	or	a, a
-	sbc	hl, de
-	jr	nc, 1$
-	ld	hl, (r_en)
-	or	a, a
-	sbc	hl, de
-	jr	c, 2$
-1$:	ld	hl, #s_big
-	call	_dbg_puts
-	jp	rc_next
 2$:	ld	hl, (r_en)			; пул рёбер: gl_eptr > #10000 − 10 · en
 	add	hl, hl
 	ld	e, l
@@ -1728,20 +1727,188 @@ rc_loop:				; видимые ячейки
 	jp	rc_done
 3$:	ld	hl, #r_ncell
 	inc	(hl)
-	ld	a, (r_cv8)			; вся ячейка спереди — z вершин не нужен
-	rlca
-	and	a, #1
-	ld	(_gl_noz), a
-	ld	a, (r_btpg)			; блок ячейки (вершины, рёбра) -> рабочая страница
+	ld	a, (r_btpg)			; шапка блока ячейки -> рабочая страница
 	ld	(fd_sp), a
 	ld	l, 0 (ix)
 	ld	h, 1 (ix)
 	ld	de, (r_btof)
 	add	hl, de
+	ld	(r_boff), hl
 	ld	(fd_so), hl
 	ld	a, (work)
 	ld	(fd_dp), a
 	ld	hl, #VSRC
+	ld	(fd_do), hl
+	ld	l, 2 (ix)
+	ld	h, 3 (ix)
+	ld	(fd_n), hl
+	ld	(r_hdr), hl
+	call	far_dma
+	call	dma_wait
+	xor	a, a
+	ld	(r_whole), a
+	ld	a, (0xC000 + VSRC)
+	ld	(r_ns), a
+	ld	a, (r_z)			; зумы 0–2: все подблоки, передняя сторона — как у ячейки
+	cp	a, #3
+	jr	nc, 5$
+	ld	a, (r_cv8)
+	and	a, #0x80
+	ld	c, a
+	ld	a, (r_ns)
+	ld	b, a
+	ld	hl, #0xC000 + SUBV
+	xor	a, a
+4$:	ld	e, a
+	or	a, c
+	ld	(hl), a
+	inc	hl
+	ld	a, e
+	inc	a
+	djnz	4$
+	ld	a, (r_ns)			; данные всех подблоков одним DMA, если влезают до STG
+	ld	b, a
+	ld	ix, #0xC000 + VSRC + 2
+	ld	hl, #0
+10$:	ld	e, 2 (ix)			; (vn + en) · 6
+	ld	d, 3 (ix)
+	add	hl, de
+	ld	e, 4 (ix)
+	ld	d, 5 (ix)
+	add	hl, de
+	ld	de, #16
+	add	ix, de
+	djnz	10$
+	ld	e, l
+	ld	d, h
+	add	hl, hl
+	add	hl, de
+	add	hl, hl
+	ld	(fd_n), hl
+	ld	de, #STG - VDAT + 1
+	or	a, a
+	sbc	hl, de
+	jr	nc, 11$
+	ld	a, (r_btpg)			; far_dma нормирует адрес и портит fd_*
+	ld	(fd_sp), a
+	ld	a, (work)
+	ld	(fd_dp), a
+	ld	hl, (r_boff)
+	ld	de, (r_hdr)
+	add	hl, de
+	ld	(fd_so), hl
+	ld	hl, #VDAT
+	ld	(fd_do), hl
+	call	far_dma
+	call	dma_wait
+	ld	a, #1
+	ld	(r_whole), a
+11$:	ld	a, (r_ns)
+	jp	6$
+5$:	ld	a, (r_ns)			; зумы 3–5: центры подблоков, проекция, отсев как у ячеек
+	ld	b, a
+	ld	hl, #0xC000 + VSRC + 2 + 8
+	ld	de, #0xC000 + SUBC
+7$:	push	bc
+	ld	bc, #6
+	ldir
+	ld	bc, #10
+	add	hl, bc
+	pop	bc
+	djnz	7$
+	ld	hl, #0xC000 + SUBC
+	ld	(_gl_pv), hl
+	ld	hl, #0xC000 + SUBP
+	ld	(_gl_pd), hl
+	ld	a, (r_ns)
+	ld	(_gl_pn), a
+	xor	a, a
+	ld	(_gl_noz), a
+	call	_gl_project
+	ld	hl, #0xC000 + VSRC + 2
+	ld	(_gl_crp), hl
+	ld	hl, #0xC000 + SUBP
+	ld	(_gl_cpp), hl
+	ld	a, (r_ns)
+	ld	(_gl_cn), a
+	ld	l, a				; m зума: шапка + 2 + 16·ns + 2·ns·(z − 3)
+	ld	h, #0
+	add	hl, hl
+	ld	e, l
+	ld	d, h
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
+	ld	a, (r_z)
+	sub	a, #3
+	jr	z, 8$
+	ld	b, a
+9$:	add	hl, de
+	djnz	9$
+8$:	ld	de, #0xC000 + VSRC + 2
+	add	hl, de
+	ld	(_gl_cmp), hl
+	ld	hl, #0xC000 + SUBV
+	ld	(_gl_vsp), hl
+	call	_gl_cull
+	ld	a, (_gl_nvis)
+6$:	ld	(r_nsv), a
+	xor	a, a
+	ld	(r_sv), a
+rs_loop:				; видимые подблоки ячейки
+	ld	a, (r_nsv)
+	ld	b, a
+	ld	a, (r_sv)
+	cp	a, b
+	jp	nc, rc_next
+	ld	e, a
+	ld	d, #0
+	ld	hl, #0xC000 + SUBV
+	add	hl, de
+	ld	a, (hl)
+	ld	c, a
+	rlca					; бит 7 — весь спереди, z вершин не нужен
+	and	a, #1
+	ld	(_gl_noz), a
+	ld	a, c
+	and	a, #0x7F
+	ld	l, a
+	ld	h, #0
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
+	ld	de, #0xC000 + VSRC + 2
+	add	hl, de
+	push	hl
+	pop	ix				; IX — запись подблока
+	ld	l, 2 (ix)
+	ld	h, 3 (ix)
+	ld	(r_vn), hl
+	ld	l, 4 (ix)
+	ld	h, 5 (ix)
+	ld	(r_en), hl
+	ld	a, (r_whole)			; данные уже в VDAT: смещение подблока − шапка
+	or	a, a
+	jr	z, 12$
+	ld	l, 0 (ix)
+	ld	h, 1 (ix)
+	ld	de, (r_hdr)
+	or	a, a
+	sbc	hl, de
+	ld	de, #0xC000 + VDAT
+	add	hl, de
+	jr	13$
+12$:	ld	a, (r_btpg)			; данные подблока (вершины, рёбра) -> рабочая страница
+	ld	(fd_sp), a
+	ld	l, 0 (ix)
+	ld	h, 1 (ix)
+	ld	de, (r_boff)
+	add	hl, de
+	ld	(fd_so), hl
+	ld	a, (work)
+	ld	(fd_dp), a
+	ld	hl, #VDAT
 	ld	(fd_do), hl
 	ld	hl, (r_vn)
 	ld	de, (r_en)
@@ -1754,7 +1921,8 @@ rc_loop:				; видимые ячейки
 	ld	(fd_n), hl
 	call	far_dma
 	call	dma_wait
-	ld	hl, #0xC000 + VSRC
+	ld	hl, #0xC000 + VDAT
+13$:	ld	(r_dp), hl
 	ld	(_gl_pv), hl
 	ld	hl, #0xC000 + RES_OFF
 	ld	(_gl_pd), hl
@@ -1767,7 +1935,7 @@ rc_loop:				; видимые ячейки
 	add	hl, hl
 	add	hl, de
 	add	hl, hl
-	ld	de, #0xC000 + VSRC
+	ld	de, (r_dp)
 	add	hl, de
 	ld	(_gl_eb), hl
 	ld	a, (r_en)
@@ -1777,11 +1945,11 @@ rc_loop:				; видимые ячейки
 	ld	hl, #0xC000 + STG
 	ld	(_gl_sptr), hl
 	call	_gl_edges
-	ld	hl, (_gl_eptr)			; записи ячейки -> страница рёбер
+	ld	hl, (_gl_eptr)			; записи подблока -> страница рёбер
 	ld	de, (r_e0)
 	or	a, a
 	sbc	hl, de
-	jr	z, rc_next
+	jr	z, rs_next
 	ld	(fd_n), hl
 	ld	a, (work)
 	ld	(fd_sp), a
@@ -1795,6 +1963,10 @@ rc_loop:				; видимые ячейки
 	ld	h, a
 	ld	(fd_do), hl
 	call	far_dma
+rs_next:
+	ld	hl, #r_sv
+	inc	(hl)
+	jp	rs_loop
 rc_next:
 	ld	hl, #r_v
 	inc	(hl)

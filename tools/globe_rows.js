@@ -29,10 +29,13 @@ const rdv = o => { const r = []; for (let k = 0; k < 3; k++) { const lo = G[o + 
 // все рёбра карты: концы — единичные векторы, текстуры сторон
 const edges = [];
 for (let c = 0; c < nCell; c++) {
-	const o = ct + c * 16, bo = bt + G.readUInt16LE(o), vn = G.readUInt16LE(o + 2), en = G.readUInt16LE(o + 4);
+	const co = ct + c * 16, cb = bt + G.readUInt16LE(co);   // ресурс v6: подблоки ячейки (Globe.cs)
+	if (G.readUInt16LE(co + 2)) for (let k = 0; k < G[cb]; k++) {
+	const o = cb + 2 + k * 16, bo = cb + G.readUInt16LE(o), vn = G.readUInt16LE(o + 2), en = G.readUInt16LE(o + 4);
 	for (let e = 0; e < en; e++) {
 		const eo = bo + vn * 6 + e * 6;
 		edges.push({ A: rdv(bo + G.readUInt16LE(eo)), B: rdv(bo + G.readUInt16LE(eo + 2)), tl: G[eo + 4], tr: G[eo + 5] });
+	}
 	}
 }
 

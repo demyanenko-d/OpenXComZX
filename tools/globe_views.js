@@ -40,7 +40,9 @@ const rdv = o => { const r = []; for (let k = 0; k < 3; k++) { const lo = G[o + 
 // все границы карты: концы дуги — единичные векторы, нормаль, текстуры сторон
 const edges = [];
 for (let c = 0; c < nCell; c++) {
-	const o = ct + c * 16, bo = bt + G.readUInt16LE(o), vn = G.readUInt16LE(o + 2), en = G.readUInt16LE(o + 4);
+	const co = ct + c * 16, cb = bt + G.readUInt16LE(co);   // ресурс v6: подблоки ячейки (Globe.cs)
+	if (G.readUInt16LE(co + 2)) for (let k = 0; k < G[cb]; k++) {
+	const o = cb + 2 + k * 16, bo = cb + G.readUInt16LE(o), vn = G.readUInt16LE(o + 2), en = G.readUInt16LE(o + 4);
 	for (let e = 0; e < en; e++) {
 		const eo = bo + vn * 6 + e * 6;
 		const A = rdv(bo + G.readUInt16LE(eo)), B = rdv(bo + G.readUInt16LE(eo + 2));
@@ -50,6 +52,7 @@ for (let c = 0; c < nCell; c++) {
 		// P(t) = A·cos t + M·sin t, t от 0 до tAB — параметризация дуги (для отсева по строкам)
 		const M2 = cross(n, A);
 		edges.push({ A, B, N: n, M: M2, tab: Math.atan2(dot(cross(A, B), n), dot(A, B)), tl: G[eo + 4], tr: G[eo + 5] });
+	}
 	}
 }
 

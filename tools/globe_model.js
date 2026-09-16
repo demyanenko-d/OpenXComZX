@@ -21,8 +21,8 @@ const dir = game === 'TFTD' ? 'Steam/X-COM Terror from the Deep/TFD' : 'Steam/XC
 const pb = fs.readFileSync(dir + '/GEODATA/PALETTES.DAT');
 const pal = []; for (let i = 0; i < 256; i++) pal.push([pb[i * 3] * 255 / 63 | 0, pb[i * 3 + 1] * 255 / 63 | 0, pb[i * 3 + 2] * 255 / 63 | 0]);
 const OCEAN = game === 'TFTD' ? 16 : 192;
-const nCell = G.readUInt16LE(0), nVert = G.readUInt16LE(2), nEdge = G.readUInt16LE(4);
-const ct = 6, bt = ct + nCell * 16, gt = bt + nVert * 6 + nEdge * 6;
+const nCell = G.readUInt16LE(0), nBlk6 = G.readUInt16LE(2);   // ресурс v6: блоки ячеек с подблоками (Globe.cs)
+const ct = 6, bt = ct + nCell * 16, gt = bt + nBlk6 * 6;
 const rdv = o => { const r = []; for (let k = 0; k < 3; k++) { const lo = G[o + k * 2], hi = G.readInt8(o + k * 2 + 1); r.push((hi * 128 + lo) / 16384); } return r; };
 const ZR = [90, 120, 180, 280, 450, 720];
 // По умолчанию — как движок (globe_s.s); OLD=1 — все ключи выключены (опыты): тогда их
@@ -164,7 +164,6 @@ function render(lonD, latD, zoom, wantTruth) {
 				const xc = q.x >> 2, yc = q.y >> 2;
 				if (xc + mm < 0 || xc - mm >= 256 || yc + mm < 0 || yc - mm >= 200) continue;
 			}
-			if (vn > 150 || en > 150) continue;
 			noz = sri < 16384 && (Z16 ? q.z - (sri >> 2) > 64 : s8(q.z - (sri >> 8)) > 1);
 		} else {
 			const sr = G.readInt16LE(o + 14) / 16384, q = proj(rdv(o + 8));
@@ -176,6 +175,20 @@ function render(lonD, latD, zoom, wantTruth) {
 			}
 		}
 		nCells++;
+		const cb = bo, cnoz = noz, ns = G[cb];
+		for (let k = 0; k < ns; k++) {
+		const so = cb + 2 + k * 16, bo = cb + G.readUInt16LE(so), vn = G.readUInt16LE(so + 2), en = G.readUInt16LE(so + 4);
+		let noz = cnoz;
+		if (EXACT && zoom >= 3) {                           // подблоки на зумах 3–5 — отсев как у ячеек, m из шапки
+			const sri = G.readInt16LE(so + 14), q = projE(so + 8, false);
+			if (sri < 16384) {
+				if (q.z + (sri >> 2) < -64) continue;
+				const mm = G.readUInt16LE(cb + 2 + ns * 16 + 2 * ns * (zoom - 3) + 2 * k);
+				const xc = q.x >> 2, yc = q.y >> 2;
+				if (xc + mm < 0 || xc - mm >= 256 || yc + mm < 0 || yc - mm >= 200) continue;
+			}
+			noz = sri < 16384 && q.z - (sri >> 2) > 64;
+		}
 		const P = []; for (let v = 0; v < vn; v++) P.push(EXACT ? projE(bo + v * 6, noz) : proj(rdv(bo + v * 6)));
 		nV += vn;
 		for (let e = 0; e < en; e++) {
@@ -236,6 +249,7 @@ function render(lonD, latD, zoom, wantTruth) {
 			if (r1 < r0) continue;
 			buckets[r0].push({ u, s, last: r1, tl, tr, top: r0, lt: A.lb, lbt: B.lb, id: nE });
 			nE++;
+		}
 		}
 	}
 	// BANDGRID: строка без рёбер — одна область: для полосы таких строк текстура по точке
