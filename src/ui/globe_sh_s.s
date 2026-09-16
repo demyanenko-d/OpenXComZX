@@ -176,6 +176,96 @@ blk_eval:
 	ld	a, #10
 	jr	2$
 
+;; Пределы 2t строки блоков по столбцам C..B (sr_zr, sr_tyy готовы): tx и tz — лестницы (монотонны),
+;; z центра блока растёт к столбцу 15 -> крайние 2t — на концах. A = 0 — строка смешанная, 1 — вся
+;; день (2t < −128: blk_eval дал бы 0), 2 — вся ночь (2t ≥ 128: 10). BC сохраняется.
+row_rng:
+	push	bc
+	ld	h, #>SH_TX		; tx[c0], tx[c1]
+	ld	l, c
+	ld	e, (hl)
+	set	7, l
+	ld	d, (hl)
+	ld	l, b
+	ld	a, (hl)
+	set	7, l
+	ld	h, (hl)
+	ld	l, a
+	call	minmax
+	ld	(rr_lo), de
+	ld	(rr_hi), hl
+	ld	a, c			; z: наименьший — у столбца, дальнего от центра, наибольший — столбец 15
+	call	mirror
+	ld	d, a
+	ld	a, b
+	call	mirror
+	cp	a, d
+	jr	c, 1$
+	ld	a, d
+1$:	ld	hl, (sr_zr)
+	or	a, l
+	ld	l, a
+	ld	e, (hl)			; E — z наименьший
+	or	a, #15
+	ld	l, a
+	ld	l, (hl)			; tz(z наибольший) -> HL
+	ld	h, #>SH_TZL
+	ld	a, (hl)
+	inc	h
+	ld	h, (hl)
+	ld	l, a
+	ld	d, #>SH_TZL		; tz(z наименьший) -> DE
+	ld	a, (de)
+	ld	c, a
+	inc	d
+	ld	a, (de)
+	ld	d, a
+	ld	e, c
+	call	minmax
+	ld	bc, (sr_tyy)
+	add	hl, bc			; наибольшее 2t + 128 < 0 — день
+	push	de
+	ld	de, (rr_hi)
+	add	hl, de
+	ld	de, #128
+	add	hl, de
+	pop	de
+	bit	7, h
+	ld	a, #1
+	jr	nz, 3$
+	ex	de, hl			; наименьшее 2t + 128 ≥ 256 — ночь
+	add	hl, bc
+	ld	de, (rr_lo)
+	add	hl, de
+	ld	de, #128
+	add	hl, de
+	xor	a, a
+	bit	7, h
+	jr	nz, 3$
+	or	a, h
+	jr	z, 3$
+	ld	a, #2
+3$:	pop	bc
+	ret
+
+;; DE, HL -> DE = меньшее, HL = большее (со знаком; |значения| < 16384)
+minmax:
+	push	hl
+	or	a, a
+	sbc	hl, de
+	pop	hl
+	ret	p
+	ex	de, hl
+	ret
+
+;; A — столбец блоков -> столбец четверти (c < 16 ? c : 31 − c)
+mirror:
+	cp	a, #16
+	ret	c
+	cpl
+	add	a, #32
+	ret
+
 ;; DMANum = A (если сменился — дождаться конца прошлого DMA)
 set_num:
 	ld	hl, #sr_num
@@ -247,7 +337,23 @@ br_loop:
 	srl	c
 	ld	a, b
 	ld	(sr_c1), a
-	push	bc
+	call	row_rng			; вся строка блоков одного края — уровни не считать
+	or	a, a
+	jr	z, 11$
+	dec	a
+	jp	z, br_rows		; день: sr_any = 0
+	ld	a, #10			; ночь: LB[c0..c1] = 10
+	ld	(sr_any), a
+	ld	h, #>SH_LB
+	ld	l, c
+12$:	ld	(hl), a
+	ld	a, l
+	cp	a, b
+	ld	a, #10
+	inc	l
+	jr	c, 12$
+	jr	blk_done
+11$:	push	bc
 blk_even:
 	call	blk_eval
 	inc	c
@@ -540,3 +646,5 @@ iv_dma:
 ;; Дескрипторы отрезков строки (5 байт: SAL, SAH, SAX, DAL, DMALen) — в ОЗУ банка: окно 2
 ;; кэшируется, в отличие от страницы тени в окне 3 (чтение оттуда — 5–6 тактов вместо 3)
 sh_dsc:	.ds	200
+rr_lo:	.ds	2			; row_rng: пределы tx
+rr_hi:	.ds	2
