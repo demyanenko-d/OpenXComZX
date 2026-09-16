@@ -84,6 +84,7 @@ static uint8_t kc_ok;
 static uint16_t v_lon;
 static int16_t v_lat, R;
 static uint8_t strip = PG_NONE;
+static uint8_t row_meta;                   // постоянные поля записей строк заполнены (от зума не зависят)
 
 // Проходы М4в (globe_s.s). Рёбра: gl_ec записей по 6 байт с gl_eb -> записи в странице
 // рёбер gl_epg с gl_eptr (корзины строк); проекции вершин ячейки — с gl_res (Win3 = рабочая
@@ -132,6 +133,15 @@ static void dma_go(uint8_t sp, uint16_t so, uint8_t dp, uint16_t do_, uint8_t le
 	TS_DMACTRL = ctrl;
 }
 
+// Запуск DMA без DMALEN/DMANUM: их пишут один раз на серию одинаковых пачек (сборка узоров)
+static void dma_blk(uint8_t sp, uint16_t so, uint8_t dp, uint16_t do_, uint8_t ctrl)
+{
+	dma_wait();
+	TS_DMASAL = (uint8_t)so; TS_DMASAH = (uint8_t)(so >> 8); TS_DMASAX = sp;
+	TS_DMADAL = (uint8_t)do_; TS_DMADAH = (uint8_t)(do_ >> 8); TS_DMADAX = dp;
+	TS_DMACTRL = ctrl;
+}
+
 // Копия bytes (чётно) со страницы sp, смещение so (может уходить за 16 КБ — в следующие
 // страницы), в страницу dp со смещением doff, пачками по 512 байт. Лёгкая замена far_copy:
 // тот считает 32-битные адреса и ждёт дважды (~2 750 тактов на вызов), здесь — байты и слова
@@ -161,46 +171,58 @@ static void build_strips(far_t tex, uint8_t set)
 		uint8_t sp = strip + p;
 		for (uint8_t rr = 0; rr < 4; rr++) {
 			uint16_t o = to + (uint16_t)((p << 2) | rr) * 32u;
+			dma_wait();                       // длину и число пачек писать только после конца передачи
+			TS_DMALEN = 15;                   // дальше DMA их не меняет — на серию одинаковых пачек
+			TS_DMANUM = 0;
 			for (uint8_t t = 0; t < NTEX; t++, o += 1024u)
-				dma_go(tp + (uint8_t)(o >> 14), o & 0x3FFF, sp, (uint16_t)(rr * NBLK + t) << 8, 15, 0, DMA_RAM_RAM);
-			dma_go(DATA_PAGE, fw & 0x3FFF, sp, (uint16_t)(rr * NBLK + NTEX) << 8, 15, 0, DMA_FILL);
+				dma_blk(tp + (uint8_t)(o >> 14), o & 0x3FFF, sp, (uint16_t)(rr * NBLK + t) << 8, DMA_RAM_RAM);
+			dma_blk(DATA_PAGE, fw & 0x3FFF, sp, (uint16_t)(rr * NBLK + NTEX) << 8, DMA_FILL);
 		}
 		dma_go(sp, 0x0000, sp, 0x0020, 15, 4 * NBLK - 1, DMA_RAM_RAM | DMA_S_ALGN | DMA_D_ALGN);
 		dma_go(sp, 0x0000, sp, 0x0040, 31, 4 * NBLK - 1, DMA_RAM_RAM | DMA_S_ALGN | DMA_D_ALGN);
 		dma_go(sp, 0x0000, sp, 0x0080, 63, 4 * NBLK - 1, DMA_RAM_RAM | DMA_S_ALGN | DMA_D_ALGN);
 	}
-	dma_wait();
-	strip_set = set;
+	strip_set = set;                          // конца ждать не надо: следующий пользователь DMA ждёт сам
 }
 
 // Записи строк страницы рёбер (globe_s.s): диск в парах пикселей (Globe: circle_norm с
 // центрами пикселей i + .5, j + .5: пиксель внутри, если (2i + 1 - 256)^2 +
 // (2j + 1 - 200)^2 < 4R^2; пара — если внутри хоть один её пиксель), адрес строки
 // заднего буфера, блок и страница узоров. Win3 = страница рёбер.
-static void rows_init(uint8_t z)
+// Постоянные поля записи строки (адрес строки заднего буфера, блок и страница узоров) от
+// зума не зависят — заполняются один раз; от зума зависят только пары диска pl, pr.
+static void rows_meta(void)
 {
 	uint8_t *rw = (uint8_t *)(0xC000 + EP_ROW);
+	uint8_t dah = (BACK_Y & 31) << 1, dax = SCREEN_PAGE + (BACK_Y >> 5);
 	for (uint8_t y = 0; y < GLOBE_H; y++, rw += 6) {
-		uint16_t row = BACK_Y + y;
-		rw[2] = (uint8_t)((row & 31) << 1);
-		rw[3] = SCREEN_PAGE + (uint8_t)(row >> 5);
+		rw[2] = dah;
+		rw[3] = dax;
 		rw[4] = (uint8_t)((y & 3) * NBLK);
 		rw[5] = strip + (uint8_t)((y & 31) >> 2);
+		dah += 2;
+		if (dah == 64) { dah = 0; dax++; }    // (row & 31) << 1: 32 строки на страницу
 	}
-	globe_rows_pl(z, (uint8_t *)(0xC000 + EP_ROW));     // пары диска pl, pr — таблицей (банк 25)
+	row_meta = 1;
 }
 
-// Фон окна вне диска (зумы 0–1): левые 256 столбцов GEOBORD в задний буфер. Прямыми
-// регистрами DMA: универсальный far_copy стоит ~2 750 тактов на строку против ~400.
+// Фон окна вне диска (зумы 0–1): левые 256 столбцов GEOBORD в задний буфер. Адрес источника —
+// 16-битное смещение с переносом в номер страницы (32-битная арифметика far_t в SDCC стоила
+// ~1 500 тактов на строку), адрес приёмника — приращением. При увеличении зума не зовётся:
+// новый диск накрывает старый, фон вне него уже лежит.
 static void bg_restore(void)
 {
 	res_t r;
 	if (!res_find(RES_GEOBORD_SCR, &r)) return;
-	far_t s = r.phys;
-	for (uint16_t y = 0; y < GLOBE_H; y++, s += r.a) {
-		uint16_t row = BACK_Y + y;
-		dma_go((uint8_t)(s >> 14), (uint16_t)s & 0x3FFF, SCREEN_PAGE + (uint8_t)(row >> 5),
-			(uint16_t)(row & 31) << 9, GLOBE_W / 2 - 1, 0, DMA_RAM_RAM);
+	uint8_t sp = FAR_PAGE(r.phys);
+	uint16_t so = FAR_OFFS(r.phys);
+	uint8_t dah = (BACK_Y & 31) << 1, dax = SCREEN_PAGE + (BACK_Y >> 5);
+	for (uint8_t y = 0; y < GLOBE_H; y++) {
+		dma_go(sp, so, dax, (uint16_t)dah << 8, GLOBE_W / 2 - 1, 0, DMA_RAM_RAM);
+		so += r.a;
+		if (so >= 0x4000) { so -= 0x4000; sp++; }
+		dah += 2;
+		if (dah == 64) { dah = 0; dax++; }
 	}
 	dma_wait();
 }
@@ -326,7 +348,8 @@ static void render(uint16_t lon, int16_t lat, uint8_t z, uint16_t sun)
 		return;
 	}
 	pg_map3(epage);                            // страница рёбер: строки (при смене зума), события
-	if (z != rz) { rows_init(z); row_zoom = z; }
+	if (!row_meta) rows_meta();
+	if (z != rz) { globe_rows_pl(z, (uint8_t *)(0xC000 + EP_ROW)); row_zoom = z; }   // пары диска — таблицей
 	memset((void *)(0xC000 + EP_EVB), 0xFE, 0x200);
 	memset((void *)(0xC000 + EP_EVKB), 0, 0x100);
 	memset((void *)(0xC000 + EP_EVKA), 0xFF, 0x100);
@@ -336,7 +359,8 @@ static void render(uint16_t lon, int16_t lat, uint8_t z, uint16_t sun)
 	memset((void *)(0xC000 + WB_BUCKET), 0, GLOBE_H * 2);
 	memset((void *)(0xC000 + WB_COV), 0, 256);
 	if (z >= 2) bg_zoom = 0xFF;                // диск закрывает окно — фон затёрт
-	else if (bz != z) { bg_restore(); bg_zoom = z; }
+	else if (bz > z) { bg_restore(); bg_zoom = z; }   // диск вырос — фон вне него и так на месте
+	else bg_zoom = z;
 	v_lon = lon; v_lat = lat; v_zoom = z;
 	tables(lon, lat);
 	// центры ячеек — той же проекцией (x, y в Q2, z в Q6)
@@ -435,6 +459,7 @@ void globe_invalidate(void) __banked
 	valid = 0;
 	geom = 0;
 	kc_ok = 0;
+	row_meta = 0;
 	bg_zoom = 0xFF;
 	v_zoom = 0xFF;
 	row_zoom = 0xFF;
