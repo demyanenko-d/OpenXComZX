@@ -36,6 +36,9 @@ uint16_t globe_sunlon(void) __banked;
 // проходом строк.
 #define GLOBE_SH_FLG 0x2F00
 uint8_t globe_shadow(uint16_t lon, int16_t lat, uint8_t zoom, uint16_t sunlon, uint8_t ocean) __banked;
+
+// Пары диска [pl, pr] строк зума в записи строк (6 байт на строку) — таблицей банка 25
+void globe_rows_pl(uint8_t zoom, uint8_t *dst) __banked;
 // sin 16-битного угла (65536 = 360°) в Q14 (банк 2, src/ui/globe_ui.c)
 int16_t globe_sin(uint16_t a) __banked;
 

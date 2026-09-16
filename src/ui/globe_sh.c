@@ -44,7 +44,12 @@ int32_t __mulsint2slong(int16_t a, int16_t b);
 // Пороги уровней в t (ночь уровня k — t ≥ TB_k, как (Sint16) в shade_gradient)
 static const int8_t tb[10] = { -34, -12, -8, -5, -2, 2, 5, 8, 14, 39 };
 
-static const int16_t zoom_r[GLOBE_ZOOMS] = { 90, 120, 180, 280, 450, 720 };
+// Пары диска строк (как globe.c rows_init) — таблицей: банк 24 читает через globe_rows_pl
+void globe_rows_pl(uint8_t zoom, uint8_t *dst) __banked
+{
+	const uint8_t *s = sh_row + (uint16_t)zoom * (GLOBE_H * 2);
+	for (uint8_t y = 0; y < GLOBE_H; y++, dst += 6, s += 2) { dst[0] = s[0]; dst[1] = s[1]; }
+}
 
 static uint8_t shp = PG_NONE, pat_ocean = 0xFF, z8_zoom = 0xFF;
 
@@ -114,13 +119,21 @@ static void ramp(uint16_t off, uint16_t n, uint16_t hs, int32_t v, int32_t dv)
 
 // 2t = −500·(sx·X + sy·Y + sz·Z) / (R·16384) (X, Y — пиксели от центра окна, Z — z8 / 255·R);
 // центры блоков: X = 8c − 124, Y = 4b − 98. Лестницы отбрасывают дробь трёх слагаемых —
-// в среднем 1.5, её возвращает TY.
-static void tables(int16_t r, int16_t sx, int16_t sy, int16_t sz)
+// в среднем 1.5, её возвращает TY. Множители по зумам — таблицей: деление 32 бит в SDCC
+// стоит ~11 400 тактов (4 деления на кадр = 0.16 кадра).
+// 1984000/r и 1568000/r (как делило C), шаги — с 16-кратной точностью: 2048000/r и 1024000/r
+// (сдвиг 7 вместо 3), иначе усечение множителя уводит лестницу на ~0.04 единицы 2t за таблицу
+static const int16_t zk[GLOBE_ZOOMS][4] = {
+	{ 22044, 22756, 17422, 11378 }, { 16533, 17067, 13066, 8533 }, { 11022, 11378, 8711, 5689 },
+	{ 7085, 7314, 5600, 3657 }, { 4408, 4551, 3484, 2276 }, { 2755, 2844, 2177, 1422 },
+};
+static void tables(uint8_t zoom, int16_t sx, int16_t sy, int16_t sz)
 {
-	ramp(SH_TX, 32, 128, ((1984000L / r) * sx) >> 3, (-(128000L * sx) / r) >> 3);
+	const int16_t *k = zk[zoom];
+	ramp(SH_TX, 32, 128, MUL(k[0], sx) >> 3, -MUL(k[1], sx) >> 7);
 	ramp(SH_TZ, 256, 256, 0, -(2000L * sz) / 255);
-	sh_ty = (((1568000L / r) * sy) >> 3) + 0x18000L;                   // 2t строки блоков 0 · 65536
-	sh_dty = (-(64000L * sy) / r) >> 3;
+	sh_ty = (MUL(k[2], sy) >> 3) + 0x18000L;                           // 2t строки блоков 0 · 65536
+	sh_dty = -MUL(k[3], sy) >> 7;
 }
 
 uint8_t globe_shadow(uint16_t lon, int16_t lat, uint8_t zoom, uint16_t sunlon, uint8_t ocean) __banked
@@ -133,7 +146,7 @@ uint8_t globe_shadow(uint16_t lon, int16_t lat, uint8_t zoom, uint16_t sunlon, u
 	uint16_t dl = sunlon - lon;
 	int16_t sd = sin16(dl), cd = cos16(dl), sc = sin16((uint16_t)lat), cc = cos16((uint16_t)lat);
 	int16_t sx = sd, sy = -SHR14(MUL(sc, cd)), sz = SHR14(MUL(cc, cd));
-	tables(zoom_r[zoom], sx, sy, sz);
+	tables(zoom, sx, sy, sz);
 	if (z8_zoom != zoom) {
 		memcpy((void *)(0xC000 + SH_Z8), sh_z8 + (uint16_t)zoom * 400, 400);
 		z8_zoom = zoom;

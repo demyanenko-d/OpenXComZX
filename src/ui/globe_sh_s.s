@@ -66,29 +66,40 @@ sr_ii:	.ds	1
 
 ;; _sh_rn значений старшего слова _sh_rv (+= _sh_rdv): младшие байты с _sh_radr, старшие — с
 ;; _sh_radr + _sh_rhs (таблицы t кадра)
+;; Значение и шаг — в регистрах: старшие слова HL и DE, младшие — HL' и DE'; IX — младшие
+;; байты таблицы, IY — старшие (+ _sh_rhs), B — счётчик (0 — 256 значений). Было 323 такта
+;; на значение (через add32 и переменные), стало ~113.
 _sh_ramp::
-	ld	hl, (_sh_radr)
-	ld	de, (_sh_rhs)
-	ld	bc, (_sh_rn)
-1$:	push	bc
-	ld	a, (_sh_rv + 2)
-	ld	(hl), a
+	push	ix
+	push	iy
+	ld	bc, (_sh_radr)
+	push	bc
+	pop	ix
+	ld	hl, (_sh_rhs)
+	add	hl, bc
 	push	hl
+	pop	iy
+	ld	hl, (_sh_rv + 2)
+	ld	de, (_sh_rdv + 2)
+	ld	a, (_sh_rn)
+	ld	b, a
+	exx
+	ld	hl, (_sh_rv)
+	ld	de, (_sh_rdv)
+	exx
+1$:	ld	a, l
+	ld	0 (ix), a
+	ld	a, h
+	ld	0 (iy), a
+	inc	ix
+	inc	iy
+	exx				; значение += шаг (32 бита)
 	add	hl, de
-	ld	a, (_sh_rv + 3)
-	ld	(hl), a
-	ld	hl, #_sh_rv
-	push	de
-	ld	de, #_sh_rdv
-	call	add32
-	pop	de
-	pop	hl
-	inc	hl
-	pop	bc
-	dec	bc
-	ld	a, b
-	or	a, c
-	jr	nz, 1$
+	exx
+	adc	hl, de
+	djnz	1$
+	pop	iy
+	pop	ix
 	ret
 
 ;; (HL) += (DE), 32 бита

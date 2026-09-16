@@ -79,6 +79,8 @@ static const int16_t zoom_r[GLOBE_ZOOMS] = { 90, 120, 180, 280, 450, 720 };   //
 static uint8_t work = PG_NONE, epage = PG_NONE, strip_set = 0xFF;
 static uint8_t valid, v_zoom = 0xFF, bg_zoom = 0xFF, row_zoom = 0xFF, ocean, v_sun = 0xFF;
 static uint8_t geom;                       // страница рёбер держит геометрию вида v_lon/v_lat/v_zoom
+static int32_t kc[8];                      // K построенных таблиц произведений (kc_ok — годны)
+static uint8_t kc_ok;
 static uint16_t v_lon;
 static int16_t v_lat, R;
 static uint8_t strip = PG_NONE;
@@ -160,33 +162,21 @@ static void build_strips(far_t tex, uint8_t set)
 // центрами пикселей i + .5, j + .5: пиксель внутри, если (2i + 1 - 256)^2 +
 // (2j + 1 - 200)^2 < 4R^2; пара — если внутри хоть один её пиксель), адрес строки
 // заднего буфера, блок и страница узоров. Win3 = страница рёбер.
-static void rows_init(void)
+static void rows_init(uint8_t z)
 {
 	uint8_t *rw = (uint8_t *)(0xC000 + EP_ROW);
-	// s — наибольшее с s^2 < d = 4R^2 - v^2 (v = 2y + 1 - 200): по строкам d сначала растёт,
-	// потом убывает — s догоняет приращениями (без корня); s^2 ведётся в s2
-	int32_t r4 = (int32_t)4 * R * R, d, s2 = 0;
-	int16_t s = 0, v = 1 - GLOBE_H;
-	for (uint8_t y = 0; y < GLOBE_H; y++, rw += 6, v += 2) {
+	for (uint8_t y = 0; y < GLOBE_H; y++, rw += 6) {
 		uint16_t row = BACK_Y + y;
 		rw[2] = (uint8_t)((row & 31) << 1);
 		rw[3] = SCREEN_PAGE + (uint8_t)(row >> 5);
 		rw[4] = (uint8_t)((y & 3) * NBLK);
 		rw[5] = strip + (uint8_t)((y & 31) >> 2);
-		rw[0] = 255; rw[1] = 0;
-		d = r4 - MUL(v, v);
-		if (d <= 0) { s = 0; s2 = 0; continue; }
-		while (s2 + 2 * s + 1 < d) { s2 += 2 * s + 1; s++; }
-		while (s > 0 && s2 >= d) { s--; s2 -= 2 * s + 1; }
-		int16_t a = (255 - s + 1) >> 1, b = (255 + s) >> 1;
-		if (a < 0) a = 0;
-		if (b > 255) b = 255;
-		if (a > b) continue;
-		rw[0] = (uint8_t)(a >> 1); rw[1] = (uint8_t)(b >> 1);
 	}
+	globe_rows_pl(z, (uint8_t *)(0xC000 + EP_ROW));     // пары диска pl, pr — таблицей (банк 25)
 }
 
-// Фон окна вне диска (зумы 0–1): левые 256 столбцов GEOBORD в задний буфер
+// Фон окна вне диска (зумы 0–1): левые 256 столбцов GEOBORD в задний буфер. Прямыми
+// регистрами DMA: универсальный far_copy стоит ~2 750 тактов на строку против ~400.
 static void bg_restore(void)
 {
 	res_t r;
@@ -194,8 +184,10 @@ static void bg_restore(void)
 	far_t s = r.phys;
 	for (uint16_t y = 0; y < GLOBE_H; y++, s += r.a) {
 		uint16_t row = BACK_Y + y;
-		far_copy(FAR(SCREEN_PAGE + (row >> 5), (row & 31) << 9), s, GLOBE_W);
+		dma_go((uint8_t)(s >> 14), (uint16_t)s & 0x3FFF, SCREEN_PAGE + (uint8_t)(row >> 5),
+			(uint16_t)(row & 31) << 9, GLOBE_W / 2 - 1, 0, DMA_RAM_RAM);
 	}
+	dma_wait();
 }
 
 // Таблицы произведений на 8 констант вида (λ0, наклон C, радиус R). Win3 = work.
@@ -204,20 +196,26 @@ static void bg_restore(void)
 static void tables(uint16_t lon, int16_t lat)
 {
 	int16_t cl = cos16(lon), sl = sin16(lon), cc = cos16((uint16_t)lat), sc = sin16((uint16_t)lat);
-	int32_t k[5];
+	int32_t k[8];
 	k[0] = MUL(R, -sl);                               // x: -R sinλ0 · X
 	k[1] = MUL(R, cl);                                //     R cosλ0 · Y
 	k[2] = MUL(R, -SHR14(MUL(sc, cl)));               // y: -R sinC cosλ0 · X
 	k[3] = MUL(R, -SHR14(MUL(sc, sl)));               //    -R sinC sinλ0 · Y
 	k[4] = MUL(R, cc);                                //     R cosC · Z
-	for (uint8_t i = 0; i < 5; i++) {
+	k[5] = (int32_t)SHR14(MUL(cc, cl)) << 10;         // z: cosC cosλ0 · X
+	k[6] = (int32_t)SHR14(MUL(cc, sl)) << 10;         //    cosC sinλ0 · Y
+	k[7] = (int32_t)sc << 10;                         //    sinC · Z
+	// Строятся только таблицы, у которых K изменилось: при повороте по долготе те же K4 и
+	// sinC·Z, при повороте по широте — K0, K1 (по 0.13 кадра на таблицу)
+	uint8_t ok = kc_ok;
+	for (uint8_t i = 0; i < 8; i++) {
+		if (ok && kc[i] == k[i]) continue;
 		gl_k = k[i];
-		gl_kpg = 0xC0 + i * 4;
+		gl_kpg = (uint8_t)(0xC0 + i * 4);
 		gl_ktab();
+		kc[i] = k[i];
 	}
-	gl_k = (int32_t)SHR14(MUL(cc, cl)) << 10; gl_kpg = (uint8_t)(0xC0 + 20); gl_ktab();   // z: cosC cosλ0 · X
-	gl_k = (int32_t)SHR14(MUL(cc, sl)) << 10; gl_kpg = (uint8_t)(0xC0 + 24); gl_ktab();   //    cosC sinλ0 · Y
-	gl_k = (int32_t)sc << 10;                 gl_kpg = (uint8_t)(0xC0 + 28); gl_ktab();   //    sinC · Z
+	kc_ok = 1;
 }
 
 // Полосы строк без рёбер: строка без рёбер — одна область, её текстура — в любой точке строки.
@@ -312,7 +310,7 @@ static void render(uint16_t lon, int16_t lat, uint8_t z, uint16_t sun)
 		return;
 	}
 	pg_map3(epage);                            // страница рёбер: строки (при смене зума), события
-	if (z != rz) { rows_init(); row_zoom = z; }
+	if (z != rz) { rows_init(z); row_zoom = z; }
 	memset((void *)(0xC000 + EP_EVB), 0xFE, 0x200);
 	memset((void *)(0xC000 + EP_EVKB), 0, 0x100);
 	memset((void *)(0xC000 + EP_EVKA), 0xFF, 0x100);
@@ -396,10 +394,15 @@ static void render(uint16_t lon, int16_t lat, uint8_t z, uint16_t sun)
 	dbg_puts("\n");
 }
 
-// Задний буфер -> окно глобуса на экране (2D DMA, строки по 512)
+// Задний буфер -> окно глобуса на экране (2D DMA, строки по 512). Старт — сразу после
+// кадрового прерывания (VSINT = 0, луч в начале картинки): копия идёт ~1.35 строки на строку
+// луча и остаётся впереди него, иначе виден разрыв поперёк глобуса.
 static void blit(void)
 {
 	dma_wait();
+	uint16_t f0 = frames;
+	while (frames == f0)
+		;
 	TS_DMASAL = 0; TS_DMASAH = (BACK_Y & 31) << 1; TS_DMASAX = SCREEN_PAGE + (BACK_Y >> 5);
 	TS_DMADAL = 0; TS_DMADAH = 0; TS_DMADAX = SCREEN_PAGE;
 	TS_DMALEN = 127;
@@ -412,6 +415,7 @@ void globe_invalidate(void) __banked
 {
 	valid = 0;
 	geom = 0;
+	kc_ok = 0;
 	bg_zoom = 0xFF;
 	v_zoom = 0xFF;
 	row_zoom = 0xFF;
