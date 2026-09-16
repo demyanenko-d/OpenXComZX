@@ -320,14 +320,28 @@ static void draw_globe(void)
 }
 
 // Вращение на 15° / (зум + 1) (Globe::rotate делит шаг на zoom + 1): 0 — влево, 1 — вправо,
-// 2 — вверх (к северу), 3 — вниз. Наклон — в пределах ±90° (у OpenXcom предела нет).
+// 2 — вверх (к северу), 3 — вниз. Наклон — в пределах ±90° (у OpenXcom предела нет) и шаг по
+// наклону меньше (ROTATE_LATITUDE 0.06 против ROTATE_LONGITUDE 0.10, Globe.cpp:60).
+// Шагов за раз — сколько нажатий накопил автоповтор за перерисовку (in_reps): иначе из 14
+// взведённых защёлок опрос забирал одну и глобус крутился в разы медленнее оригинала.
+static const uint8_t rot_cap[GLOBE_ZOOMS] = { 3, 4, 4, 4, 3, 2 };   // ограничение скачка на экране
 static void rotate(uint8_t d)
 {
-	int16_t st = 2731 / (ST->zoom + 1);
-	if (d == 0) ctx.globe_lon -= st;
-	else if (d == 1) ctx.globe_lon += st;
-	else if (d == 2) ctx.globe_lat = ctx.globe_lat > -16384 + st ? ctx.globe_lat - st : -16384;
-	else ctx.globe_lat = ctx.globe_lat < 16384 - st ? ctx.globe_lat + st : 16384;
+	uint8_t z = ST->zoom;
+	if (z >= GLOBE_ZOOMS) z = GLOBE_ZOOMS - 1;
+	uint8_t n = in_reps ? in_reps : 1, cap = rot_cap[z];
+	if (n > cap) n = cap;
+	int16_t st = 2731 / (z + 1);
+	uint16_t lon0 = ctx.globe_lon;
+	int16_t lat0 = ctx.globe_lat;
+	if (d >= 2) st = (int16_t)((int32_t)st * 3 / 5);
+	while (n--) {
+		if (d == 0) ctx.globe_lon -= st;
+		else if (d == 1) ctx.globe_lon += st;
+		else if (d == 2) ctx.globe_lat = ctx.globe_lat > -16384 + st ? ctx.globe_lat - st : -16384;
+		else ctx.globe_lat = ctx.globe_lat < 16384 - st ? ctx.globe_lat + st : 16384;
+	}
+	if (ctx.globe_lon == lon0 && ctx.globe_lat == lat0) return;   // упор в полюс — перерисовки нет
 	ui_dirty(10);                                // только глобус (панель не меняется)
 }
 

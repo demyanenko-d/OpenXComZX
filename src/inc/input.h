@@ -36,4 +36,7 @@ void input_init(void) __banked;
 uint8_t input_poll(event_t *e) __banked;        // 1 — есть событие
 void cursor_color(uint8_t color) __banked;      // цвет курсора экрана (_cursorColor OpenXcom)
 
+// Нажатий, накопленных автоповтором к моменту опроса (поворот глобуса делает столько шагов)
+extern uint8_t in_reps;
+
 #endif
