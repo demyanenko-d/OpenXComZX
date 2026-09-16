@@ -20,7 +20,7 @@ const STAGES = [
 	['Вывод отрезков (без тени)', /^(rw_emit|rw_band|rw_pfill|rw_flush|em_run_p|rp_row|rp_next|_gl_rows_pre|_gl_rows_cap)$/],
 	['Вывод строк с тенью', /^(rw_emit_s|em_run_s)$/],
 	['Тень: уровни блоков', /^(_sh_rows|blk_eval|_sh_ramp|add32|_globe_shadow|_globe_sunlon|globe_sh\$|r_shadow)/],
-	['Тень: отрезки и подкладка DMA', /^(build|iv_put|iv_dma|set_num)$/],
+	['Тень: отрезки и подкладка DMA', /^(build|iv_out|set_num)$/],
 	['Копия на экран', /^(blit|dma_wait|dma_go|dma_blk)$/],
 	['Предрасчитанные виды', /^(_gview_|gview_)/],
 	['Кадр глобуса (прочее)', /^(render|r_rows|r_bg|r_sunonly|_globe_draw|scr_geo\$draw_globe|_globe_snap|_gl_cull)$/],

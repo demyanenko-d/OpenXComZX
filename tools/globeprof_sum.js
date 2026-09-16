@@ -15,7 +15,7 @@ const G = [
 	['Активные рёбра (вставка, починка, шаг)', /^(_gl_rows|rw_row|ael_|ai_|fx_|f2_)/],
 	['Вывод отрезков -> DMA', /^(rw_emit|rw_band|rw_pfill|rw_flush|em_run|gb_end|globe\$dma_wait)$/],
 	['Тень: вывод строк с тенью', /^(rw_emit_s|em_run_s)$/],
-	['Тень: блоки и подкладка', /^(_sh_rows|blk_eval|build|iv_put|iv_dma|set_num|_sh_ramp|globe_sh\$|_globe_shadow|_globe_sunlon)/],
+	['Тень: блоки и подкладка', /^(_sh_rows|blk_eval|build|iv_out|set_num|_sh_ramp|globe_sh\$|_globe_shadow|_globe_sunlon)/],
 	['Ячейки, C рендера, копии', /^(globe\$|_gl_bands|_far_|_memset|_memcpy)/],
 	['Отладочная печать', /^(_dbg_|_text_draw|_glyph_run|_font_|_text_)/],
 	['Интерфейс, игра, ожидание кадра', /./],
@@ -81,7 +81,7 @@ function opsReport() {
 	}
 	// 4. итерации горячих функций (наибольшее число исполнений одной инструкции)
 	out.push('', '### Итерации и цена на единицу (тактов 14 МГц), зумы 0 / 2 / 5', '', '| функция | итераций | тактов на итерацию |', '|---|---|---|');
-	for (const n of ['_gl_project', 'edge1', 'e_fast', 'e_store', 'ael_step', 'ael_ins', 'ai_redo', 'rw_emit', 'rw_emit_s', 'em_run_s', 'blk_eval', 'build', 'iv_dma', '_sh_rows'])
+	for (const n of ['_gl_project', 'edge1', 'e_fast', 'e_store', 'ael_step', 'ael_ins', 'ai_redo', 'rw_emit', 'rw_emit_s', 'em_run_s', 'blk_eval', 'build', 'iv_out', '_sh_rows'])
 		out.push(`| ${n} | ${[0, 2, 5].map(z => (calls[z].get(n) || [0, 0])[1]).join(' / ')} | ${[0, 2, 5].map(z => { const it = (calls[z].get(n) || [0, 0])[1]; return it ? Math.round(4 * (data[z].get(n) || 0) / it) : '·'; }).join(' / ')} |`);
 	console.log(out.join('\n'));
 }

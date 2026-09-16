@@ -16,7 +16,7 @@
 	.optsdcc -mz80 sdcccall(1)
 
 	.globl	_sh_ramp, _sh_radr, _sh_rhs, _sh_rn, _sh_rv, _sh_rdv
-	.globl	_sh_rows, add32, blk_eval, build, iv_put, iv_dma, set_num
+	.globl	_sh_rows, add32, blk_eval, build, iv_out, set_num
 	.globl	_sh_zi, _sh_page, _sh_ty, _sh_dty, _sh_bh, _sh_nbr
 	.globl	_sh_row, _sh_shift, _sh_br
 
@@ -52,7 +52,6 @@ sr_brp:	.ds	2			; указатель в SH_BR
 sr_tyy:	.ds	2
 sr_any:	.ds	1			; в строке блоков есть уровень > 0
 sr_same: .ds	1			; 1 — у 4 строк блока одни пределы (нет краёв)
-sr_ni:	.ds	1
 sr_flg:	.ds	1
 sr_rp2:	.ds	1			; строка образца · 2 (SAH)
 sr_sax:	.ds	1
@@ -60,8 +59,6 @@ sr_num:	.ds	1			; текущий DMANum
 sr_dah:	.ds	1
 sr_dax:	.ds	1
 sr_sh:	.ds	1
-sr_ii:	.ds	1
-dsc_p:	.ds	2			; куда класть следующий дескриптор отрезка (sh_dsc)
 
 	.area	_BANK25
 
@@ -556,10 +553,21 @@ edge:
 
 ;; Отрезки [sr_pl, sr_pr] по уровням блоков (смена — на границе блока, пара 4c) и DMA
 build:
-	xor	a, a
-	ld	(sr_ni), a
-	ld	hl, #sh_dsc
-	ld	(dsc_p), hl
+	ld	a, (sr_y)		; строка экрана 280 + y: DAH = (row & 31) << 1, DAX = 16 + row >> 5
+	ld	l, a
+	ld	h, #0
+	ld	de, #BACK_Y
+	add	hl, de
+	ld	a, l
+	and	a, #31
+	add	a, a
+	ld	(sr_dah), a
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl			; row << 3: старший байт = row >> 5
+	ld	a, h
+	add	a, #SCREEN_PAGE
+	ld	(sr_dax), a
 	ld	a, (sr_pr)		; E — столбцов после первого: pr >> 2 − pl >> 2
 	rrca
 	rrca
@@ -587,7 +595,7 @@ build:
 	add	a, a
 	add	a, a
 	ld	c, a
-	call	iv_put			; [D, C) уровня B (BC, DE целы)
+	call	iv_out			; [D, C) уровня B -> DMA (BC, DE целы)
 	pop	af
 	pop	hl
 	ld	b, a
@@ -597,124 +605,69 @@ build:
 3$:	ld	a, (sr_pr)		; последний отрезок — до pr + 1
 	inc	a
 	ld	c, a
-	call	iv_put
-	jp	iv_dma
+	jp	iv_out
 
-;; Отрезок [D, C) уровня B -> дескриптор DMA (5 байт: SAL, SAH, SAX, DAL, DMALen) в ОЗУ банка:
-;; оно кэшируется, в отличие от страницы тени в окне 3, и вывод в порты идёт коротким циклом
-iv_put:				; указатель по sh_dsc — inc hl, не inc l: буфер может лечь поперёк границы 256 байт,
-				; и заворот младшего байта писал дескрипторы поверх кода банка (аварии 2026-09-16)
+;; Отрезок [D, C) уровня B -> сразу DMA: источник — образец уровня k (страница _sh_page + k / 4,
+;; смещение (k % 4)·4096 + строка·512: L, O через 256) со сдвигом строки блоков, приёмник — строка
+;; sr_y заднего буфера (x, x + 256; DAH, DAX — build); DMANum — set_num. Ждёт конца прошлой
+;; передачи, восемь записей в порты. BC, DE целы.
+iv_out:
 	push	bc
 	push	de
-	ld	hl, (dsc_p)
-	ld	a, d			; DAL = 2 · начало (пары -> байты)
-	add	a, a
-	ld	e, a
-	ld	a, (sr_sh)		; SAL = сдвиг образца + DAL (заворот внутри 256 байт образца)
-	add	a, e
-	ld	(hl), a
-	inc	hl
-	ld	a, b			; SAH = (уровень % 4) · 16 + строка образца · 2
-	and	a, #3
-	add	a, a
-	add	a, a
-	add	a, a
-	add	a, a
-	ld	d, a
-	ld	a, (sr_rp2)
-	add	a, d
-	ld	(hl), a
-	inc	hl
-	ld	a, b			; SAX = страница образцов + уровень / 4
-	rrca
-	rrca
-	and	a, #3
-	ld	d, a
-	ld	a, (_sh_page)
-	add	a, d
-	ld	(hl), a
-	inc	hl
-	ld	(hl), e			; DAL
-	inc	hl
-	pop	de
 	ld	a, c			; DMALen = слов − 1
 	sub	a, d
 	dec	a
-	ld	(hl), a
-	inc	hl
-	ld	(dsc_p), hl
-	ld	hl, #sr_ni
-	inc	(hl)
-	pop	bc
-	ret
-
-;; DMA отрезков: источник — образец уровня k (страница _sh_page + k / 8, смещение (k % 8)·2048 +
-;; строка·512: L, O через 256) со сдвигом строки блоков, приёмник — строка sr_y заднего буфера
-;; (x, x + 256); DMANum — 1 (строка) или 7 (4 строки)
-;; (x, x + 256); DMANum — 1 (строка) или 7 (4 строки). Дескрипторы готовит iv_put, здесь —
-;; только ожидание конца прошлой передачи и восемь записей в порты.
-iv_dma:
-	ld	a, (sr_ni)
-	or	a, a
-	ret	z
-	ld	a, (sr_y)		; строка экрана 280 + y: DAH = (row & 31) << 1, DAX = 16 + row >> 5
-	ld	l, a
-	ld	h, #0
-	ld	de, #BACK_Y
-	add	hl, de
-	ld	a, l
-	and	a, #31
+	ex	af, af'
+	ld	a, d			; D — DAL = 2 · начало
 	add	a, a
-	ld	d, a			; D — DAH строки
-	add	hl, hl
-	add	hl, hl
-	add	hl, hl			; row << 3: старший байт = row >> 5
-	ld	a, h
-	add	a, #SCREEN_PAGE
-	ld	e, a			; E — DAX строки
-	ld	a, (sr_ni)
-	ld	(sr_ii), a		; счётчик отрезков
-	ld	hl, #sh_dsc
-1$:	ld	bc, #0x27AF
-2$:	in	a, (c)			; дождаться конца прошлой передачи
-	jp	m, 2$
+	ld	d, a
+	ld	a, b			; E — SAX = страница образцов + уровень / 4
+	rrca
+	rrca
+	and	a, #3
+	ld	hl, #_sh_page
+	add	a, (hl)
+	ld	e, a
+	ld	a, b			; H — SAH = (уровень % 4) · 16 + строка образца · 2
+	and	a, #3
+	add	a, a
+	add	a, a
+	add	a, a
+	add	a, a
+	ld	hl, #sr_rp2
+	add	a, (hl)
+	ld	h, a
+	ld	a, (sr_sh)		; L — SAL = сдвиг образца + DAL (заворот внутри 256 байт образца)
+	add	a, d
+	ld	l, a
+	ld	bc, #0x27AF
+1$:	in	a, (c)			; дождаться конца прошлой передачи
+	jp	m, 1$
 	ld	b, #0x1A
-	ld	a, (hl)			; SAL
-	inc	hl
-	out	(c), a
+	out	(c), l			; SAL
 	inc	b
-	ld	a, (hl)			; SAH
-	inc	hl
-	out	(c), a
+	out	(c), h			; SAH
 	inc	b
-	ld	a, (hl)			; SAX
-	inc	hl
-	out	(c), a
+	out	(c), e			; SAX
 	inc	b
-	ld	a, (hl)			; DAL
-	inc	hl
-	out	(c), a
+	out	(c), d			; DAL
 	inc	b
-	out	(c), d			; DAH
+	ld	a, (sr_dah)
+	out	(c), a			; DAH
 	inc	b
-	out	(c), e			; DAX
+	ld	a, (sr_dax)
+	out	(c), a			; DAX
 	ld	b, #0x26
-	ld	a, (hl)			; DMALen
-	inc	hl
-	out	(c), a
+	ex	af, af'
+	out	(c), a			; DMALen
 	inc	b
 	ld	a, #0x31		; RAM -> RAM, S_ALGN | D_ALGN — пуск
 	out	(c), a
-	ld	a, (sr_ii)
-	dec	a
-	ld	(sr_ii), a
-	jr	nz, 1$
+	pop	de
+	pop	bc
 	ret
 
 	.area	_BANK25
 
-;; Дескрипторы отрезков строки (5 байт: SAL, SAH, SAX, DAL, DMALen) — в ОЗУ банка: окно 2
-;; кэшируется, в отличие от страницы тени в окне 3 (чтение оттуда — 5–6 тактов вместо 3)
-sh_dsc:	.ds	200
 rr_lo:	.ds	2			; row_rng: пределы tx
 rr_hi:	.ds	2
