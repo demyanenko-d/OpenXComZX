@@ -246,7 +246,6 @@ static void show_event(void)
 
 static const wdef_t w_geo[] = {
 	IMG(0, 0, 320, 200, RES_GEOBORD_SCR),
-	CUS(0, 0, 256, 200, DYN(10), A_CUSTOM, 10),  // глобус: ui_dirty(10)
 	BTNF(257, 0, 63, 11, UI_EL_BUTTON, STR_INTERCEPT, WF_GEO, A_CUSTOM, 12, 'i'),
 	BTNF(257, 12, 63, 11, UI_EL_BUTTON, STR_BASES, WF_GEO, A_CUSTOM, 11, 'b'),
 	BTNF(257, 24, 63, 11, UI_EL_BUTTON, STR_GRAPHS, WF_GEO, A_PUSH, SCR_GRAPHS, 'g'),
@@ -265,15 +264,21 @@ static const wdef_t w_geo[] = {
 	HOT(271, 187, 13, 12, A_CUSTOM, 33, 0),
 	HOT(295, 156, 23, 23, A_CUSTOM, 34, '+'),    // зум: keyGeoZoomIn / Out (ZX: SS+K / SS+J)
 	HOT(300, 182, 13, 17, A_CUSTOM, 35, '-'),
-	TXT(259, 74, 20, 16, UI_EL_TEXT, DYN(2), BIG | TR),
+	// Часы: высота рамок — по краске глифов (крупные цифры — строки до 85, мелкие — 81..86), а не
+	// по кеглю: рамки 16 и 8 задевали строку 87, где начинается день недели, и каждый тик секунд
+	// перерисовывал ещё и «SUNDAY» (mark_one: пересекающиеся тексты) — 18 % времени геоскейпа
+	TXT(259, 74, 20, 12, UI_EL_TEXT, DYN(2), BIG | TR),
 	TXT(279, 74, 4, 16, UI_EL_TEXT, DYN(3), BIG),
-	TXT(283, 74, 20, 16, UI_EL_TEXT, DYN(4), BIG),
+	TXT(283, 74, 20, 12, UI_EL_TEXT, DYN(4), BIG),
 	TXT(303, 74, 4, 16, UI_EL_TEXT, DYN(3), BIG),
-	TXT(307, 80, 11, 8, UI_EL_TEXT, DYN(5), 0),
+	TXT(307, 80, 11, 6, UI_EL_TEXT, DYN(5), 0),
 	TXT(259, 87, 59, 8, UI_EL_TEXT, DYN(6), TC),
 	TXT(259, 94, 29, 8, UI_EL_TEXT, DYN(7), TC),
 	TXT(288, 94, 29, 8, UI_EL_TEXT, DYN(8), TC),
 	TXT(259, 101, 59, 8, UI_EL_TEXT, DYN(9), TC),
+	// глобус — последним: перерисовка идёт по порядку, а рендер длится 5–14 кадров; стоял бы
+	// раньше текстов — на тике со сменой суток панель часов весь рендер висела бы стёртой
+	CUS(0, 0, 256, 200, DYN(10), A_CUSTOM, 10),  // глобус: ui_dirty(10)
 };
 
 // Глобус — src/ui/globe.c (банк 24): настоящая проекция OpenXcom, вид — ctx.globe_lon/lat
