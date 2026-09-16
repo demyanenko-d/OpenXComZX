@@ -49,6 +49,17 @@ using System.Linq;
 
 namespace OxzConv
 {
+	// Дуги карты для растеризатора видов (GlobeViews.cs): концы, нормаль N = A x B, M = N x A
+	// (дуга — P(t) = A·cos t + M·sin t, t от 0 до Tab), текстуры сторон, сетка 5° и точная проба
+	class GlobeArcs
+	{
+		public int N;
+		public double[] Ax, Ay, Az, Bx, By, Bz, Nx, Ny, Nz, Mx, My, Mz, Ct, St;
+		public byte[] TL, TR;
+		public byte[] Grid;                       // 36 x 72, #FE — в клетку заходит граница
+		public Func<double, double, double, byte> TexAt;
+	}
+
 	static class GlobeData
 	{
 		const int CellLon = 12, CellLat = 6, NCell = CellLon * CellLat;
