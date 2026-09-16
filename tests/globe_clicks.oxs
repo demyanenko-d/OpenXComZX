@@ -1,0 +1,267 @@
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 3000
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 3000
+type bench
+key ENTER
+waitmark 32 3000
+key 1
+pokew _cursor_x 288
+pokew _cursor_y 5
+click L
+waitmark 200 300
+pokew _cursor_x 50
+pokew _cursor_y 81
+click L
+waitmark 49 300
+poke 06:0048 0
+pokew _ctx+6 0
+pokew _ctx+8 0
+pokew _cursor_x 128
+pokew _cursor_y 100
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 0
+pokew _ctx+6 0
+pokew _ctx+8 0
+pokew _cursor_x 200
+pokew _cursor_y 150
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 0
+pokew _ctx+6 0
+pokew _ctx+8 0
+pokew _cursor_x 10
+pokew _cursor_y 190
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 0
+pokew _ctx+6 30000
+pokew _ctx+8 5000
+pokew _cursor_x 60
+pokew _cursor_y 40
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 1
+pokew _ctx+6 12345
+pokew _ctx+8 61536
+pokew _cursor_x 240
+pokew _cursor_y 120
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 1
+pokew _ctx+6 50000
+pokew _ctx+8 8000
+pokew _cursor_x 128
+pokew _cursor_y 30
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 2
+pokew _ctx+6 20000
+pokew _ctx+8 53536
+pokew _cursor_x 30
+pokew _cursor_y 60
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 2
+pokew _ctx+6 60000
+pokew _ctx+8 16000
+pokew _cursor_x 250
+pokew _cursor_y 199
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 3
+pokew _ctx+6 5000
+pokew _ctx+8 3000
+pokew _cursor_x 100
+pokew _cursor_y 180
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 3
+pokew _ctx+6 40000
+pokew _ctx+8 57536
+pokew _cursor_x 180
+pokew _cursor_y 50
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 4
+pokew _ctx+6 25000
+pokew _ctx+8 0
+pokew _cursor_x 128
+pokew _cursor_y 100
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 4
+pokew _ctx+6 33000
+pokew _ctx+8 12000
+pokew _cursor_x 5
+pokew _cursor_y 29
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 5
+pokew _ctx+6 64000
+pokew _ctx+8 49152
+pokew _cursor_x 255
+pokew _cursor_y 199
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 5
+pokew _ctx+6 100
+pokew _ctx+8 2000
+pokew _cursor_x 128
+pokew _cursor_y 101
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 0
+pokew _ctx+6 16384
+pokew _ctx+8 49152
+pokew _cursor_x 128
+pokew _cursor_y 190
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 2
+pokew _ctx+6 45000
+pokew _ctx+8 16384
+pokew _cursor_x 70
+pokew _cursor_y 150
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 1
+pokew _ctx+6 32768
+pokew _ctx+8 0
+pokew _cursor_x 128
+pokew _cursor_y 28
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 5
+pokew _ctx+6 8000
+pokew _ctx+8 7000
+pokew _cursor_x 0
+pokew _cursor_y 100
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 3
+pokew _ctx+6 0
+pokew _ctx+8 63536
+pokew _cursor_x 255
+pokew _cursor_y 28
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+poke 06:0048 0
+pokew _ctx+6 12000
+pokew _ctx+8 9000
+pokew _cursor_x 180
+pokew _cursor_y 100
+click L
+waitmark 203 300
+peek 06:2D35 10
+pokew _cursor_x 163
+pokew _cursor_y 110
+click L
+waitmark 49 300
+exit 0

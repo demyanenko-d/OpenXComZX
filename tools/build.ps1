@@ -24,7 +24,7 @@ $c_common   = @()   # Win0 — только ассемблер (14_todo.md §1.3
 # Страницы: резидентные #30-#3F, оверлей #40-#4F (08 §4.2, §4.3a).
 $banks = @(
     @{ n = 1; page = 0x30; files = @('ui\ui', 'ui\screens') }   # ядро интерфейса + диспетчер экранов
-    @{ n = 2; page = 0x31; files = @('ui\scr_menu', 'ui\names', 'ui\scr_end', 'ui\globe_ui') }   # меню; имена объектов для всех окон; концовки; точки глобуса
+    @{ n = 2; page = 0x31; files = @('ui\scr_menu', 'ui\names', 'ui\scr_end', 'ui\globe_ui', 'ui\globe_ui_tab') }   # меню; имена объектов для всех окон; концовки; точки глобуса
     @{ n = 3; page = 0x32; files = @('ui\scr_geo') }
     @{ n = 4; page = 0x33; files = @('ui\scr_geo2', 'ui\scr_graph') }
     @{ n = 5; page = 0x34; files = @('ui\scr_base') }

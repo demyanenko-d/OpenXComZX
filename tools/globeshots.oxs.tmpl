@@ -1,0 +1,94 @@
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 3000
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 3000
+type bench
+key ENTER
+waitmark 32 3000
+poke _gl_dbg 1
+pokew _ctx+6 32768
+pokew _ctx+8 1638
+poke 06:0038 18
+poke 06:0037 0
+poke 06:0036 0
+wait 80
+poke 06:0038 18
+poke 06:0037 0
+poke 06:0036 0
+wait 60
+shot tmp/shots/asm/TAG-z0.png
+key RIGHT
+wait 60
+poke 06:0038 18
+poke 06:0037 0
+poke 06:0036 0
+wait 60
+shot tmp/shots/asm/TAG-z0r.png
+key SS+K
+wait 60
+poke 06:0038 18
+poke 06:0037 0
+poke 06:0036 0
+wait 60
+shot tmp/shots/asm/TAG-z1.png
+key SS+K
+wait 60
+poke 06:0038 18
+poke 06:0037 0
+poke 06:0036 0
+wait 60
+shot tmp/shots/asm/TAG-z2.png
+key SS+K
+wait 60
+poke 06:0038 18
+poke 06:0037 0
+poke 06:0036 0
+wait 60
+shot tmp/shots/asm/TAG-z3.png
+key UP
+wait 60
+poke 06:0038 18
+poke 06:0037 0
+poke 06:0036 0
+wait 60
+shot tmp/shots/asm/TAG-z3u.png
+key SS+K
+wait 60
+poke 06:0038 18
+poke 06:0037 0
+poke 06:0036 0
+wait 60
+shot tmp/shots/asm/TAG-z4.png
+key SS+K
+wait 60
+poke 06:0038 18
+poke 06:0037 0
+poke 06:0036 0
+wait 60
+shot tmp/shots/asm/TAG-z5.png
+key SS+J
+wait 60
+key SS+J
+wait 60
+key SS+J
+wait 60
+key SS+J
+wait 60
+key SS+J
+wait 60
+poke 06:0038 18
+poke 06:0037 0
+poke 06:0036 0
+wait 60
+shot tmp/shots/asm/TAG-z0b.png
+exit 0

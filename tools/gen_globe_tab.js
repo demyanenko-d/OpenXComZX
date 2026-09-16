@@ -53,25 +53,26 @@ for (let k = 0; k <= 18; k++) { cos5k.push(Math.round(Math.cos(5 * k * Math.PI /
 
 // (заголовок globe_tab.h больше не пишется: кадр глобуса на ассемблере, таблицы — globe_tab.s выше)
 
-fs.writeFileSync(path.join(__dirname, '..', 'src', 'ui', 'globe_ui_tab.h'), `// Сгенерировано tools/gen_globe_tab.js — не править вручную.
-// Таблицы точек глобуса (src/ui/globe_ui.c, банк 2).
-#ifndef GLOBE_UI_TAB_H
-#define GLOBE_UI_TAB_H
+// Таблицы точек и кликов — ассемблером (src/ui/globe_ui_tab.s, банк 2)
+{
+	const dw = (arr, per) => { const o = []; for (let i = 0; i < arr.length; i += per) o.push('\t.dw\t' + arr.slice(i, i + per).join(', ')); return o.join('\n'); };
+	fs.writeFileSync(path.join(__dirname, '..', 'src', 'ui', 'globe_ui_tab.s'), [
+		';; Сгенерировано tools/gen_globe_tab.js — не править вручную.',
+		';; Таблицы точек и кликов глобуса (банк 2, globe_ui.s).',
+		'',
+		'\t.module globe_ui_tab',
+		'\t.globl\t_sin_q14, _atan_tab',
+		'',
+		'\t.area\t_BANK2',
+		'',
+		';; sin(i / 1024 * 90°) * 16384, i = 0..1024',
+		'_sin_q14:', dw(sin, 16),
+		';; atan(i / 256) в единицах угла (65536 = 360°), i = 0..256',
+		'_atan_tab:', dw(atan, 16),
+		''].join('\n'));
+}
 
-#include <stdint.h>
-
-// sin(i / 1024 * 90°) * 16384, i = 0..1024
-static const int16_t sin_q14[1025] = {
-${rows(sin, 16)}
-};
-
-// atan(i / 256) в единицах угла (65536 = 360°), i = 0..256
-static const uint16_t atan_tab[257] = {
-${rows(atan, 16)}
-};
-
-#endif
-`);
+// (заголовок globe_ui_tab.h больше не пишется: точки и клики на ассемблере, таблицы — globe_ui_tab.s выше)
 
 // Тень (src/ui/globe_sh.c, банк 25): по зумам 0..5 и строкам 0..199 — пары диска pl, pr (как
 // globe.c rows_init; строки нет — 255, 0); z центров блоков 8x4 (доли R x 255, вне диска — 0):
