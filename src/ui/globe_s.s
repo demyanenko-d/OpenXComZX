@@ -39,6 +39,8 @@
 	.globl	_gl_bands, _gl_nb, _gl_bl, gb_end, ai_put, ai_redo, rw_emit_s, em_run_s
 	.globl	_gl_rows, ael_ins, ai_fix2, f2_near, f2_score, ai_cmp, ael_fix, fx_pair, rw_emit, rw_band, rw_pfill, rw_flush, ael_step, ael_sort
 	.globl	_gl_rows_pre, rp_row, rp_next, em_run_p
+	.globl	_gl_cull, cu_loop, cu_take, cu_next
+	.globl	_gl_crp, _gl_cpp, _gl_cmp, _gl_vsp, _gl_nvis, _gl_cn
 	.globl	_gl_eb
 	.globl	_gl_ec
 	.globl	_gl_res
@@ -3020,3 +3022,138 @@ em_run_p:
 
 rp_n:	.ds	1
 rp_cnt:	.ds	1
+
+;; ================================================================ отсев ячеек
+
+;; Ячейки вида (globe.c render, зумы 3–5): gl_cn записей ячеек по 16 байт с gl_crp (+4 — число
+;; рёбер, +14 — sinρ в Q14: 16384 и больше — не отсекать), проекции центров по 6 байт с gl_cpp
+;; (x, y — Q2, z — Q12), пределы окна m по 2 байта с gl_cmp (от зума: R·sinρ·1.125 + 2, globe.c
+;; cm_fill). Выход — номера видимых ячеек с gl_vsp (бит 7 — вся ячейка спереди, z вершин не
+;; нужен), число — gl_nvis. Условия — как было в C: сзади — z + sinρ/4 < −64; вне окна —
+;; x + m < 0, x − m >= 256, y + m < 0, y − m >= 200 (x, y центра в пикселях).
+_gl_cull::
+	push	ix
+	push	iy
+	ld	ix, (_gl_crp)
+	ld	iy, (_gl_cpp)
+	ld	hl, (_gl_vsp)
+	ld	(cu_out), hl
+	ld	hl, (_gl_cmp)
+	xor	a, a
+	ld	(_gl_nvis), a
+	ld	(cu_c), a
+cu_loop:
+	ld	a, 4 (ix)		; рёбер нет — пропуск
+	or	a, 5 (ix)
+	jp	z, cu_next
+	ld	a, 15 (ix)		; sinρ >= 16384 — не отсекать, z нужен
+	cp	a, #0x40
+	ld	a, #0
+	jp	nc, cu_take
+	push	hl			; указатель m
+	ld	b, 15 (ix)		; BC = sinρ / 4
+	ld	c, 14 (ix)
+	srl	b
+	rr	c
+	srl	b
+	rr	c
+	ld	l, 4 (iy)		; HL = z центра (Q12)
+	ld	h, 5 (iy)
+	push	hl
+	add	hl, bc
+	ld	de, #64
+	add	hl, de			; z + sinρ/4 + 64 < 0 — вся сзади
+	pop	de			; DE = z
+	bit	7, h
+	jr	nz, cu_skip
+	ex	de, hl			; z − sinρ/4 − 65 >= 0 — вся спереди
+	or	a, a
+	sbc	hl, bc
+	ld	de, #65
+	or	a, a
+	sbc	hl, de
+	ld	a, #0x80
+	jp	p, 2$
+	xor	a, a
+2$:	ld	(cu_noz), a
+	pop	hl			; DE = m
+	ld	e, (hl)
+	inc	hl
+	ld	d, (hl)
+	dec	hl
+	push	hl
+	ld	l, 0 (iy)		; HL = x центра в пикселях
+	ld	h, 1 (iy)
+	sra	h
+	rr	l
+	sra	h
+	rr	l
+	push	hl
+	add	hl, de
+	bit	7, h
+	pop	hl
+	jr	nz, cu_skip		; x + m < 0
+	or	a, a
+	sbc	hl, de
+	jp	m, 3$			; x − m < 0 — справа не за краем
+	ld	a, h
+	or	a, a
+	jr	nz, cu_skip		; x − m >= 256
+3$:	ld	l, 2 (iy)		; HL = y центра в пикселях
+	ld	h, 3 (iy)
+	sra	h
+	rr	l
+	sra	h
+	rr	l
+	push	hl
+	add	hl, de
+	bit	7, h
+	pop	hl
+	jr	nz, cu_skip		; y + m < 0
+	or	a, a
+	sbc	hl, de
+	jp	m, 4$
+	ld	a, h
+	or	a, a
+	jr	nz, cu_skip		; y − m >= 256
+	ld	a, l
+	cp	a, #GH
+	jr	nc, cu_skip		; y − m >= 200
+4$:	pop	hl
+	ld	a, (cu_noz)
+cu_take:
+	ld	b, a			; номер ячейки | бит 7 -> выход
+	ld	a, (cu_c)
+	or	a, b
+	push	hl
+	ld	hl, (cu_out)
+	ld	(hl), a
+	inc	hl
+	ld	(cu_out), hl
+	ld	hl, #_gl_nvis
+	inc	(hl)
+	pop	hl
+	jr	cu_next
+cu_skip:
+	pop	hl
+cu_next:
+	inc	hl
+	inc	hl
+	ld	bc, #16
+	add	ix, bc
+	ld	c, #6
+	add	iy, bc
+	ld	a, (cu_c)
+	inc	a
+	ld	(cu_c), a
+	ld	b, a
+	ld	a, (_gl_cn)
+	cp	a, b
+	jp	nz, cu_loop
+	pop	iy
+	pop	ix
+	ret
+
+cu_c:	.ds	1
+cu_noz:	.ds	1
+cu_out:	.ds	2

@@ -51,6 +51,8 @@
 #define STG       0x2AA0                //   записи рёбер ячейки (globe_s.s), затем DMA в страницу рёбер
 #define WB_BUCKET 0x3080                //   корзины строк (адреса записей в странице рёбер)
 #define WB_COV    0x3300                //   покрытие строк рёбрами: разности (e_store)
+#define WB_CM     0x3800                //   пределы окна ячеек R·sinρ·1.125 + 2 [72] u16 (от зума)
+#define WB_VIS    0x3900                //   видимые ячейки кадра [72] (gl_cull)
 #define EP_BT     0x0000                // страница рёбер: текстура полосы строк без рёбер (#FE — нет)
 #define MAXCV     150                   // вершин / рёбер в ячейке (конвертер: до 144)
 #define EP_BUCKET 0x1500                // страница рёбер: корзины (копия из рабочей),
@@ -87,6 +89,7 @@ static uint16_t v_lon;
 static int16_t v_lat, R;
 static uint8_t strip = PG_NONE;
 static uint8_t row_meta;                   // постоянные поля записей строк заполнены (от зума не зависят)
+static uint8_t cm_zoom = 0xFF;             // зум, для которого заполнены пределы окна ячеек WB_CM
 uint8_t gv_off;                            // 1 — не брать предрасчитанные виды (сравнение путей)
 uint8_t gl_dbg;                            // 1 — печатать строку «globe:» (замеры: poke _gl_dbg 1;
                                            //  печать числа — деление в dbg.s, до 1.7 кадра на рендер)                   // постоянные поля записей строк заполнены (от зума не зависят)
@@ -101,6 +104,13 @@ uint16_t gl_res, gl_eptr, gl_sptr, gl_nedge;
 void gl_edges(void);
 void gl_rows(void);
 void gl_rows_pre(void);            // проход строк по готовым отрезкам вида (globe_view.c)
+// Отсев ячеек (globe_s.s): записи ячеек gl_crp, проекции центров gl_cpp, пределы окна gl_cmp ->
+// номера видимых с gl_vsp (бит 7 — z вершин не нужен), число gl_nvis
+const uint8_t *gl_crp, *gl_cpp;
+const uint16_t *gl_cmp;
+uint8_t *gl_vsp;
+uint8_t gl_nvis, gl_cn;
+void gl_cull(void);
 uint8_t gl_nb, gl_bl[32];               // полосы строк без рёбер (gl_bands): число, (y0, y1)
 void gl_bands(void);
 // Проекция (globe_s.s): gl_pn векторов (по 2 байта на X, Y, Z: v & 127, v >> 7) с gl_pv
@@ -123,6 +133,22 @@ static void dma_wait(void)
 {
 	while (TS_DMASTATUS & DMASTATUS_ACT)
 		;
+}
+
+// Пределы окна ячеек от зума (Win3 = рабочая страница): проекция ячейки не длиннее хорды
+// (2R·sin(ρ/2) <= 1.1·R·sinρ при ρ < 49°), m = R·sinρ + m/8 + 2; sinρ >= 16384 — ячейка не
+// отсекается (gl_cull её не смотрит). Отдельной функцией: вписанный в render код ломал SDCC.
+static void cm_fill(const uint16_t *cr, uint8_t n, uint8_t z)
+{
+	uint8_t cz = cm_zoom;                      // копии: SDCC портит сравнение байта с глобальной
+	if (cz == z) return;
+	cm_zoom = z;
+	uint16_t *m = (uint16_t *)(0xC000 + WB_CM);
+	for (uint8_t c = 0; c < n; c++, cr += 8) {
+		int16_t sr = (int16_t)cr[7], v = 0;
+		if (sr < 16384) v = SHR14(MUL(R, sr));
+		*m++ = (uint16_t)(v + (v >> 3) + 2);
+	}
 }
 
 // ---------------------------------------------------------------- подготовка
@@ -383,8 +409,7 @@ static void render(uint16_t lon, int16_t lat, uint8_t z, uint16_t sun)
 		if (gl_dbg) {
 			dbg_puts("globe: sun only, zoom "); dbg_dec(z);
 			dbg_puts(", frames "); dbg_dec((uint16_t)(frames - t0));
-			dbg_puts(", sun "); dbg_dec(sun); dbg_puts("
-");
+			dbg_puts(", sun "); dbg_dec(sun); dbg_puts("\n");
 		}
 		return;
 	}
@@ -419,26 +444,19 @@ static void render(uint16_t lon, int16_t lat, uint8_t z, uint16_t sun)
 	uint8_t ncells = 0;
 	uint8_t bt_pg = FAR_PAGE(bt);                   // страница и смещение блоков ячеек — один раз
 	uint16_t bt_of = FAR_OFFS(bt);
-	for (uint8_t c = 0; c < h[0]; c++) {
+	// отсев ячеек — globe_s.s gl_cull (было на C: 72 проверки с умножением 32 бит, ~1 кадр на
+	// зуме 5); пределы окна R·sinρ — от зума, в рабочей странице
+	cm_fill((const uint16_t *)cr, (uint8_t)h[0], z);
+	gl_crp = (const uint8_t *)cr; gl_cpp = &cp[0][0]; gl_cn = (uint8_t)h[0];
+	gl_cmp = (const uint16_t *)(0xC000 + WB_CM); gl_vsp = (uint8_t *)(0xC000 + WB_VIS);
+	gl_cull();
+	for (uint8_t v = 0; v < gl_nvis; v++) {
+		uint8_t cv8 = ((uint8_t *)(0xC000 + WB_VIS))[v], c = cv8 & 0x7F;
 		uint16_t vn = cr[c][1], en = cr[c][2];
-		if (!en) continue;
-		int16_t sr = (int16_t)cr[c][7];
-		int16_t zc = (int16_t)(cp[c][4] | (cp[c][5] << 8)), sr4 = (int16_t)cr[c][7] >> 2;
-		if (sr < 16384) {
-			const uint8_t *q = cp[c];
-			int16_t t = zc + sr4;                  // вся ячейка на задней стороне: z центра + sinρ < -1/64 (Q12)
-			if (t < -64) continue;
-			// окно: проекция не длиннее хорды (2R·sin(ρ/2) <= 1.1·R·sinρ при ρ < 49°)
-			int16_t m = SHR14(MUL(R, sr));
-			int16_t xc = (int16_t)(q[0] | (q[1] << 8)) >> 2, yc = (int16_t)(q[2] | (q[3] << 8)) >> 2;
-			m += (m >> 3) + 2;
-			if (xc + m < 0 || xc - m >= GLOBE_W || yc + m < 0 || yc - m >= GLOBE_H) continue;
-		}
 		if (vn > MAXCV || en > MAXCV) { dbg_puts("globe: cell too big\n"); continue; }
 		if (gl_eptr > 0xC000 + 0x4000 - 10 * en) { dbg_puts("globe: edge pool full\n"); break; }
 		ncells++;
-		// вся ячейка на передней стороне — z вершин не нужен
-		gl_noz = sr < 16384 && (int16_t)(zc - sr4) > 64;
+		gl_noz = cv8 >> 7;                          // вся ячейка на передней стороне — z вершин не нужен
 		far_dma(bt_pg, bt_of + cr[c][0], work, VSRC, (vn + en) * 6u);   // блок ячейки: вершины, рёбра
 		dma_wait();
 		gl_pv = (const uint8_t *)(0xC000 + VSRC); gl_pd = (uint8_t *)(0xC000 + RES_OFF); gl_pn = (uint8_t)vn;
@@ -477,8 +495,7 @@ static void render(uint16_t lon, int16_t lat, uint8_t z, uint16_t sun)
 		dbg_puts(", frames "); dbg_dec((uint16_t)(frames - t0));
 		dbg_puts(", view "); dbg_dec(lon); dbg_puts(" "); dbg_dec((uint16_t)lat);
 		dbg_puts(", sun "); dbg_dec(sun); dbg_puts(", shp "); dbg_dec(sp);
-		dbg_puts("
-");
+		dbg_puts("\n");
 	}
 }
 
@@ -505,6 +522,7 @@ void globe_invalidate(void) __banked
 	geom = 0;
 	kc_ok = 0;
 	row_meta = 0;
+	cm_zoom = 0xFF;
 	bg_zoom = 0xFF;
 	v_zoom = 0xFF;
 	row_zoom = 0xFF;
