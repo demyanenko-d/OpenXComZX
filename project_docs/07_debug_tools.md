@@ -299,6 +299,12 @@ OXZ: prof   9.2%     282881  _gfx_fill
 inc,dec 16 / логика / сдвиги / bit / переходы / call,ret / стек / ex / in,out / блочные /
 прочее). Сводка для глобуса — `node tools/globeprof_sum.js ops`.
 
+Класс **`dma wait`** (2026-09-16, последний в строках `ops`/`opsf`) — опрос `DMAStatus`: команда
+`IN r,(C)` при BC = #27AF и условный переход сразу за ней (`machine/zx_machine.h`, хук профилировщика).
+Раскладка рендера глобуса по этапам и функциям на расчёт / порты DMA / ожидание DMA / пересылки
+(блочные команды и `far_*`, `memcpy`) / ожидание кадра — `node tools/globeprof_split.js 3,4,5 25` по
+профилям `toolsglobeprof.ps1 -Zooms <z> -Hour 18` (из bash — по одному зуму).
+
 ## 7. Подводные камни
 
 - Windows PowerShell 5.1 читает UTF-8 без BOM как ANSI: **не править
