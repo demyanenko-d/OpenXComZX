@@ -27,37 +27,31 @@ for (let i = 0; i <= 256; i++) sqz.push(Math.round(Math.sqrt(1 - i / 256) * 1638
 for (let k = 0; k <= 36; k++) sin5.push(Math.round(Math.sin((5 * k - 90) * Math.PI / 180) * 16384));
 for (let k = 0; k <= 18; k++) { cos5k.push(Math.round(Math.cos(5 * k * Math.PI / 180) * 16384)); sin5k.push(Math.round(Math.sin(5 * k * Math.PI / 180) * 16384)); }
 
-fs.writeFileSync(path.join(__dirname, '..', 'src', 'ui', 'globe_tab.h'), `// Сгенерировано tools/gen_globe_tab.js — не править вручную.
-// Таблица рендера глобуса (src/ui/globe.c, банк 24).
-#ifndef GLOBE_TAB_H
-#define GLOBE_TAB_H
+// Таблицы рендера — ассемблером (src/ui/globe_tab.s, банк 24: кадр глобуса переведён с C)
+{
+	const dw = (arr, per) => { const o = []; for (let i = 0; i < arr.length; i += per) o.push('\t.dw\t' + arr.slice(i, i + per).map(v => v & 0xFFFF).join(', ')); return o.join('\n'); };
+	fs.writeFileSync(path.join(__dirname, '..', 'src', 'ui', 'globe_tab.s'), [
+		';; Сгенерировано tools/gen_globe_tab.js — не править вручную.',
+		';; Таблицы рендера глобуса (банк 24, globe.s и globe_s.s).',
+		'',
+		'\t.module globe_tab',
+		'\t.globl\t_recip_tab, _sqz_q14, _sin5_q14, _cos5k_q14, _sin5k_q14',
+		'',
+		'\t.area\t_BANK24',
+		'',
+		';; 65536 / dy (округлено), dy = 2..511; 0 и 1 — 0',
+		'_recip_tab:', dw(recip, 16),
+		';; клетка сетки 5° по пикселю (globe.s cell_of): sqrt(1 - i/256) Q14, i = 0..256',
+		'_sqz_q14:', dw(sqz, 16),
+		';; sin(5k - 90°) Q14, k = 0..36 — границы широт клеток',
+		'_sin5_q14:', dw(sin5, 16),
+		';; cos 5k°, sin 5k° Q14, k = 0..18 — границы долгот в четверти',
+		'_cos5k_q14:', dw(cos5k, 16),
+		'_sin5k_q14:', dw(sin5k, 16),
+		''].join('\n'));
+}
 
-#include <stdint.h>
-
-// 65536 / dy (округлено), dy = 2..511; 0 и 1 — 0 (особый случай). Не static: читает
-// src/ui/globe_s.s (dy >= 512 — делится на 2)
-const uint16_t recip_tab[512] = {
-${rows(recip, 16)}
-};
-
-// Клетка сетки 5° по пикселю (globe.c cell_of): sqrt(1 - i/256) Q14, i = 0..256
-static const int16_t sqz_q14[257] = {
-${rows(sqz, 16)}
-};
-// sin(5k - 90°) Q14, k = 0..36 — границы широт клеток
-static const int16_t sin5_q14[37] = {
-${rows(sin5, 16)}
-};
-// cos 5k°, sin 5k° Q14, k = 0..18 — границы долгот в четверти
-static const int16_t cos5k_q14[19] = {
-${rows(cos5k, 16)}
-};
-static const int16_t sin5k_q14[19] = {
-${rows(sin5k, 16)}
-};
-
-#endif
-`);
+// (заголовок globe_tab.h больше не пишется: кадр глобуса на ассемблере, таблицы — globe_tab.s выше)
 
 fs.writeFileSync(path.join(__dirname, '..', 'src', 'ui', 'globe_ui_tab.h'), `// Сгенерировано tools/gen_globe_tab.js — не править вручную.
 // Таблицы точек глобуса (src/ui/globe_ui.c, банк 2).
