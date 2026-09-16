@@ -94,12 +94,12 @@ static void patterns(uint8_t ocean)
 				p[x + 256] = ov[n];
 			}
 	}
-	pg_map3(shp + 1);                                   // уровень по 2t: ⌊2t / 2⌋ = ⌊t⌋ против порогов
-	uint8_t *lut = (uint8_t *)(0xC000 + SH_LUT);
-	for (uint16_t i = 0; i < 256; i++) {
-		int8_t t = (int8_t)((int16_t)(i - 128) >> 1);
+	pg_map3(shp + 1);                                   // уровень по 2t: сравнение с 2·порогом
+	uint8_t *lut = (uint8_t *)(0xC000 + SH_LUT);         // (округлять 2t до целого t нельзя: на
+	for (uint16_t i = 0; i < 256; i++) {                 //  отрицательных порогах граница уезжала
+		int16_t t2 = (int16_t)i - 128;                   //  на полшага — до 1.4 пикселя на зуме 5)
 		uint8_t k = 0;
-		while (k < 10 && t >= tb[k]) k++;
+		while (k < 10 && t2 >= 2 * (int16_t)tb[k]) k++;
 		lut[i] = k;
 	}
 	pat_ocean = ocean;
