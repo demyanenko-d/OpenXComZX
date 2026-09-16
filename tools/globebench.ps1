@@ -17,16 +17,16 @@ $lines = @('waitmark 1 600', 'poke _alien_off 1', 'pokew _cursor_x 110', 'pokew 
 	'pokew _cursor_x 119', 'pokew _cursor_y 172', 'click L', 'waitmark 43 3000', 'pokew _cursor_x 120', 'pokew _cursor_y 110',
 	'click L', 'waitmark 42 3000', 'type bench', 'key ENTER', 'waitmark 32 3000', 'poke _gl_dbg 1', "poke _gv_off $(if ($NoPre) { 1 } else { 0 })", 'wait 200',
 	"poke 06:0038 $Hour", 'poke 06:0037 0', 'poke 06:0036 0', 'wait 250')
-function Set-View { param($l, $t, $m) @("pokew _ctx+6 $l", "pokew _ctx+8 $t", "poke 06:0037 $m", "wait 8", "waitmark 32 3000") }
+function Set-View { param($l, $t, $m) @("pokew _ctx+6 $l", "pokew _ctx+8 $t", "poke 06:0037 $m", "wait 60") }
 foreach ($z in 0..5) {
 	$lines += Set-View $vl $vt 0                                # ставим вид: пок минут меняет эпоху солнца -> перерисовка
-	for ($i = 0; $i -lt $Steps; $i++) { $lines += @('key RIGHT', 'wait 8', 'waitmark 32 3000') }
+	for ($i = 0; $i -lt $Steps; $i++) { $lines += @('key RIGHT', 'wait 60') }
 	$lines += Set-View $vl $vt 6
-	for ($i = 0; $i -lt $Steps; $i++) { $lines += @('key UP', 'wait 8', 'waitmark 32 3000') }
+	for ($i = 0; $i -lt $Steps; $i++) { $lines += @('key UP', 'wait 60') }
 	foreach ($m in @(12, 24, 36, 48)) { $lines += @("poke 06:0037 $m", 'wait 250') }   # эпоха солнца
-	if ($z -lt 5) { $lines += @('key SS+K', 'wait 8', 'waitmark 32 3000') }
+	if ($z -lt 5) { $lines += @('key SS+K', 'wait 60') }
 }
-foreach ($z in 1..5) { $lines += @('key SS+J', 'wait 8', 'waitmark 32 3000') }
+foreach ($z in 1..5) { $lines += @('key SS+J', 'wait 60') }
 $lines += 'exit 0'
 $scr = 'tmp\globebench.oxs'
 [IO.File]::WriteAllText((Join-Path $root $scr), ($lines -join "`n") + "`n")

@@ -13,9 +13,9 @@ $groups = [ordered]@{
 	'tables (per view)'  = @('_gl_ktab', 'kt_put16', 'kt_lo16', '_gl_ztab', 'globe$tables')
 	'edge setup'         = @('_gl_edges', 'edge1', 'edge1s', 'e_rows', 'e_fast', 'hclip', 'limb_l', 'lerpz', 'xclip', 'lerpx', 'div32', 'eslope', 'bord_ev', 'e_store', 'mul8e', 'mulu16')
 	'AEL (insert/fix/step/sort)' = @('_gl_rows', 'rw_row', 'ael_ins', 'ai_cmp', 'fx_local', 'ael_fix', 'fx_pair', 'fx_eq', 'ael_step', 'ael_sort')
-	'runs -> DMA'        = @('rw_emit', 'rw_band', 'rw_pfill', 'rw_flush')
+	'runs -> DMA'        = @('rw_emit', 'rw_band', 'rw_pfill', 'rw_flush', '_gl_rows_pre', 'em_run_p')
 	'shadow (bank 25)'   = @('_sh_rows', 'build', 'iv_put', 'iv_dma', 'lvl_of', 'add32', '_sh_ramp', 'globe_sh$globe_shadow', 'globe_sh$tables', 'globe_sh$ramp', 'rw_emit_s', 'em_run_s')
-	'cells, C, copies'   = @('globe$render', 'globe$rows_init', 'globe$bg_restore', '___mulsint2slong', '___muluint2ulong', '_far_read', '_far_fill', '_far_copy', '_far_byte', '_memset', '_memcpy', 'globe$blit')
+	'cells, C, copies'   = @('globe_view$gview_load', 'globe_view$gview_pick', 'globe$render', 'globe$rows_init', 'globe$bg_restore', '___mulsint2slong', '___muluint2ulong', '_far_read', '_far_fill', '_far_copy', '_far_byte', '_memset', '_memcpy', 'globe$blit')
 }
 $rows = @()
 foreach ($z in $Zooms) {

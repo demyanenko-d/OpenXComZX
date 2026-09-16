@@ -15,7 +15,7 @@
 	.globl	_sh_ramp, _sh_radr, _sh_rhs, _sh_rn, _sh_rv, _sh_rdv
 	.globl	_sh_rows, add32, blk_eval, build, iv_put, iv_dma, set_num
 	.globl	_sh_zi, _sh_page, _sh_ty, _sh_dty
-	.globl	_sh_row, _sh_shift
+	.globl	_sh_row, _sh_shift, _sh_br
 
 SH_TX	= 0xC000 + 0x2A00		; 2t от столбца блока: младшие [32], старшие — +128
 SH_TZL	= 0xC000 + 0x2B00		; 2t от z [256], старшие — +256
@@ -48,6 +48,7 @@ sr_pr:	.ds	1
 sr_cpr:	.ds	1			; общая часть 4 строк: min pr, max pl
 sr_cpl:	.ds	1
 sr_cnt:	.ds	1
+sr_brp:	.ds	2			; указатель в SH_BR
 sr_tyy:	.ds	2
 sr_any:	.ds	1			; в строке блоков есть уровень > 0
 sr_ni:	.ds	1
@@ -200,35 +201,22 @@ _sh_rows::
 	add	iy, de
 	ld	a, #0xFF
 	ld	(sr_num), a
+	ld	hl, #_sh_br
+	ld	(sr_brp), hl
 br_loop:
 	; 4 строки блока: C — наименьшая pl, B — наибольшая pr (столбцы блоков), D — наибольшая
-	; pl, E — наименьшая pr (общая часть; строки нет: 255, 0 — общей части нет)
-	push	iy
-	pop	hl
-	ld	bc, #0x00FF
-	ld	de, #0x00FF
-	ld	a, #4
-	ld	(sr_cnt), a
-1$:	ld	a, (hl)			; pl
-	cp	a, c
-	jr	nc, 2$
-	ld	c, a
-2$:	cp	a, d
-	jr	c, 3$
-	ld	d, a
-3$:	inc	hl
-	ld	a, (hl)			; pr
-	cp	a, b
-	jr	c, 4$
-	ld	b, a
-4$:	cp	a, e
-	jr	nc, 5$
-	ld	e, a
-5$:	inc	hl
-	ld	a, (sr_cnt)
-	dec	a
-	ld	(sr_cnt), a
-	jr	nz, 1$
+	; pl, E — наименьшая pr (общая часть; строки нет: 255, 0 — общей части нет). Пределы
+	; зависят только от зума — готовы в _sh_br (ОЗУ окна 1, globe_sh.c при смене зума)
+	ld	hl, (sr_brp)
+	ld	c, (hl)			; min pl
+	inc	hl
+	ld	b, (hl)			; max pr
+	inc	hl
+	ld	e, (hl)			; min pr
+	inc	hl
+	ld	d, (hl)			; max pl
+	inc	hl
+	ld	(sr_brp), hl
 	ld	(sr_cpr), de		; sr_cpr = E, sr_cpl = D
 	xor	a, a
 	ld	(sr_any), a

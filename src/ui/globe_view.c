@@ -24,6 +24,7 @@ static uint16_t gv_nlon[GV_Z], gv_ntilt[GV_Z], gv_tstep[GV_Z];
 static uint32_t gv_isec[GV_Z], gv_dsec[GV_Z];
 static uint8_t gv_izoom = 0xFF;           // зум, чьи указатели лежат в EP_VIDX
 static uint16_t gv_cur = 0xFFFF;          // номер вида в EP_VIEW
+static uint16_t gv_lon[GV_Z][72];         // углы поворота сетки (i * 65536 / nLon) — деление один раз
 
 static uint32_t rd32(const uint8_t *p)
 {
@@ -56,7 +57,9 @@ uint8_t gview_open(uint8_t ep) __banked
 		gv_tstep[z] = p[4] | ((uint16_t)p[5] << 8);
 		gv_isec[z] = rd32(p + 8);
 		gv_dsec[z] = rd32(p + 12);
-		if (!gv_nlon[z] || !gv_ntilt[z] || !gv_tstep[z]) return 0;
+		if (!gv_nlon[z] || !gv_ntilt[z] || !gv_tstep[z] || gv_nlon[z] > 72) return 0;
+		for (uint16_t i = 0; i < gv_nlon[z]; i++)
+			gv_lon[z][i] = (uint16_t)(((uint32_t)i * 65536u + gv_nlon[z] / 2) / gv_nlon[z]);
 	}
 	gv_state = 1;
 	return 1;
@@ -70,11 +73,12 @@ uint8_t gview_pick(uint8_t z, uint16_t *lon, int16_t *lat, uint16_t *iv) __banke
 	int16_t k = (int16_t)((gv_ntilt[z] - 1) >> 1);
 	uint16_t i = (uint16_t)(((uint32_t)*lon * n + 32768u) >> 16);
 	if (i >= n) i -= n;
-	int32_t t = *lat;
-	int16_t j = t >= 0 ? (int16_t)((t + ts / 2) / ts) : -(int16_t)((-t + ts / 2) / ts);
+	// 16 бит хватает: |lat| <= 16384, шаг <= 1638 (деление 32 бит в SDCC — 2 745 тактов)
+	int16_t t = *lat, hs = (int16_t)(ts >> 1);
+	int16_t j = t >= 0 ? (int16_t)((t + hs) / (int16_t)ts) : -(int16_t)((hs - t) / (int16_t)ts);
 	if (j > k) j = k;
 	if (j < -k) j = -k;
-	*lon = (uint16_t)(((uint32_t)i * 65536u + n / 2) / n);
+	*lon = gv_lon[z][i];                      // углы сетки — таблицей (деление было на кадр)
 	*lat = (int16_t)(j * (int16_t)ts);
 	*iv = (uint16_t)((j + k) * (int16_t)n + (int16_t)i);
 	return 1;

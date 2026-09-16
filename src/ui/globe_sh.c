@@ -52,6 +52,26 @@ void globe_rows_pl(uint8_t zoom, uint8_t *dst) __banked
 }
 
 static uint8_t shp = PG_NONE, pat_ocean = 0xFF, z8_zoom = 0xFF;
+uint8_t sh_br[200];                     // на строку блоков [50][4]: min pl, max pr, min pr, max pl (globe_sh_s.s)
+
+// Пределы 4 строк каждого блока — от зума, а не от кадра: globe_sh_s.s считал их заново на
+// каждую строку блоков каждого кадра (50 сканов по 8 байт)
+static void br_fill(uint8_t zoom)
+{
+	const uint8_t *s = sh_row + (uint16_t)zoom * (GLOBE_H * 2);
+	uint8_t *d = sh_br;
+	for (uint8_t b = 0; b < 50; b++) {
+		uint8_t mnl = 0xFF, mxr = 0, mnr = 0xFF, mxl = 0;
+		for (uint8_t k = 0; k < 4; k++) {
+			uint8_t pl = *s++, pr = *s++;
+			if (pl < mnl) mnl = pl;
+			if (pr > mxr) mxr = pr;
+			if (pr < mnr) mnr = pr;
+			if (pl > mxl) mxl = pl;
+		}
+		*d++ = mnl; *d++ = mxr; *d++ = mnr; *d++ = mxl;
+	}
+}
 
 // globe_sh_s.s: проход блоков и строк
 void sh_rows(void);
@@ -132,7 +152,7 @@ static void tables(uint8_t zoom, int16_t sx, int16_t sy, int16_t sz)
 {
 	const int16_t *k = zk[zoom];
 	ramp(SH_TX, 32, 128, MUL(k[0], sx) >> 3, -MUL(k[1], sx) >> 7);
-	ramp(SH_TZ, 256, 256, 0, -(2000L * sz) / 255);
+	ramp(SH_TZ, 256, 256, 0, -(MUL(sz, 2008) >> 8));        // 2000/255 = 7.8431 ≈ 2008/256: деление 32 бит — 2 745 тактов
 	sh_ty = (MUL(k[2], sy) >> 3) + 0x18000L;                           // 2t строки блоков 0 · 65536
 	sh_dty = -MUL(k[3], sy) >> 7;
 }
@@ -150,6 +170,7 @@ uint8_t globe_shadow(uint16_t lon, int16_t lat, uint8_t zoom, uint16_t sunlon, u
 	tables(zoom, sx, sy, sz);
 	if (z8_zoom != zoom) {
 		memcpy((void *)(0xC000 + SH_Z8), sh_z8 + (uint16_t)zoom * 400, 400);
+		br_fill(zoom);
 		z8_zoom = zoom;
 	}
 	sh_zi = (uint16_t)zoom * (GLOBE_H * 2);
