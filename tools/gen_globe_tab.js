@@ -100,6 +100,15 @@ for (const R of ZRAD) {
 		shZ8.push(q > 0 ? Math.min(255, Math.round(255 * Math.sqrt(q))) : 0);
 	}
 }
+// Шум образцов тени (globe_sh.c patterns): 4 строки по 256 значений 0..3 (как rand() % 4
+// OpenXcom) — считать на каждый пиксель дорого (первый вход в геоскейп ~60 кадров)
+const shNoise = [];
+for (let r = 0; r < 4; r++)
+	for (let x = 0; x < 256; x++) {
+		let v = ((x + (r << 8)) * 0x9E37 + 0x79B9) & 0xFFFF;
+		v ^= v >> 7; v = (v * 0x2F1D) & 0xFFFF; v ^= v >> 9;
+		shNoise.push(v & 3);
+	}
 let seed = 0x5A17;
 const shShift = [];
 for (let y = 0; y < 200; y++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; shShift.push((seed >> 16) & 0xFE); }
@@ -118,6 +127,10 @@ ${rows(shRow, 20)}
 // столбцы 16..31 и строки 25..49 — зеркально) в долях R x 255, вне диска — 0
 const uint8_t sh_z8[2400] = {
 ${rows(shZ8, 16)}
+};
+// Шум образцов уровней тени: [строка образца * 256 + x] — 0..3
+const uint8_t sh_noise[1024] = {
+${rows(shNoise, 32)}
 };
 // Сдвиг строки-образца шума по строке экрана (чётный: DMA пишет словами)
 const uint8_t sh_shift[200] = {

@@ -305,7 +305,8 @@ static void render(uint16_t lon, int16_t lat, uint8_t z, uint16_t sun)
 		gl_rows();
 		pg_map3(work);
 		dma_wait();
-		dbg_puts("globe: sun only, frames "); dbg_dec((uint16_t)(frames - t0));
+		dbg_puts("globe: sun only, zoom "); dbg_dec(z);
+		dbg_puts(", frames "); dbg_dec((uint16_t)(frames - t0));
 		dbg_puts(", sun "); dbg_dec(sun); dbg_puts("\n");
 		return;
 	}

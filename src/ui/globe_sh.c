@@ -72,25 +72,26 @@ uint16_t globe_sunlon(void) __banked
 
 // ---------------------------------------------------------------- узоры
 
-// Шум: 256 значений 0..3 (как rand() % 4 OpenXcom)
-static uint8_t noise_at(uint16_t i, uint8_t salt)
-{
-	uint16_t x = i * 0x9E37u + salt * 0x79B9u;
-	x ^= x >> 7; x *= 0x2F1Du; x ^= x >> 9;
-	return (uint8_t)x;
-}
-
+// Шум — таблицей (sh_noise, 4 строки по 256 значений 0..3, как rand() % 4 OpenXcom); на
+// уровень значений всего 4 (по шуму), поэтому в цикле — только две выборки на пиксель
 static void patterns(uint8_t ocean)
 {
 	for (uint8_t k = 0; k < NPAT; k++) {
 		pg_map3(shp + (k >> 3));
 		uint8_t *p = (uint8_t *)(0xC000 + (uint16_t)(k & 7) * 2048);
 		uint8_t v = k == 0 ? 0 : k >= 10 ? 31 : (uint8_t)(3 * k + 1);
+		uint8_t lv[4], ov[4];
+		for (uint8_t n = 0; n < 4; n++) {
+			uint8_t s = v > n ? v - n : 0;
+			lv[n] = s / 3;
+			ov[n] = ocean + s;
+		}
+		const uint8_t *nz = sh_noise;
 		for (uint8_t r = 0; r < 4; r++, p += 512)
-			for (uint16_t x = 0; x < 256; x++) {
-				uint8_t n = noise_at(x + ((uint16_t)r << 8), 1) & 3, s = v > n ? v - n : 0;
-				p[x] = s / 3;
-				p[x + 256] = ocean + s;
+			for (uint16_t x = 0; x < 256; x++, nz++) {
+				uint8_t n = *nz;
+				p[x] = lv[n];
+				p[x + 256] = ov[n];
 			}
 	}
 	pg_map3(shp + 1);                                   // уровень по 2t: ⌊2t / 2⌋ = ⌊t⌋ против порогов
