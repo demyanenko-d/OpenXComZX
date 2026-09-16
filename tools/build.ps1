@@ -47,7 +47,7 @@ $banks = @(
     @{ n = 22; page = 0x45; files = @('game\dogfight') }   # воздушный бой: логика
     @{ n = 23; page = 0x46; files = @('ui\scr_dogf') }     # воздушный бой: окна
     @{ n = 24; page = 0x47; files = @('ui\globe', 'ui\globe_s', 'ui\globe_tab', 'ui\globe_sq'); tab = 0xBC00 }   # глобус (globe.md): globe_s.s — асм, globe_sq.s — таблица _GTAB с #BC00
-    @{ n = 25; page = 0x48; files = @('ui\globe_sh', 'ui\globe_sh_s', 'ui\globe_view', 'ui\globe_sh_tab') }   # глобус, банк 25 — ассемблер: тень (globe_sh.s — кадр, globe_sh_s.s — блоки и строки, globe_sh_tab.s — таблицы), предрасчитанные виды (globe_view.s)
+    @{ n = 25; page = 0x48; files = @('ui\globe_sh', 'ui\globe_sh_s', 'ui\globe_view', 'ui\globe_sh_tab'); ram = 0xB800 }   # глобус, банк 25 — ассемблер: тень (globe_sh.s — кадр, globe_sh_s.s — блоки и строки, globe_sh_tab.s — таблицы), предрасчитанные виды (globe_view.s); с #B800 — рабочие таблицы тени
 )
 
 # Пакеты данных игры: выход конвертера OxzConv (tmp\sd\OXZ\<игра>), вшиваются в SPG.
@@ -163,6 +163,8 @@ foreach ($b in $banks) {
         $bankLink  += ('-Wl-b_GTAB=0x{0:X}' -f $tabAt)
         $bankCheck += ('_{0}=0x{1:X}-0x{2:X}' -f $seg, $base, $tabAt)
         $bankCheck += ('_GTAB=0x{0:X}-0x{1:X}' -f $tabAt, ($base + 0x4000))
+    } elseif ($b.ram) {   # хвост страницы с ram — рабочие таблицы банка (адреса в .s), код — до него
+        $bankCheck += ('_{0}=0x{1:X}-0x{2:X}' -f $seg, $base, ($n * 0x10000 + $b.ram))
     } else {
         $bankCheck += ('_{0}=0x{1:X}-0x{2:X}' -f $seg, $base, ($base + 0x4000))
     }

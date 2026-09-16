@@ -8,6 +8,9 @@
 ;;              цвет океана O в x + 256 строки заднего буфера. Общая часть 4 строк [max pl,
 ;;              min pr] — одно 2D DMA на отрезок (8 пачек: L, O по строкам), края строк —
 ;;              построчно (2 пачки); флаги строк с тенью.
+;;
+;; Таблицы уровня (SH_TX, SH_TZL, SH_LUT, SH_Z8, SH_LB) — в хвосте страницы банка с #B800
+;; (tools/build.ps1: код банка — до #B800): окно 2 кэшируется, окно 3 — нет.
 
 	.module globe_sh_s
 	.optsdcc -mz80 sdcccall(1)
@@ -17,14 +20,12 @@
 	.globl	_sh_zi, _sh_page, _sh_ty, _sh_dty
 	.globl	_sh_row, _sh_shift, _sh_br
 
-SH_TX	= 0xC000 + 0x2A00		; 2t от столбца блока: младшие [32], старшие — +128
-SH_TZL	= 0xC000 + 0x2B00		; 2t от z [256], старшие — +256
-SH_FLG	= 0xC000 + 0x2F00		; флаги строк [200]
-SH_Z8	= 0xC000 + 0x3800		; z центров блоков зума [25 × 16]
-SH_LUT	= 0xC000 + 0x3D00		; уровень по 2t + 128 [256]
-SH_LB	= 0xC000 + 0x3E00		; уровни блоков текущей строки блоков [32]
-SH_IVP	= 0xC000 + 0x3E80		; отрезки строки: начало, уровень
-SH_IVL	= 0xC000 + 0x3EA0
+SH_TX	= 0xB800			; ОЗУ банка: 2t от столбца блока, младшие [32], старшие — +128
+SH_LB	= 0xB900			;   уровни блоков текущей строки блоков [32]
+SH_TZL	= 0xBA00			;   2t от z [256], старшие — +256
+SH_LUT	= 0xBC00			;   уровень по 2t + 128 [256]
+SH_Z8	= 0xBD00			;   z центров блоков зума [25 × 16]
+SH_FLG	= 0xC000 + 0x2F00		; флаги строк [200] (окно 3: их копирует банк 24)
 BACK_Y	= 280
 SCREEN_PAGE = 0x10
 
@@ -42,7 +43,6 @@ _sh_rdv: .ds	4
 sr_y:	.ds	1
 sr_br:	.ds	1			; строка блоков
 sr_zr:	.ds	2			; строка z8 в SH_Z8 (четверть, зеркально; кратна 16)
-sr_c1:	.ds	1			; последний столбец блоков строки
 sr_pl:	.ds	1			; отрезок строки (пары)
 sr_pr:	.ds	1
 sr_cpr:	.ds	1			; общая часть 4 строк: min pr, max pl
@@ -51,6 +51,7 @@ sr_cnt:	.ds	1
 sr_brp:	.ds	2			; указатель в SH_BR
 sr_tyy:	.ds	2
 sr_any:	.ds	1			; в строке блоков есть уровень > 0
+sr_same: .ds	1			; 1 — у 4 строк блока одни пределы (нет краёв)
 sr_ni:	.ds	1
 sr_flg:	.ds	1
 sr_rp2:	.ds	1			; строка образца · 2 (SAH)
@@ -128,23 +129,27 @@ add32:
 
 ;; ================================================================ блоки и строки
 
-;; Уровень блока столбца C -> SH_LB[C], sr_any |= уровень (портит A, DE, HL)
+;; Уровень блока столбца C -> SH_LB[C], IXL |= уровень (портит A, DE, HL; BC цел).
+;; Постоянные строки блоков вписаны в код (_sh_rows): ty + 128 и адрес строки z8.
 blk_eval:
-	ld	l, c			; 2t = tx[c] + ty + tz[z8]
+	ld	l, c			; 2t + 128 = tx[c] + (ty + 128) + tz[z8]
 	ld	h, #>SH_TX
 	ld	e, (hl)
 	set	7, l
 	ld	d, (hl)
-	ld	hl, (sr_tyy)
+	.db	0x21			; ld hl, #ty + 128
+be_ty:	.dw	0
 	add	hl, de
 	ld	a, c			; z8 столбца: c' = c < 16 ? c : 31 − c
 	cp	a, #16
 	jr	c, 1$
 	cpl
 	add	a, #32
-1$:	ld	de, (sr_zr)
-	or	a, e
+1$:	.db	0xF6			; or a, #младший байт строки z8
+be_zl:	.db	0
 	ld	e, a
+	.db	0x16			; ld d, #старший
+be_zh:	.db	0
 	ld	a, (de)
 	ld	e, a
 	ld	d, #>SH_TZL
@@ -154,25 +159,18 @@ blk_eval:
 	inc	d
 	ld	a, (de)
 	adc	a, h
-	ld	h, a
-	ld	a, l			; −128 ≤ 2t < 128 — lut[2t + 128], иначе 0 / 10
-	add	a, #0x80
-	ld	e, a
-	ld	a, h
-	adc	a, #0
-	jr	nz, 3$
-	ld	d, #>SH_LUT
-	ld	a, (de)
+	jr	nz, 3$			; 2t + 128 вне 0..255 — 0 / 10
+	ld	h, #>SH_LUT
+	ld	a, (hl)
 2$:	ld	l, c
 	ld	h, #>SH_LB
 	ld	(hl), a
-	ld	hl, #sr_any
-	or	a, (hl)
-	ld	(hl), a
+	.db	0xDD, 0xB5		; or a, ixl
+	.db	0xDD, 0x6F		; ld ixl, a
 	ret
-3$:	bit	7, h
+3$:	rla
 	ld	a, #0
-	jr	nz, 2$
+	jr	c, 2$
 	ld	a, #10
 	jr	2$
 
@@ -310,6 +308,15 @@ br_loop:
 	ld	(sr_cpr), de		; sr_cpr = E, sr_cpl = D
 	xor	a, a
 	ld	(sr_any), a
+	ld	a, c			; у 4 строк одни пределы — краёв нет (sr_same)
+	cp	a, d
+	jr	nz, 5$
+	ld	a, b
+	cp	a, e
+5$:	ld	a, #0
+	jr	nz, 6$
+	inc	a
+6$:	ld	(sr_same), a
 	ld	a, b
 	cp	a, c
 	jp	c, br_rows		; диска в строке блоков нет
@@ -335,8 +342,6 @@ br_loop:
 	srl	b
 	srl	c
 	srl	c
-	ld	a, b
-	ld	(sr_c1), a
 	call	row_rng			; вся строка блоков одного края — уровни не считать
 	or	a, a
 	jr	z, 11$
@@ -353,12 +358,22 @@ br_loop:
 	inc	l
 	jr	c, 12$
 	jr	blk_done
-11$:	push	bc
+11$:	ld	hl, (sr_tyy)		; постоянные строки — в код blk_eval
+	ld	de, #128
+	add	hl, de
+	ld	(be_ty), hl
+	ld	hl, (sr_zr)
+	ld	a, l
+	ld	(be_zl), a
+	ld	a, h
+	ld	(be_zh), a
+	.db	0xDD, 0x2E, 0		; ld ixl, #0 — ИЛИ уровней строки
+	push	bc
 blk_even:
 	call	blk_eval
 	inc	c
 	inc	c
-	ld	a, (sr_c1)
+	ld	a, b
 	cp	a, c
 	jr	nc, blk_even
 	inc	a			; c1 не попал (c = c1 + 1) — отдельно
@@ -367,26 +382,34 @@ blk_even:
 	dec	c
 	call	blk_eval
 8$:	pop	bc
-	inc	c			; C — c0 + 1, B — c1
+	ld	a, b			; нечётные от c0 + 1 до c1 − 1: (c1 − c0) / 2 штук
+	sub	a, c
+	rra
+	jr	z, blk_fin
+	ld	b, a
+	ld	h, #>SH_LB
+	ld	l, c			; L — c − 1
 blk_odd:
-	ld	a, c
-	cp	a, b
-	jr	nc, blk_done		; c ≥ c1 — всё
+	ld	a, (hl)			; LB[c − 1]
+	inc	l
+	inc	l
+	cp	a, (hl)			; LB[c + 1]
+	jr	nz, 9$
+	dec	l
+	ld	(hl), a			; соседи равны — их уровень
+	inc	l
+	djnz	blk_odd
+	jr	blk_fin
+9$:	dec	l
+	ld	c, l
+	call	blk_eval
+	ld	h, #>SH_LB
 	ld	l, c
 	inc	l
-	ld	h, #>SH_LB
-	ld	a, (hl)			; LB[c + 1]
-	dec	l
-	dec	l
-	cp	a, (hl)			; LB[c − 1]
-	jr	nz, 9$
-	inc	l
-	ld	(hl), a			; соседи равны — их уровень
-	jr	10$
-9$:	call	blk_eval
-10$:	inc	c
-	inc	c
-	jr	blk_odd
+	djnz	blk_odd
+blk_fin:
+	.db	0xDD, 0x7D		; ld a, ixl
+	ld	(sr_any), a
 blk_done:
 	ld	a, (sr_any)
 	or	a, a
@@ -412,6 +435,30 @@ blk_done:
 	call	set_num
 	call	build
 br_rows:
+	ld	a, (sr_same)		; краёв нет: флаги 4 строк = есть тень
+	or	a, a
+	jr	z, br_slow
+	ld	a, (sr_any)
+	or	a, a
+	jr	z, 1$
+	ld	a, #1
+1$:	ld	c, a
+	ld	a, (sr_y)
+	ld	l, a
+	add	a, #4
+	ld	(sr_y), a
+	ld	h, #>SH_FLG
+	ld	(hl), c
+	inc	l
+	ld	(hl), c
+	inc	l
+	ld	(hl), c
+	inc	l
+	ld	(hl), c
+	ld	de, #8
+	add	iy, de
+	jr	br_next
+br_slow:
 	ld	b, #4			; строки блока: края и флаги
 row_loop:
 	push	bc
@@ -473,6 +520,7 @@ row_next:
 	inc	(hl)
 	pop	bc
 	djnz	row_loop
+br_next:
 	ld	hl, #_sh_ty		; ty += dty (строка блоков)
 	ld	de, #_sh_dty
 	call	add32
@@ -499,34 +547,40 @@ build:
 	ld	(sr_ni), a
 	ld	hl, #sh_dsc
 	ld	(dsc_p), hl
+	ld	a, (sr_pr)		; E — столбцов после первого: pr >> 2 − pl >> 2
+	rrca
+	rrca
+	and	a, #0x3F
+	ld	e, a
 	ld	a, (sr_pl)
 	ld	d, a			; D — начало отрезка
 	rrca
 	rrca
 	and	a, #0x3F
-	ld	l, a
+	ld	l, a			; HL — уровень столбца
 	ld	h, #>SH_LB
 	ld	b, (hl)			; B — уровень отрезка
-	ld	e, l			; E — следующий столбец
-1$:	inc	e
 	ld	a, e
-	add	a, a
-	add	a, a
-	ld	c, a			; C — его первая пара (E ≤ 32)
-	ld	a, (sr_pr)
-	cp	a, c
-	jr	c, 3$			; за концом отрезка
-	ld	l, e
-	ld	h, #>SH_LB
+	sub	a, l
+	jr	z, 3$
+	ld	e, a
+1$:	inc	l
 	ld	a, (hl)
 	cp	a, b
-	jr	z, 1$
+	jr	z, 2$
+	push	hl
 	push	af
-	call	iv_put			; [D, C) уровня B
+	ld	a, l			; C — первая пара столбца
+	add	a, a
+	add	a, a
+	ld	c, a
+	call	iv_put			; [D, C) уровня B (BC, DE целы)
 	pop	af
+	pop	hl
 	ld	b, a
 	ld	d, c
-	jr	1$
+2$:	dec	e
+	jr	nz, 1$
 3$:	ld	a, (sr_pr)		; последний отрезок — до pr + 1
 	inc	a
 	ld	c, a
