@@ -429,7 +429,8 @@ build:
 
 ;; Отрезок [D, C) уровня B -> дескриптор DMA (5 байт: SAL, SAH, SAX, DAL, DMALen) в ОЗУ банка:
 ;; оно кэшируется, в отличие от страницы тени в окне 3, и вывод в порты идёт коротким циклом
-iv_put:
+iv_put:				; указатель по sh_dsc — inc hl, не inc l: буфер может лечь поперёк границы 256 байт,
+				; и заворот младшего байта писал дескрипторы поверх кода банка (аварии 2026-09-16)
 	push	bc
 	push	de
 	ld	hl, (dsc_p)
@@ -439,7 +440,7 @@ iv_put:
 	ld	a, (sr_sh)		; SAL = сдвиг образца + DAL (заворот внутри 256 байт образца)
 	add	a, e
 	ld	(hl), a
-	inc	l
+	inc	hl
 	ld	a, b			; SAH = (уровень % 8) · 8 + строка образца · 2
 	and	a, #7
 	add	a, a
@@ -449,22 +450,22 @@ iv_put:
 	ld	a, (sr_rp2)
 	add	a, d
 	ld	(hl), a
-	inc	l
+	inc	hl
 	ld	a, b			; SAX = страница образцов + (уровень >= 8)
 	cp	a, #8
 	ccf
 	ld	a, (_sh_page)
 	adc	a, #0
 	ld	(hl), a
-	inc	l
+	inc	hl
 	ld	(hl), e			; DAL
-	inc	l
+	inc	hl
 	pop	de
 	ld	a, c			; DMALen = слов − 1
 	sub	a, d
 	dec	a
 	ld	(hl), a
-	inc	l
+	inc	hl
 	ld	(dsc_p), hl
 	ld	hl, #sr_ni
 	inc	(hl)
@@ -503,19 +504,19 @@ iv_dma:
 	jp	m, 2$
 	ld	b, #0x1A
 	ld	a, (hl)			; SAL
-	inc	l
+	inc	hl
 	out	(c), a
 	inc	b
 	ld	a, (hl)			; SAH
-	inc	l
+	inc	hl
 	out	(c), a
 	inc	b
 	ld	a, (hl)			; SAX
-	inc	l
+	inc	hl
 	out	(c), a
 	inc	b
 	ld	a, (hl)			; DAL
-	inc	l
+	inc	hl
 	out	(c), a
 	inc	b
 	out	(c), d			; DAH
@@ -523,7 +524,7 @@ iv_dma:
 	out	(c), e			; DAX
 	ld	b, #0x26
 	ld	a, (hl)			; DMALen
-	inc	l
+	inc	hl
 	out	(c), a
 	inc	b
 	ld	a, #0x31		; RAM -> RAM, S_ALGN | D_ALGN — пуск
