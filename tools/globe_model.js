@@ -489,7 +489,7 @@ function png(img, zoom, out) {
 	fs.writeFileSync(out, Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ih), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
 }
 
-module.exports = { render, TEX, OCEAN, pal, bandStat };
+module.exports = { render, truthAt, TEX, OCEAN, pal, bandStat };
 if (require.main !== module) {} else if (process.env.SWEEP) {
 	let worst = [];
 	for (let zoom = 0; zoom < 6; zoom++) {
