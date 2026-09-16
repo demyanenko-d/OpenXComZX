@@ -17,7 +17,7 @@
 
 	.globl	_sh_ramp, _sh_radr, _sh_rhs, _sh_rn, _sh_rv, _sh_rdv
 	.globl	_sh_rows, add32, blk_eval, build, iv_put, iv_dma, set_num
-	.globl	_sh_zi, _sh_page, _sh_ty, _sh_dty
+	.globl	_sh_zi, _sh_page, _sh_ty, _sh_dty, _sh_bh, _sh_nbr
 	.globl	_sh_row, _sh_shift, _sh_br
 
 SH_TX	= 0xB800			; ОЗУ банка: 2t от столбца блока, младшие [32], старшие — +128
@@ -25,7 +25,7 @@ SH_LB	= 0xB900			;   уровни блоков текущей строки бл�
 SH_TZL	= 0xBA00			;   2t от z [256], старшие — +256
 SH_LUT	= 0xBC00			;   уровень по 2t + 128 [256]
 SH_Z8	= 0xBD00			;   z центров блоков зума [25 × 16]
-SH_FLG	= 0xC000 + 0x2F00		; флаги строк [200] (окно 3: их копирует банк 24)
+SH_FLG	= 0xC000 + 0x3000		; флаги строк [200] (страница shp + 2, их копирует банк 24)
 BACK_Y	= 280
 SCREEN_PAGE = 0x10
 
@@ -320,12 +320,17 @@ br_loop:
 	ld	a, b
 	cp	a, c
 	jp	c, br_rows		; диска в строке блоков нет
-	; строка z8: зеркально b' = br < 25 ? br : 49 − br; адрес SH_Z8 + b'·16
+	; строка z8: зеркально b' = br < (nbr + 1) / 2 ? br : nbr − 1 − br; адрес SH_Z8 + b'·16
+	ld	a, (_sh_nbr)
+	ld	e, a
+	inc	a
+	srl	a
+	ld	d, a
 	ld	a, (sr_br)
-	cp	a, #25
+	cp	a, d
 	jr	c, 7$
 	cpl
-	add	a, #50			; 49 − br
+	add	a, e			; nbr − 1 − br
 7$:	ld	l, a
 	ld	h, #0
 	add	hl, hl
@@ -431,11 +436,13 @@ blk_done:
 	ld	(sr_pl), a
 	xor	a, a
 	ld	(sr_rp2), a
-	ld	a, #7
+	ld	a, (_sh_bh)		; DMANum = 2 · строк − 1
+	add	a, a
+	dec	a
 	call	set_num
 	call	build
 br_rows:
-	ld	a, (sr_same)		; краёв нет: флаги 4 строк = есть тень
+	ld	a, (sr_same)		; краёв нет: флаги строк блока = есть тень
 	or	a, a
 	jr	z, br_slow
 	ld	a, (sr_any)
@@ -443,23 +450,24 @@ br_rows:
 	jr	z, 1$
 	ld	a, #1
 1$:	ld	c, a
+	ld	a, (_sh_bh)
+	ld	b, a
+	add	a, a
+	ld	e, a
+	ld	d, #0
+	add	iy, de			; IY += 2 · строк
 	ld	a, (sr_y)
 	ld	l, a
-	add	a, #4
+	add	a, b
 	ld	(sr_y), a
 	ld	h, #>SH_FLG
-	ld	(hl), c
+2$:	ld	(hl), c
 	inc	l
-	ld	(hl), c
-	inc	l
-	ld	(hl), c
-	inc	l
-	ld	(hl), c
-	ld	de, #8
-	add	iy, de
-	jr	br_next
+	djnz	2$
+	jp	br_next
 br_slow:
-	ld	b, #4			; строки блока: края и флаги
+	ld	a, (_sh_bh)		; строки блока: края и флаги
+	ld	b, a
 row_loop:
 	push	bc
 	xor	a, a
@@ -474,8 +482,11 @@ row_loop:
 	jr	c, row_next		; строки диска нет
 	ld	a, #1
 	ld	(sr_flg), a
-	ld	a, (sr_y)		; строка образца = y & 3
-	and	a, #3
+	ld	a, (_sh_bh)		; строка образца = y & (строк − 1)
+	dec	a
+	ld	e, a
+	ld	a, (sr_y)
+	and	a, e
 	add	a, a
 	ld	(sr_rp2), a
 	ld	a, (sr_cpl)
@@ -524,10 +535,12 @@ br_next:
 	ld	hl, #_sh_ty		; ty += dty (строка блоков)
 	ld	de, #_sh_dty
 	call	add32
+	ld	a, (_sh_nbr)
+	ld	b, a
 	ld	a, (sr_br)
 	inc	a
 	ld	(sr_br), a
-	cp	a, #50
+	cp	a, b
 	jp	c, br_loop
 	xor	a, a			; дождаться DMA, DMANum = 0
 	call	set_num
@@ -601,8 +614,9 @@ iv_put:				; указатель по sh_dsc — inc hl, не inc l: буфер �
 	add	a, e
 	ld	(hl), a
 	inc	hl
-	ld	a, b			; SAH = (уровень % 8) · 8 + строка образца · 2
-	and	a, #7
+	ld	a, b			; SAH = (уровень % 4) · 16 + строка образца · 2
+	and	a, #3
+	add	a, a
 	add	a, a
 	add	a, a
 	add	a, a
@@ -611,11 +625,13 @@ iv_put:				; указатель по sh_dsc — inc hl, не inc l: буфер �
 	add	a, d
 	ld	(hl), a
 	inc	hl
-	ld	a, b			; SAX = страница образцов + (уровень >= 8)
-	cp	a, #8
-	ccf
+	ld	a, b			; SAX = страница образцов + уровень / 4
+	rrca
+	rrca
+	and	a, #3
+	ld	d, a
 	ld	a, (_sh_page)
-	adc	a, #0
+	add	a, d
 	ld	(hl), a
 	inc	hl
 	ld	(hl), e			; DAL

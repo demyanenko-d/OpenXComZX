@@ -8,8 +8,10 @@
 ;; крайних уровней). Проход строк (globe_s.s) кладёт сушу BLT2 по полубайтам с насыщением
 ;; (узор + L = ровно getLandShadow), океан — копией из x + 256.
 ;;
-;; Страницы: shp — образцы уровней 0..7 (по 2 КБ), shp + 1 — уровни 8..10 и таблицы кадра
-;; (её возвращает globe_shadow: флаги строк GLOBE_SH_FLG). Уровень блока: 2t = −500·(e·s) =
+;; Страницы: shp, shp + 1 — образцы уровней 0..7 (по 4 на страницу, 8 строк по 512 байт),
+;; shp + 2 — уровни 8..10 и флаги строк GLOBE_SH_FLG (#3000; эту страницу возвращает
+;; globe_shadow). Блок уровня — 8x4 на зумах 0–2 (строки образца 0..3) и 8x8 на зумах 3–5 (0..7:
+;; одно 2D DMA на 8 строк). Уровень блока: 2t = −500·(e·s) =
 ;; TX[столбец] + TY[строка блоков] + TZ[z центра] — лестницы без умножений; проход блоков и
 ;; строк — globe_sh_s.s. Здесь — подготовка кадра (солнце, узоры, таблицы).
 ;;
@@ -24,7 +26,7 @@
 	.globl	b_globe_rows_pl, b_globe_sunlon, b_globe_shadow
 	.globl	_sh_row, _sh_z8, _sh_noise, _sh_lut, _sh_br
 	.globl	_sh_ramp, _sh_radr, _sh_rhs, _sh_rn, _sh_rv, _sh_rdv
-	.globl	_sh_rows, _sh_zi, _sh_page, _sh_ty, _sh_dty
+	.globl	_sh_rows, _sh_zi, _sh_page, _sh_ty, _sh_dty, _sh_bh, _sh_nbr, _sh_z8b
 	.globl	_globe_sin, b_globe_sin
 	.globl	_pg_alloc, _pg_map3, ___mulsint2slong, ___muluint2ulong, ___sdcc_bcall_ehl
 
@@ -36,7 +38,7 @@ SH_TX	= 0xB800			; ОЗУ банка (globe_sh_s.s): 2t от столбца бл
 SH_TZ	= 0xBA00			;   2t от z [256] мл., ст. (+256)
 SH_LUT	= 0xBC00			;   уровень по 2t + 128 [256]
 SH_Z8	= 0xBD00			;   z центров блоков зума [25 × 16]
-SH_DBG	= 0xC000 + 0x3FF0		; отладка: солнце кадра sx, sy, sz
+SH_DBG	= 0xC000 + 0x3FF0		; отладка: солнце кадра sx, sy, sz (страница shp + 2)
 NPAT	= 11
 PG_NONE	= 0xFF
 ST_SEC	= 0xC000 + 0x36			; state_t: секунды, минуты, час (Win3 = страница состояния)
@@ -46,6 +48,8 @@ ST_HOUR	= 0xC000 + 0x38
 	.area	_DATA
 
 _sh_br::	.ds	200		; на строку блоков: min pl, max pr, min pr, max pl (globe_sh_s.s)
+_sh_bh::	.ds	1		; строк экрана в блоке: 4 (зумы 0–2) или 8 (3–5)
+_sh_nbr::	.ds	1		; строк блоков: 50 или 25
 shp:		.ds	1		; страница образцов (0 — не выделена)
 pat_ocean:	.ds	1		; цвет океана построенных образцов (0 — не строились)
 z8_zp1:		.ds	1		; зум + 1 таблиц SH_Z8 и sh_br (0 — ничьи)
@@ -74,6 +78,8 @@ bf_mxl:		.ds	1
 ;; ~11 400 тактов). 1984000/r и 1568000/r, шаги — с 16-кратной точностью: 2048000/r и 1024000/r
 zk:	.dw	22044, 22756, 17422, 11378, 16533, 17067, 13066, 8533, 11022, 11378, 8711, 5689
 	.dw	7085, 7314, 5600, 3657, 4408, 4551, 3484, 2276, 2755, 2844, 2177, 1422
+;; зумы 3–5, блоки 8x8: центр строки блоков 0 — Y = −96 вместо −98: 1536000/r
+zk2b:	.dw	5486, 3413, 2133
 
 ;; ================================================================ пары диска, время
 
@@ -179,7 +185,7 @@ _globe_shadow::
 	or	a, a
 	jr	nz, 1$
 	ld	l, #1
-	ld	a, #2
+	ld	a, #3
 	call	_pg_alloc
 	cp	a, #PG_NONE
 	jr	nz, 2$
@@ -187,13 +193,14 @@ _globe_shadow::
 	ret
 2$:	ld	(shp), a
 1$:	inc	a
+	inc	a
 	call	_pg_map3
 	ld	(gs_old), a
 	ld	a, (pat_ocean)
 	cp	a, 14 (ix)
 	jr	z, 3$
 	ld	a, 14 (ix)
-	call	patterns		; оставляет Win3 = shp + 1
+	call	patterns		; оставляет Win3 = shp + 2
 3$:	ld	l, 12 (ix)		; солнце в осях вида: s = (sin d, −sinC·cos d, cosC·cos d), d = λs − λ0
 	ld	h, 13 (ix)
 	ld	e, 7 (ix)
@@ -293,7 +300,18 @@ _globe_shadow::
 	ld	(_sh_rhs), hl
 	ld	(_sh_rn), hl
 	call	_sh_ramp
-	; TY строки блоков 0: (k2 · sy) >> 3 + #18000, шаг (−(k3 · sy)) >> 7
+	; TY строки блоков 0: (k2 · sy) >> 3 + #18000, шаг (−(k3 · sy)) >> 7; блоки 8x8 — k2 из zk2b,
+	; шаг >> 6
+	ld	a, 11 (ix)		; высота блока и число строк блоков: зумы 3–5 — 8 и 25
+	cp	a, #3
+	ld	a, #4
+	ld	b, #50
+	jr	c, 13$
+	ld	a, #8
+	ld	b, #25
+13$:	ld	(_sh_bh), a
+	ld	a, b
+	ld	(_sh_nbr), a
 	ld	hl, (gs_k)
 	ld	de, #4
 	add	hl, de
@@ -301,7 +319,19 @@ _globe_shadow::
 	inc	hl
 	ld	d, (hl)
 	ex	de, hl
-	ld	de, (gs_sy)
+	ld	a, 11 (ix)
+	sub	a, #3
+	jr	c, 11$
+	add	a, a
+	ld	e, a
+	ld	d, #0
+	ld	hl, #zk2b
+	add	hl, de
+	ld	a, (hl)
+	inc	hl
+	ld	h, (hl)
+	ld	l, a
+11$:	ld	de, (gs_sy)
 	call	___mulsint2slong
 	ld	b, #3
 	call	sar32
@@ -327,7 +357,11 @@ _globe_shadow::
 	call	___mulsint2slong
 	call	neg32
 	ld	b, #7
-	call	sar32
+	ld	a, (_sh_bh)
+	cp	a, #8
+	jr	nz, 12$
+	dec	b
+12$:	call	sar32
 	ld	(_sh_dty), de
 	ld	(_sh_dty + 2), hl
 	; z центров блоков и пределы строк блоков — при смене зума
@@ -336,10 +370,21 @@ _globe_shadow::
 	cp	a, 11 (ix)
 	jr	z, 6$
 	ld	a, 11 (ix)
+	sub	a, #3
+	jr	nc, 15$
+	ld	a, 11 (ix)
 	ld	hl, #_sh_z8
 	call	zoom400
-	ld	de, #SH_Z8
 	ld	bc, #400
+	jr	16$
+15$:	ld	hl, #_sh_z8b		; блоки 8x8: 13 строк блоков
+	ld	bc, #208
+	jr	z, 16$
+	add	hl, bc
+	dec	a
+	jr	z, 16$
+	add	hl, bc
+16$:	ld	de, #SH_Z8
 	ldir
 	ld	a, 11 (ix)
 	call	br_fill
@@ -362,6 +407,7 @@ _globe_shadow::
 	ld	a, (gs_old)
 	call	_pg_map3
 	ld	a, (shp)
+	inc	a
 	inc	a
 	pop	ix
 	ret
@@ -415,14 +461,16 @@ br_fill:
 	ld	hl, #_sh_row
 	call	zoom400
 	ld	de, #_sh_br
-	ld	c, #50
+	ld	a, (_sh_nbr)
+	ld	c, a
 1$:	ld	a, #0xFF
 	ld	(bf_mnl), a
 	ld	(bf_mnr), a
 	xor	a, a
 	ld	(bf_mxr), a
 	ld	(bf_mxl), a
-	ld	b, #4
+	ld	a, (_sh_bh)
+	ld	b, a
 2$:	ld	a, (hl)			; pl
 	inc	hl
 	push	hl
@@ -466,9 +514,9 @@ br_fill:
 	jr	nz, 1$
 	ret
 
-;; Образцы уровней 0..10 (A — цвет океана): уровень k — страница shp + k / 8, смещение (k % 8) ·
-;; 2048, 4 строки по 512: x — L = ⌊s/3⌋, x + 256 — OCEAN + s, s = v_k − шум (не меньше 0);
-;; затем таблица уровня по 2t в shp + 1. Шум — таблицей sh_noise (4 строки по 256).
+;; Образцы уровней 0..10 (A — цвет океана): уровень k — страница shp + k / 4, смещение (k % 4) ·
+;; 4096, 8 строк по 512: x — L = ⌊s/3⌋, x + 256 — OCEAN + s, s = v_k − шум (не меньше 0);
+;; затем таблица уровня по 2t (SH_LUT, ОЗУ банка). Шум — таблицей sh_noise (8 строк по 256).
 patterns:
 	ld	(pt_oc), a
 	xor	a, a
@@ -477,12 +525,12 @@ pt_lvl:
 	ld	a, (pt_k)
 	srl	a
 	srl	a
-	srl	a
 	ld	hl, #shp
 	add	a, (hl)
 	call	_pg_map3
 	ld	a, (pt_k)
-	and	a, #7
+	and	a, #3
+	add	a, a
 	add	a, a
 	add	a, a
 	add	a, a
@@ -533,7 +581,7 @@ pt_lvl:
 	jr	c, 3$
 	ld	hl, (pt_p)		; 4 строки: p[x] = lv[шум], p[x + 256] = ov[шум]
 	ld	de, #_sh_noise
-	ld	c, #4
+	ld	c, #8
 8$:	ld	b, #0
 9$:	ld	a, (de)
 	inc	de
@@ -566,6 +614,7 @@ pt_lvl:
 	cp	a, #NPAT
 	jp	c, pt_lvl
 	ld	a, (shp)
+	inc	a
 	inc	a
 	call	_pg_map3
 	ld	hl, #_sh_lut

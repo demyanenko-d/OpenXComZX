@@ -78,7 +78,7 @@ for (let k = 0; k <= 18; k++) { cos5k.push(Math.round(Math.cos(5 * k * Math.PI /
 // globe.c rows_init; строки нет — 255, 0); z центров блоков 8x4 (доли R x 255, вне диска — 0):
 // четверть — столбцы 0..15 (X = 8c − 124), строки блоков 0..24 (Y = 4b − 98), остальное зеркально
 const ZRAD = [90, 120, 180, 280, 450, 720];
-const shRow = [], shZ8 = [];
+const shRow = [], shZ8 = [], shZ8b = [];
 for (const R of ZRAD) {
 	for (let y = 0; y < 200; y++) {
 		const v = 2 * y + 1 - 200, d = 4 * R * R - v * v;
@@ -94,11 +94,17 @@ for (const R of ZRAD) {
 		const X = 8 * c - 124, Y = 4 * b - 98, q = 1 - (X * X + Y * Y) / (R * R);
 		shZ8.push(q > 0 ? Math.min(255, Math.round(255 * Math.sqrt(q))) : 0);
 	}
+	// зумы 3–5: блоки тени 8x8 — строки блоков 0..12 (Y = 8b − 96), остальное зеркально
+	if (R >= 280) for (let b = 0; b < 13; b++) for (let c = 0; c < 16; c++) {
+		const X = 8 * c - 124, Y = 8 * b - 96, q = 1 - (X * X + Y * Y) / (R * R);
+		shZ8b.push(q > 0 ? Math.min(255, Math.round(255 * Math.sqrt(q))) : 0);
+	}
 }
-// Шум образцов тени (globe_sh.c patterns): 4 строки по 256 значений 0..3 (как rand() % 4
-// OpenXcom) — считать на каждый пиксель дорого (первый вход в геоскейп ~60 кадров)
+// Шум образцов тени (globe_sh.s patterns): 8 строк по 256 значений 0..3 (как rand() % 4
+// OpenXcom) — считать на каждый пиксель дорого (первый вход в геоскейп ~60 кадров); зумы 0–2
+// берут строки 0..3, зумы 3–5 (блоки 8x8) — все 8
 const shNoise = [];
-for (let r = 0; r < 4; r++)
+for (let r = 0; r < 8; r++)
 	for (let x = 0; x < 256; x++) {
 		let v = ((x + (r << 8)) * 0x9E37 + 0x79B9) & 0xFFFF;
 		v ^= v >> 7; v = (v * 0x2F1D) & 0xFFFF; v ^= v >> 9;
@@ -122,7 +128,7 @@ for (let y = 0; y < 200; y++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff;
 		';; Таблицы тени глобуса (банк 25, globe_sh.s и globe_sh_s.s).',
 		'',
 		'\t.module globe_sh_tab',
-		'\t.globl\t_sh_row, _sh_z8, _sh_noise, _sh_shift, _sh_lut',
+		'\t.globl\t_sh_row, _sh_z8, _sh_z8b, _sh_noise, _sh_shift, _sh_lut',
 		'',
 		'\t.area\t_BANK25',
 		'',
@@ -130,6 +136,8 @@ for (let y = 0; y < 200; y++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff;
 		'_sh_row:', db(shRow, 20),
 		';; [зум * 400 + b * 16 + c]: z центра блока (четверть, остальное зеркально) в долях R x 255',
 		'_sh_z8:', db(shZ8, 16),
+		';; зумы 3–5, блоки 8x8: [(зум − 3) * 208 + b * 16 + c], строки блоков 0..12',
+		'_sh_z8b:', db(shZ8b, 16),
 		';; шум образцов уровней: [строка образца * 256 + x] — 0..3',
 		'_sh_noise:', db(shNoise, 32),
 		';; сдвиг строки-образца шума по строке экрана (чётный)',
