@@ -60,10 +60,9 @@ namespace OxzConv
 			pl = pr = 0;
 			int dy = 2 * y + 1 - 200, rr = 4 * R * R - dy * dy;
 			if (rr <= 0) return false;
-			double h = Math.Sqrt(rr);
-			int lo = (int)Math.Ceiling((255 - h) / 2), hi = (int)Math.Floor((255 + h) / 2);
-			if (lo < 0) lo = 0;
-			if (hi > 255) hi = 255;
+			int s = 0;                                  // как tools/gen_globe_tab.js: s² < rr
+			while ((s + 1) * (s + 1) < rr) s++;
+			int lo = Math.Max(0, (256 - s) >> 1), hi = Math.Min(255, (255 + s) >> 1);
 			if (hi < lo) return false;
 			pl = lo >> 1; pr = hi >> 1;
 			return true;

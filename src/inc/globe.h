@@ -42,4 +42,13 @@ void globe_rows_pl(uint8_t zoom, uint8_t *dst) __banked;
 // sin 16-битного угла (65536 = 360°) в Q14 (банк 2, src/ui/globe_ui.c)
 int16_t globe_sin(uint16_t a) __banked;
 
+// Предрасчитанные виды с карты (банк 25, src/ui/globe_view.c; globe.md §12.5): на зумах 0–2
+// вид берётся из GVIEW.PAK готовыми отрезками строк, геометрии в кадре нет.
+uint8_t gview_open(uint8_t ep) __banked;                                        // 1 — предрасчёт есть
+uint8_t gview_pick(uint8_t z, uint16_t *lon, int16_t *lat, uint16_t *iv) __banked;   // вид сетки
+uint8_t gview_load(uint8_t ep, uint8_t z, uint16_t iv) __banked;                // вид -> страница ep
+void gview_reset(void) __banked;                                                // рёберный рендер затёр
+// Привязка углов вида к сетке предрасчёта (scr_geo.c): 1 — углы поправлены
+uint8_t globe_snap(uint8_t zoom, uint16_t *lon, int16_t *lat) __banked;
+
 #endif

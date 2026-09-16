@@ -74,12 +74,11 @@ function vRange(e, ey) {
 function discPairs(R, y) {
 	const dy = 2 * y + 1 - 200, rr = 4 * R * R - dy * dy;
 	if (rr <= 0) return null;
-	const h = Math.sqrt(rr);
-	let lo = Math.ceil((255 - h) / 2), hi = Math.floor((255 + h) / 2);   // пиксели внутри
-	if (lo < 0) lo = 0;
-	if (hi > 255) hi = 255;
+	let s = 0;                                          // как tools/gen_globe_tab.js: s² < rr
+	while ((s + 1) * (s + 1) < rr) s++;
+	const lo = Math.max(0, (256 - s) >> 1), hi = Math.min(255, (255 + s) >> 1);
 	if (hi < lo) return null;
-	return [lo >> 1, hi >> 1];                                          // пара — если внутри хоть один пиксель
+	return [lo >> 1, hi >> 1];                          // пара — если внутри хоть один пиксель
 }
 
 // Список отрезков вида: для каждой строки — [pl, pr, [ [len, tex], ... ] ] в парах пикселей

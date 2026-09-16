@@ -38,6 +38,7 @@
 	.globl	_gl_edges, edge1, edge1s, e_rows, e_fast, hclip, lerpz, xclip, lerpx, div32, eslope, bord_ev, e_store
 	.globl	_gl_bands, _gl_nb, _gl_bl, gb_end, ai_put, ai_redo, rw_emit_s, em_run_s
 	.globl	_gl_rows, ael_ins, ai_fix2, f2_near, f2_score, ai_cmp, ael_fix, fx_pair, rw_emit, rw_band, rw_pfill, rw_flush, ael_step, ael_sort
+	.globl	_gl_rows_pre, rp_row, rp_next, em_run_p
 	.globl	_gl_eb
 	.globl	_gl_ec
 	.globl	_gl_res
@@ -79,6 +80,7 @@ EP_FREE		= 0xC000 + 0x1400	; свободные слоты
 EP_BUCKET	= 0xC000 + 0x1500	; корзины (копия из рабочей страницы после рёбер)
 EP_SHF		= 0xC000 + 0x1700	; флаги строк с тенью (globe.c: globe_shadow)
 EP_POOL		= 0xC000 + 0x1800	; записи рёбер (копии буфера рабочей страницы по ячейкам)
+EP_VIEW		= 0xC000 + 0x1800	; на зумах 0–2 вместо них — поток отрезков вида (globe.c)
 WB_BUCKET	= 0xC000 + 0x3080	; рабочая страница: корзины на время рёбер
 WB_COV		= 0xC000 + 0x3300	;   покрытие строк рёбрами (разности, globe.c)
 EP_END		= 0xC000 + 0x4000 - 10
@@ -2913,3 +2915,108 @@ mulu16:
 	ld	a, (mu_r0)
 	ld	e, a
 	ret
+
+;; ================================================================ готовые отрезки вида
+
+;; Проход строк по предрасчитанному виду (GVIEW.PAK, project_docs/globe.md §12.5). В странице
+;; рёбер с EP_VIEW лежит поток: на каждую из 200 строк u8 число отрезков, затем пары
+;; (длина в парах − 1, текстура 0..13). Отрезки покрывают ровно пары диска строки, поэтому
+;; вывод — это адреса строки в порты DMA и по отрезку SAH + DMALen + старт. Строка с тенью
+;; (EP_SHF) идёт через em_run_s (суша — BLT2 узора на подкладку, океан — копия из x + 256),
+;; без тени — через em_run_p (копия узора). Геометрии в кадре нет вовсе.
+;; Win3 — страница рёбер; IX — запись строки, IY — флаг тени строки, DE — поток.
+_gl_rows_pre::
+	push	ix
+	push	iy
+	ld	bc, #0x28AF		; DMANum = 0 на весь вывод
+	xor	a, a
+	out	(c), a
+	ld	ix, #EP_ROW
+	ld	iy, #EP_SHF
+	ld	de, #EP_VIEW
+	ld	a, #GH
+	ld	(rp_n), a
+rp_row:
+	ld	a, (de)			; отрезков в строке (0 — строки диска нет)
+	inc	de
+	or	a, a
+	jr	z, rp_next
+	ld	(rp_cnt), a
+	ld	bc, #0x27AF		; адреса строки — после конца прошлой передачи
+1$:	in	a, (c)
+	jp	m, 1$
+	ld	a, 0 (ix)
+	add	a, a
+	ld	b, #0x1A
+	out	(c), a			; SAL
+	ld	b, #0x1D
+	out	(c), a			; DAL
+	ld	a, 5 (ix)
+	ld	b, #0x1C
+	out	(c), a			; SAX — страница узоров строки
+	ld	a, 2 (ix)
+	ld	b, #0x1E
+	out	(c), a			; DAH
+	ld	a, 3 (ix)
+	inc	b
+	out	(c), a			; DAX
+	exx
+	ld	c, #0xAF
+	ld	d, 4 (ix)		; блок узора строки
+	exx
+	ld	a, 0 (iy)		; строка с тенью?
+	or	a, a
+	ld	a, (rp_cnt)
+	ld	b, a
+	jr	nz, rp_sh
+rp_p:	ld	a, (de)			; длина в парах − 1
+	inc	de
+	ld	l, a
+	ld	a, (de)			; текстура
+	inc	de
+	call	em_run_p
+	djnz	rp_p
+	jr	rp_next
+rp_sh:	ld	a, (de)
+	inc	de
+	ld	l, a
+	ld	a, (de)
+	inc	de
+	call	em_run_s
+	djnz	rp_sh
+rp_next:
+	push	de
+	ld	de, #6
+	add	ix, de
+	pop	de
+	inc	iy
+	ld	hl, #rp_n
+	dec	(hl)
+	jp	nz, rp_row
+	pop	iy
+	pop	ix
+	ret
+
+;; Отрезок строки без тени: A — текстура, L — слов − 1; второй набор — C' = #AF, D' — блок
+;; строки. Младший байт адреса источника продолжается сам (SAL идёт в ногу с DAL).
+em_run_p:
+	exx
+	add	a, d			; блок строки + текстура (океан — 13)
+	ld	b, #0x27
+1$:	in	h, (c)			; ждать конца прошлого
+	jp	m, 1$
+	ld	b, #0x1B
+	out	(c), a			; SAH
+	exx
+	ld	a, l
+	exx
+	ld	b, #0x26
+	out	(c), a			; DMALen
+	inc	b
+	ld	a, #1
+	out	(c), a			; DMACtrl: RAM -> RAM, старт
+	exx
+	ret
+
+rp_n:	.ds	1
+rp_cnt:	.ds	1

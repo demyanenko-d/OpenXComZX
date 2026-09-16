@@ -341,6 +341,11 @@ static void rotate(uint8_t d)
 		else if (d == 2) ctx.globe_lat = ctx.globe_lat > -16384 + st ? ctx.globe_lat - st : -16384;
 		else ctx.globe_lat = ctx.globe_lat < 16384 - st ? ctx.globe_lat + st : 16384;
 	}
+	{                                            // зумы 0–2 — по сетке предрасчитанных видов
+		uint16_t nl = ctx.globe_lon;
+		int16_t na = ctx.globe_lat;
+		if (globe_snap(z, &nl, &na)) { ctx.globe_lon = nl; ctx.globe_lat = na; }
+	}
 	if (ctx.globe_lon == lon0 && ctx.globe_lat == lat0) return;   // упор в полюс — перерисовки нет
 	ui_dirty(10);                                // только глобус (панель не меняется)
 }
@@ -353,6 +358,11 @@ static void zoom(int8_t dz)
 	else if (dz < 0 && z) z--;
 	else return;
 	ST->zoom = z;
+	{                                            // сетки зумов не вложены — вид подтягивается
+		uint16_t nl = ctx.globe_lon;
+		int16_t na = ctx.globe_lat;
+		if (globe_snap(z, &nl, &na)) { ctx.globe_lon = nl; ctx.globe_lat = na; }
+	}
 	ui_dirty(10);
 }
 
