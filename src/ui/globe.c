@@ -85,6 +85,8 @@ static uint16_t v_lon;
 static int16_t v_lat, R;
 static uint8_t strip = PG_NONE;
 static uint8_t row_meta;                   // постоянные поля записей строк заполнены (от зума не зависят)
+uint8_t gl_dbg;                            // 1 — печатать строку «globe:» (замеры: poke _gl_dbg 1;
+                                           //  печать числа — деление в dbg.s, до 1.7 кадра на рендер)                   // постоянные поля записей строк заполнены (от зума не зависят)
 
 // Проходы М4в (globe_s.s). Рёбра: gl_ec записей по 6 байт с gl_eb -> записи в странице
 // рёбер gl_epg с gl_eptr (корзины строк); проекции вершин ячейки — с gl_res (Win3 = рабочая
@@ -342,9 +344,12 @@ static void render(uint16_t lon, int16_t lat, uint8_t z, uint16_t sun)
 		gl_rows();
 		pg_map3(work);
 		dma_wait();
-		dbg_puts("globe: sun only, zoom "); dbg_dec(z);
-		dbg_puts(", frames "); dbg_dec((uint16_t)(frames - t0));
-		dbg_puts(", sun "); dbg_dec(sun); dbg_puts("\n");
+		if (gl_dbg) {
+			dbg_puts("globe: sun only, zoom "); dbg_dec(z);
+			dbg_puts(", frames "); dbg_dec((uint16_t)(frames - t0));
+			dbg_puts(", sun "); dbg_dec(sun); dbg_puts("
+");
+		}
 		return;
 	}
 	pg_map3(epage);                            // страница рёбер: строки (при смене зума), события
@@ -428,13 +433,16 @@ static void render(uint16_t lon, int16_t lat, uint8_t z, uint16_t sun)
 	dma_wait();
 	valid = 1;
 	geom = 1;
-	dbg_puts("globe: zoom "); dbg_dec(z);
-	dbg_puts(", cells "); dbg_dec(ncells);
-	dbg_puts(", edges "); dbg_dec(gl_nedge);
-	dbg_puts(", frames "); dbg_dec((uint16_t)(frames - t0));
-	dbg_puts(", view "); dbg_dec(lon); dbg_puts(" "); dbg_dec((uint16_t)lat);
-	dbg_puts(", sun "); dbg_dec(sun); dbg_puts(", shp "); dbg_dec(sp);
-	dbg_puts("\n");
+	if (gl_dbg) {
+		dbg_puts("globe: zoom "); dbg_dec(z);
+		dbg_puts(", cells "); dbg_dec(ncells);
+		dbg_puts(", edges "); dbg_dec(gl_nedge);
+		dbg_puts(", frames "); dbg_dec((uint16_t)(frames - t0));
+		dbg_puts(", view "); dbg_dec(lon); dbg_puts(" "); dbg_dec((uint16_t)lat);
+		dbg_puts(", sun "); dbg_dec(sun); dbg_puts(", shp "); dbg_dec(sp);
+		dbg_puts("
+");
+	}
 }
 
 // Задний буфер -> окно глобуса на экране (2D DMA, строки по 512). Старт — сразу после

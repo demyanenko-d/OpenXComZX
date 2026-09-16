@@ -15,7 +15,7 @@ if (-not $views.ContainsKey($View)) { throw "View: med | worst" }
 $vl = $views[$View][0]; $vt = $views[$View][1]
 $lines = @('waitmark 1 600', 'poke _alien_off 1', 'pokew _cursor_x 110', 'pokew _cursor_y 100', 'click L', 'waitmark 2 300',
 	'pokew _cursor_x 119', 'pokew _cursor_y 172', 'click L', 'waitmark 43 3000', 'pokew _cursor_x 120', 'pokew _cursor_y 110',
-	'click L', 'waitmark 42 3000', 'type bench', 'key ENTER', 'waitmark 32 3000', 'wait 200',
+	'click L', 'waitmark 42 3000', 'type bench', 'key ENTER', 'waitmark 32 3000', 'poke _gl_dbg 1', 'wait 200',
 	"poke 06:0038 $Hour", 'poke 06:0037 0', 'poke 06:0036 0', 'wait 250')
 function Set-View { param($l, $t, $m) @("pokew _ctx+6 $l", "pokew _ctx+8 $t", "poke 06:0037 $m", "wait 8", "waitmark 32 3000") }
 foreach ($z in 0..5) {

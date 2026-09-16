@@ -21,7 +21,7 @@ $rows = @()
 foreach ($z in $Zooms) {
 	$lines = @('waitmark 1 600', 'poke _alien_off 1', 'pokew _cursor_x 110', 'pokew _cursor_y 100', 'click L', 'waitmark 2 300',
 		'pokew _cursor_x 119', 'pokew _cursor_y 172', 'click L', 'waitmark 43 3000', 'pokew _cursor_x 120', 'pokew _cursor_y 110',
-		'click L', 'waitmark 42 3000', 'type prof', 'key ENTER', 'waitmark 32 3000')
+		'click L', 'waitmark 42 3000', 'type prof', 'key ENTER', 'waitmark 32 3000', 'poke _gl_dbg 1')
 	for ($i = 0; $i -lt $z; $i++) { $lines += @('key SS+K', 'wait 8', 'waitmark 32 3000') }
 	if ($Hour -ge 0) { $lines += @("poke 06:0038 $Hour", 'wait 300') }   # ST->hour; смена эпохи солнца — перерисовка
 	$lines += @('wait 10', 'profile on', 'key RIGHT', 'wait 8', 'waitmark 32 3000', 'profile off 200 ops', 'exit 0')
