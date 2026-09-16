@@ -38,7 +38,7 @@
 	.globl	_gl_edges, edge1, edge1s, e_rows, e_fast, hclip, lerpz, xclip, lerpx, div32, eslope, bord_ev, e_store
 	.globl	_gl_bands, _gl_nb, _gl_bl, gb_end, ai_put, ai_redo, rw_emit_s, em_run_s
 	.globl	_gl_rows, ael_ins, ai_fix2, f2_near, f2_score, ai_cmp, ael_fix, fx_pair, rw_emit, rw_band, rw_pfill, rw_flush, ael_step, ael_sort
-	.globl	_gl_rows_pre, rp_row, rp_next, em_run_p
+	.globl	_gl_rows_pre, _gl_rows_cap, _gl_capok, _gl_capwant, rp_row, rp_next, em_run_p, cap_begin, cap_row, cap_end
 	.globl	_gl_cull, cu_loop, cu_take, cu_next
 	.globl	_gl_crp, _gl_cpp, _gl_cmp, _gl_vsp, _gl_nvis, _gl_cn
 	.globl	_gl_eb
@@ -1205,6 +1205,7 @@ _gl_rows::
 	ld	(rw_pend), a
 	xor	a, a
 	ld	(rw_dirty), a
+	call	cap_begin
 	ld	ix, #EP_ROW
 	ld	hl, #EP_BUCKET
 	ld	(rw_bk), hl
@@ -1259,7 +1260,8 @@ rw_row:
 	add	ix, de
 	pop	bc
 	djnz	2$
-4$:	pop	iy
+4$:	call	cap_end
+	pop	iy
 	pop	ix
 	ret
 
@@ -2065,6 +2067,8 @@ rw_emit:
 	ld	a, (rw_pend)
 	cp	a, #0xFF
 	call	nz, rw_pfill
+	ld	a, (rw_y)
+	call	cap_row
 	ld	a, (rw_y)		; строка с тенью — свой вывод
 	ld	l, a
 	ld	h, #>EP_SHF
@@ -2130,6 +2134,10 @@ rw_emit:
 	dec	a
 	ld	l, a			; слов - 1
 	ld	a, c
+	ld	0 (iy), l		; запись отрезка (cap_row)
+	ld	1 (iy), a
+	inc	iy
+	inc	iy
 	exx
 	add	a, d			; блок строки + текстура (океан — 13)
 	ld	b, #0x27
@@ -2161,6 +2169,10 @@ rw_emit:
 	ret	c
 	ld	l, a			; слов - 1
 	ld	a, c
+	ld	0 (iy), l		; запись отрезка (cap_row)
+	ld	1 (iy), a
+	inc	iy
+	inc	iy
 	exx
 	add	a, d
 	ld	b, #0x27
@@ -2241,6 +2253,10 @@ rw_emit_s:
 	dec	a
 	ld	l, a			; слов - 1
 	ld	a, c
+	ld	0 (iy), l		; запись отрезка (cap_row)
+	ld	1 (iy), a
+	inc	iy
+	inc	iy
 	call	em_run_s
 	ld	d, h			; новое начало — граница
 	ld	c, e			; текстура — справа от ребра
@@ -2257,6 +2273,10 @@ rw_emit_s:
 	ret	c
 	ld	l, a			; слов - 1
 	ld	a, c
+	ld	0 (iy), l		; запись отрезка (cap_row)
+	ld	1 (iy), a
+	inc	iy
+	inc	iy
 	jp	em_run_s
 
 ;; Отрезок строки с тенью: A — текстура, L — слов − 1 (основной набор); второй набор — как в
@@ -2379,10 +2399,19 @@ rw_pfill:
 ;; Отрезок пар [em_start, A] текстуры em_tex -> DMA. Первый в строке — все регистры,
 ;; следующие — блок источника, длина, запуск (адреса продолжаются с конца прошлого).
 rw_flush:
+	push	af
+	ld	a, (em_row)
+	call	cap_row
+	pop	af
 	ld	hl, #em_start
 	sub	a, (hl)
 	ret	c			; пусто
 	ld	e, a			; слов - 1
+	ld	0 (iy), a		; запись отрезка
+	ld	a, (em_tex)
+	ld	1 (iy), a
+	inc	iy
+	inc	iy
 	ld	a, (em_tex)
 	add	a, 4 (ix)		; блок строки + текстура (океан — 13)
 	ld	d, a
@@ -2928,6 +2957,19 @@ mulu16:
 ;; без тени — через em_run_p (копия узора). Геометрии в кадре нет вовсе.
 ;; Win3 — страница рёбер; IX — запись строки, IY — флаг тени строки, DE — поток.
 _gl_rows_pre::
+	xor	a, a			; поток с EP_VIEW подряд; запись отрезков страницы рёбер — затёрта
+	ld	(_gl_capok), a
+	ld	(rp_tab), a
+	ld	de, #EP_VIEW
+	jr	rp_go
+;; То же по записи отрезков рёберного прохода (_gl_capok = 1): строка — по таблице адресов
+;; cap_tab (0 — строки не было)
+_gl_rows_cap::
+	ld	a, #1
+	ld	(rp_tab), a
+	ld	hl, (cap_tab)
+	ld	(rp_tp), hl
+rp_go:
 	push	ix
 	push	iy
 	ld	bc, #0x28AF		; DMANum = 0 на весь вывод
@@ -2935,11 +2977,22 @@ _gl_rows_pre::
 	out	(c), a
 	ld	ix, #EP_ROW
 	ld	iy, #EP_SHF
-	ld	de, #EP_VIEW
 	ld	a, #GH
 	ld	(rp_n), a
 rp_row:
-	ld	a, (de)			; отрезков в строке (0 — строки диска нет)
+	ld	a, (rp_tab)
+	or	a, a
+	jr	z, 3$
+	ld	hl, (rp_tp)
+	ld	e, (hl)
+	inc	hl
+	ld	d, (hl)
+	inc	hl
+	ld	(rp_tp), hl
+	ld	a, d
+	or	a, a
+	jr	z, rp_next		; строки не было
+3$:	ld	a, (de)			; отрезков в строке (0 — строки диска нет)
 	inc	de
 	or	a, a
 	jr	z, rp_next
@@ -3022,6 +3075,106 @@ em_run_p:
 
 rp_n:	.ds	1
 rp_cnt:	.ds	1
+rp_tab:	.ds	1			; 1 — строки по таблице записи (_gl_rows_cap)
+rp_tp:	.ds	2
+
+;; ================================================================ запись отрезков
+
+;; Рёберный проход пишет отрезки каждой строки (как поток предрасчитанного вида), чтобы смена
+;; одного солнца выводила их без AEL (_gl_rows_cap): в странице рёбер за пулом (_gl_eptr) —
+;; таблица 200 адресов строк (строки идут не по порядку: ждущие заливаются снизу вверх), затем
+;; поток «число, (слов − 1, текстура)…». IY — место следующей пары; места нет — запись в
+;; cap_sink с начала каждой строки и _gl_capok = 0.
+CAP_ROW	= 1 + 2 * (AEL_MAX + 1)		; байт на строку не больше
+CAP_LIM	= 0xFFFF - CAP_ROW + 1		; последнее начало строки (страница до #FFFF)
+
+_gl_capok:: .ds	1			; 1 — запись последнего прохода полная
+_gl_capwant:: .ds 1			; 1 — писать в этом проходе (globe.s)
+cap_tab: .ds	2
+cap_cnt: .ds	2			; адрес числа отрезков текущей строки
+cap_sink: .ds	CAP_ROW
+
+cap_begin:
+	ld	hl, #cap_sink
+	ld	(cap_cnt), hl
+	ld	iy, #cap_sink + 1
+	xor	a, a
+	ld	(_gl_capok), a
+	ld	a, (_gl_capwant)
+	or	a, a
+	ret	z
+	ld	hl, (_gl_eptr)
+	ld	(cap_tab), hl
+	ld	de, #401		; таблица и число «нулевой» строки
+	add	hl, de
+	ret	c
+	ex	de, hl
+	ld	hl, #CAP_LIM
+	or	a, a
+	sbc	hl, de
+	ret	c
+	ld	hl, (cap_tab)		; таблица — нули
+	ld	(hl), #0
+	ld	d, h
+	ld	e, l
+	inc	de
+	ld	bc, #399
+	ldir
+	ld	(cap_cnt), de		; DE = таблица + 400
+	inc	de
+	push	de
+	pop	iy
+	ld	a, #1
+	ld	(_gl_capok), a
+	ret
+
+;; Начало строки A: число отрезков прошлой — на место, адрес строки — в таблицу (портит A, BC,
+;; DE, HL)
+cap_row:
+	ld	c, a
+	ld	a, (_gl_capok)
+	or	a, a
+	jr	z, 3$			; не пишем — только сброс в cap_sink
+	call	cap_end
+	push	iy
+	pop	de
+	ld	hl, #CAP_LIM
+	or	a, a
+	sbc	hl, de
+	jr	c, 1$
+	ld	hl, (cap_tab)
+	ld	b, #0
+	add	hl, bc
+	add	hl, bc
+	ld	(hl), e
+	inc	hl
+	ld	(hl), d
+	ld	(cap_cnt), de
+	inc	iy
+	ret
+1$:	xor	a, a			; места нет — запись неполная
+	ld	(_gl_capok), a
+2$:	ld	hl, #cap_sink
+	ld	(cap_cnt), hl
+3$:	ld	iy, #cap_sink + 1
+	ret
+
+;; Число отрезков строки: (IY − cap_cnt − 1) / 2 -> (cap_cnt)
+cap_end:
+	ld	a, (_gl_capok)
+	or	a, a
+	ret	z
+	push	iy
+	pop	hl
+	ld	de, (cap_cnt)
+	or	a, a
+	sbc	hl, de
+	dec	hl
+	srl	h
+	rr	l
+	ld	a, l
+	ld	(de), a
+	ret
 
 ;; ================================================================ отсев ячеек
 
