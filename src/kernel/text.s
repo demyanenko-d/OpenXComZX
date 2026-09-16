@@ -36,6 +36,8 @@
 	.globl	_gr_rows
 	.globl	_gr_col
 	.globl	_gr_inv
+	.globl	_tx_atlas_ok
+	.globl	_pg_alloc
 	.globl	_gfx_map
 	.globl	_pg_win3
 	.globl	_pg_map3
@@ -60,6 +62,10 @@ TX_BOTTOM	= 0x08
 TX_WRAP		= 0x10
 TX_CONTRAST	= 0x20
 TX_INVERT	= 0x40
+TA_K		= 4			; ключей атласа глифов (страниц)
+TA_NG		= 97			; глифов в шрифте, у которых есть место в таблице
+TA_PER		= TA_NG * 4		; на ключ: место глифа u16 для чётного и нечётного x
+TA_SLOT		= 0xB800		; таблицы мест — в хвосте страницы шрифтов (Win2), text_init
 
 	.area	_DATA
 _tx_font_page::	.ds	1		; страница со всеми шрифтами (text_init)
@@ -118,6 +124,29 @@ fn_u:		.ds	4		; fmt_num
 fn_sep:		.ds	1
 fn_started:	.ds	1
 fn_p:		.ds	2
+_tx_atlas_ok::	.ds	1		; 1 — таблицы мест влезают в страницу шрифтов (boot.c text_init)
+ta_init:	.ds	1		; таблицы мест обнулены
+ta_page:	.ds	TA_K		; атлас: страница ключа (0 — нет), шрифт, цвет, инверсия, отметка
+ta_font:	.ds	TA_K
+ta_col:		.ds	TA_K
+ta_inv:		.ds	TA_K
+ta_use:		.ds	TA_K
+ta_band:	.ds	TA_K		; полоса и x свободного места в странице ключа
+ta_x:		.ds	2 * TA_K
+ta_tick:	.ds	1
+tk:		.ds	1		; ключ строки (#FF — без атласа)
+ta_cpg:		.ds	1		; его страница
+ta_sbase:	.ds	2		; его таблица мест (Win2)
+ln_fast:	.ds	1		; строка целиком в рамке и на экране, mul = 1
+ln_h:		.ds	1		; высота глифа шрифта строки
+ln_dah:		.ds	1		; DAH, DAX начала строки экрана
+ln_dax:		.ds	1
+dga_i:		.ds	1		; глиф: номер, чётность x, место в таблице, смещение данных, ширина места
+dga_p:		.ds	1
+dga_sp:		.ds	2
+dga_off:	.ds	2
+dga_need:	.ds	1
+dga_c:		.ds	1
 fn_out:		.ds	2
 sf_a0:		.ds	2		; str_fmt
 sf_a1:		.ds	2
@@ -753,6 +782,7 @@ td_line:
 	inc	hl
 	ld	b, (hl)
 	ld	(tx_ke), bc
+	call	line_fast
 td_char:
 	ld	hl, (tx_k)
 	ld	de, (tx_ke)
@@ -772,13 +802,16 @@ td_char:
 	jr	z, 9$
 	ld	a, 9 (ix)
 9$:	call	set_lut
+	ld	a, (ln_fast)		; другой цвет — другой ключ атласа
+	or	a
+	call	nz, ta_key
 	jr	td_nextc
 8$:	push	af
 	cp	#0x21			; пробел и управляющие — без глифа
 	jr	c, 10$
 	cp	#0x04
 	jr	z, 10$
-	call	draw_glyph
+	call	glyph_out
 10$:	pop	af
 	call	char_adv
 	ld	e, a
@@ -801,6 +834,10 @@ td_eol:
 	inc	(hl)
 	jp	td_line
 td_done:
+	call	dma_idle		; глифы атласа дорисованы — дальше CPU пишет в экран
+	ld	b, #0x28
+	xor	a
+	out	(c), a			; DMANum = 0
 	pop	ix
 	xor	a
 	ld	(_tx_skip), a		; только на этот вызов
@@ -808,6 +845,526 @@ td_done:
 	call	_pg_map3
 	ld	a, (tx_bank)
 	jp	_set_bank
+
+;; ================================================================ атлас глифов
+
+;; Глифы цвета текста рисуются CPU один раз в страницу атласа ключа (шрифт, цвет, инверсия) и
+;; дальше копируются на экран одним DMA BLT1 (нулевые точки прозрачны) на всю высоту глифа.
+;; DMA не видит бит 0 адреса, поэтому для нечётного x у глифа своё место с нулевым столбцом
+;; слева: копия с x − 1. Место глифа (u16, бит 15 — есть; 0 — нет) — в таблице ключа в хвосте
+;; страницы шрифтов (Win2 при выводе). Полосы атласа — по высоте шрифта, строки по 512 байт.
+
+;; Ждать конца DMA. Портит A, BC.
+dma_idle:
+	ld	bc, #0x27AF
+1$:	in	a, (c)
+	jp	m, 1$
+	ret
+
+;; HL, BC (>= 1) — обнулить. Портит A, DE.
+zfill:
+	ld	(hl), #0
+	dec	bc
+	ld	a, b
+	or	a, c
+	ret	z
+	ld	d, h
+	ld	e, l
+	inc	de
+	ldir
+	ret
+
+;; Строка tx_l: ln_fast = 1, если mul = 1 и все глифы строки целиком в рамке и на экране
+;; (x .. x + ширина + max(0, −spacing), y .. y + высота); тогда же адрес строки для DMA и ключ.
+line_fast:
+	xor	a
+	ld	(ln_fast), a
+	ld	a, (tx_mul)
+	dec	a
+	ret	nz
+	ld	a, (tx_f)
+	ld	e, a
+	ld	d, #0
+	ld	hl, #_tx_font_ch
+	add	hl, de
+	ld	a, (hl)
+	ld	(ln_h), a
+	ld	hl, (tx_y)		; box_y <= y, 0 <= y
+	bit	7, h
+	ret	nz
+	ld	de, (box_y)
+	call	lt_s
+	ret	c
+	ld	hl, (tx_y)		; y + h <= box_b, <= 200
+	ld	a, (ln_h)
+	ld	e, a
+	ld	d, #0
+	add	hl, de
+	ex	de, hl
+	push	de
+	ld	hl, (box_b)
+	call	lt_s
+	pop	de
+	ret	c
+	ld	hl, #SCREEN_H
+	call	lt_s
+	ret	c
+	ld	hl, (tx_x)		; box_x <= x, 0 <= x
+	bit	7, h
+	ret	nz
+	ld	de, (box_x)
+	call	lt_s
+	ret	c
+	ld	a, (tx_l)		; x + ширина строки + max(0, −sp) <= box_r, <= 320
+	add	a, a
+	ld	e, a
+	ld	d, #0
+	ld	hl, #tx_lw
+	add	hl, de
+	ld	e, (hl)
+	inc	hl
+	ld	d, (hl)
+	ld	hl, (tx_x)
+	add	hl, de
+	push	hl
+	ld	a, (tx_f)
+	ld	e, a
+	ld	d, #0
+	ld	hl, #_tx_font_sp
+	add	hl, de
+	ld	a, (hl)
+	pop	hl
+	bit	7, a
+	jr	z, 1$
+	neg
+	ld	e, a
+	ld	d, #0
+	add	hl, de
+1$:	ex	de, hl
+	push	de
+	ld	hl, (box_r)
+	call	lt_s
+	pop	de
+	ret	c
+	ld	hl, #SCREEN_W
+	call	lt_s
+	ret	c
+	ld	a, #1
+	ld	(ln_fast), a
+	ld	a, (tx_y)		; начало строки экрана y: DAH = (y & 31) · 2, DAX = #10 + y >> 5
+	ld	b, a
+	and	a, #31
+	add	a, a
+	ld	(ln_dah), a
+	ld	a, b
+	rlca
+	rlca
+	rlca
+	and	a, #7
+	add	a, #0x10
+	ld	(ln_dax), a
+	jp	ta_key
+
+;; Ключ атласа (tx_f, _gr_col, _gr_inv) -> tk (#FF — атласа нет), ta_cpg, ta_sbase. Шрифт — в Win2.
+ta_key:
+	ld	a, #0xFF
+	ld	(tk), a
+	ld	a, (_tx_atlas_ok)
+	or	a
+	ret	z
+	ld	a, (ta_init)
+	or	a
+	jr	nz, 2$
+	inc	a
+	ld	(ta_init), a
+	ld	hl, #TA_SLOT
+	ld	bc, #TA_K * TA_PER
+	call	zfill
+2$:	ld	bc, #0			; C — ключ
+3$:	ld	hl, #ta_page
+	add	hl, bc
+	ld	a, (hl)
+	or	a
+	jr	z, 4$
+	ld	hl, #ta_font
+	add	hl, bc
+	ld	a, (tx_f)
+	cp	(hl)
+	jr	nz, 4$
+	ld	hl, #ta_col
+	add	hl, bc
+	ld	a, (_gr_col)
+	cp	(hl)
+	jr	nz, 4$
+	ld	hl, #ta_inv
+	add	hl, bc
+	ld	a, (_gr_inv)
+	cp	(hl)
+	jr	z, ta_found
+4$:	inc	c
+	ld	a, c
+	cp	#TA_K
+	jr	c, 3$
+	ld	c, #0			; нет: пустой или самый давний
+	ld	de, #0xFF00		; D — наименьшая отметка, E — ключ
+5$:	ld	hl, #ta_page
+	add	hl, bc
+	ld	a, (hl)
+	or	a
+	jr	z, 7$
+	ld	hl, #ta_use
+	add	hl, bc
+	ld	a, (hl)
+	cp	d
+	jr	nc, 6$
+	ld	d, a
+	ld	e, c
+6$:	inc	c
+	ld	a, c
+	cp	#TA_K
+	jr	c, 5$
+	ld	c, e
+7$:	ld	hl, #ta_page
+	add	hl, bc
+	ld	a, (hl)
+	or	a
+	jr	nz, 8$
+	push	bc
+	push	hl
+	ld	a, #1
+	ld	l, #1
+	call	_pg_alloc
+	pop	hl
+	pop	bc
+	cp	#0xFF
+	ret	z			; страниц нет — строка без атласа
+	ld	(hl), a
+8$:	ld	hl, #ta_font
+	add	hl, bc
+	ld	a, (tx_f)
+	ld	(hl), a
+	ld	hl, #ta_col
+	add	hl, bc
+	ld	a, (_gr_col)
+	ld	(hl), a
+	ld	hl, #ta_inv
+	add	hl, bc
+	ld	a, (_gr_inv)
+	ld	(hl), a
+	call	ta_sb
+	push	bc
+	call	ta_clear
+	pop	bc
+ta_found:				; C — ключ
+	ld	a, c
+	ld	(tk), a
+	ld	hl, #ta_tick
+	inc	(hl)
+	ld	a, (hl)
+	ld	hl, #ta_use
+	add	hl, bc
+	ld	(hl), a
+	ld	hl, #ta_page
+	add	hl, bc
+	ld	a, (hl)
+	ld	(ta_cpg), a
+	jp	ta_sb
+
+;; ta_sbase = TA_SLOT + C · TA_PER (BC сохраняется)
+ta_sb:
+	ld	hl, #TA_SLOT
+	ld	de, #TA_PER
+	ld	a, c
+	or	a
+	jr	z, 2$
+1$:	add	hl, de
+	dec	a
+	jr	nz, 1$
+2$:	ld	(ta_sbase), hl
+	ret
+
+;; Ключ C (ta_sbase — его таблица): места пусты, полоса 0, x 0. Портит A, BC, DE, HL.
+ta_clear:
+	ld	hl, #ta_band
+	add	hl, bc
+	ld	(hl), #0
+	ld	hl, #ta_x
+	add	hl, bc
+	add	hl, bc
+	ld	(hl), #0
+	inc	hl
+	ld	(hl), #0
+	ld	hl, (ta_sbase)
+	ld	bc, #TA_PER
+	jp	zfill
+
+;; Вывод глифа A: атлас (строка целиком внутри, ключ есть) или прежний путь CPU
+glyph_out:
+	ld	(dga_c), a
+	ld	a, (ln_fast)
+	or	a
+	jr	z, 1$
+	ld	a, (tk)
+	inc	a
+	jr	nz, dg_atlas
+1$:	call	dma_idle
+	ld	a, (dga_c)
+	jp	draw_glyph
+
+;; Глиф dga_c через атлас ключа tk: место (нет — нарисовать), DMA BLT1 на экран
+dg_atlas:
+	ld	a, (dga_c)
+	cp	#0x80			; номер глифа (как glyph_entry)
+	jr	c, 1$
+	sub	#33
+	jr	2$
+1$:	sub	#0x20
+2$:	cp	#TA_NG
+	jr	c, 3$
+	call	dma_idle		; места в таблице нет — CPU
+	ld	a, (dga_c)
+	jp	draw_glyph
+3$:	ld	(dga_i), a
+	call	glyph_entry_i		; HL — запись {w, off16}
+	ld	a, (hl)
+	ld	(g_w), a
+	inc	hl
+	ld	e, (hl)
+	inc	hl
+	ld	d, (hl)
+	ld	(dga_off), de
+	ld	a, (tx_x)		; место: sbase + номер · 4 + чётность · 2
+	and	#1
+	ld	(dga_p), a
+	ld	a, (dga_i)
+	ld	l, a
+	ld	h, #0
+	add	hl, hl
+	add	hl, hl
+	ld	a, (dga_p)
+	or	a
+	jr	z, 4$
+	inc	hl
+	inc	hl
+4$:	ld	de, (ta_sbase)
+	add	hl, de
+	ld	(dga_sp), hl
+	ld	e, (hl)
+	inc	hl
+	ld	d, (hl)
+	ld	a, d
+	or	e
+	call	z, ta_render		; -> DE = место | #8000
+	ld	a, (dga_p)		; x' = x − p, слов − 1 = (w + p + 1) / 2 − 1
+	ld	c, a
+	ld	b, #0
+	ld	hl, (tx_x)
+	or	a
+	sbc	hl, bc
+	ld	a, (g_w)
+	add	a, c
+	inc	a
+	srl	a
+	dec	a
+	push	af
+	push	hl
+	call	dma_idle
+	pop	hl
+	pop	af
+	ld	b, #0x26
+	out	(c), a			; DMALen
+	ld	b, #0x1A
+	out	(c), e			; SAL
+	inc	b
+	ld	a, d
+	and	#0x3F
+	out	(c), a			; SAH
+	inc	b
+	ld	a, (ta_cpg)
+	out	(c), a			; SAX
+	inc	b
+	out	(c), l			; DAL
+	inc	b
+	ld	a, (ln_dah)
+	add	a, h
+	out	(c), a			; DAH
+	inc	b
+	ld	a, (ln_dax)
+	out	(c), a			; DAX
+	ld	b, #0x28
+	ld	a, (ln_h)
+	dec	a
+	out	(c), a			; DMANum — строк − 1
+	ld	b, #0x27
+	ld	a, #0xB9		; BLT1 | S_ALGN | D_ALGN | ASZ — пуск
+	out	(c), a
+	ret
+
+;; Нарисовать глиф в атлас ключа tk: место шириной 2·((w + p + 1) / 2) в текущей полосе (нет —
+;; следующая; полосы кончились — ключ заново), обнулить, glyph_run со сдвигом p.
+;; -> DE = место | #8000 (и в таблице). Win3 — страница атласа.
+ta_render:
+	ld	a, (dga_p)
+	ld	c, a
+	ld	a, (g_w)
+	add	a, c
+	inc	a
+	and	#0xFE
+	ld	(dga_need), a
+	ld	a, (tk)
+	ld	c, a
+	ld	b, #0
+tr_fit:
+	ld	hl, #ta_x		; x + need <= 512 — место в полосе
+	add	hl, bc
+	add	hl, bc
+	ld	e, (hl)
+	inc	hl
+	ld	d, (hl)
+	ld	a, (dga_need)
+	ld	l, a
+	ld	h, #0
+	add	hl, de
+	push	de
+	ld	de, #513
+	or	a
+	sbc	hl, de
+	pop	de
+	jr	c, tr_at
+	ld	hl, #ta_band		; следующая полоса: (полоса + 1) · h <= 32
+	add	hl, bc
+	inc	(hl)
+	ld	a, (hl)
+	inc	a
+	ld	e, a
+	ld	a, (ln_h)
+	ld	d, a
+	xor	a
+1$:	add	a, d
+	dec	e
+	jr	nz, 1$
+	cp	#33
+	jr	c, 2$
+	push	bc			; полосы кончились: ключ заново (все его места)
+	call	ta_clear
+	pop	bc
+	jr	tr_fit
+2$:	ld	hl, #ta_x
+	add	hl, bc
+	add	hl, bc
+	ld	(hl), #0
+	inc	hl
+	ld	(hl), #0
+	jr	tr_fit
+tr_at:					; DE = x; начало = полоса · h · 512 + x
+	ld	hl, #ta_band
+	add	hl, bc
+	ld	a, (hl)
+	ld	l, a
+	ld	a, (ln_h)
+	ld	h, a
+	xor	a
+	inc	l
+3$:	dec	l
+	jr	z, 4$
+	add	a, h
+	jr	3$
+4$:	add	a, a			; строк · 2 — старший байт
+	add	a, d
+	ld	d, a			; DE = начало
+	push	de
+	ld	hl, #ta_x		; x += need
+	add	hl, bc
+	add	hl, bc
+	ld	a, (hl)
+	inc	hl
+	ld	h, (hl)
+	ld	l, a
+	ld	a, (dga_need)
+	add	a, l
+	ld	l, a
+	jr	nc, 5$
+	inc	h
+5$:	ex	de, hl
+	ld	hl, #ta_x
+	add	hl, bc
+	add	hl, bc
+	ld	(hl), e
+	inc	hl
+	ld	(hl), d
+	ld	a, (ta_cpg)		; страница атласа -> Win3
+	call	_pg_map3
+	pop	de
+	push	de
+	ld	hl, #0xC000		; обнулить место: h строк по need байт
+	add	hl, de
+	ld	a, (ln_h)
+	ld	b, a
+6$:	push	bc
+	push	hl
+	ld	a, (dga_need)
+	ld	c, a
+	ld	b, #0
+	call	zfill
+	pop	hl
+	inc	h
+	inc	h
+	pop	bc
+	djnz	6$
+	pop	de			; glyph_run: dst = #C000 + начало + p
+	push	de
+	ld	hl, #0xC000
+	add	hl, de
+	ld	a, (dga_p)
+	ld	e, a
+	ld	d, #0
+	add	hl, de
+	ld	(_gr_dst), hl
+	ld	hl, (tx_fbase)		; src = fbase + 6 + n · 3 + off
+	push	hl
+	inc	hl
+	inc	hl
+	inc	hl
+	inc	hl
+	ld	c, (hl)
+	ld	b, #0
+	pop	hl
+	ld	de, (dga_off)
+	add	hl, de
+	add	hl, bc
+	add	hl, bc
+	add	hl, bc
+	ld	de, #6
+	add	hl, de
+	ld	(_gr_src), hl
+	ld	a, (g_w)
+	inc	a
+	srl	a
+	ld	(_gr_bpr), a
+	ld	a, (ln_h)
+	ld	(_gr_rows), a
+	call	_glyph_run
+	pop	de			; место | #8000 -> таблица
+	set	7, d
+	ld	hl, (dga_sp)
+	ld	(hl), e
+	inc	hl
+	ld	(hl), d
+	ret
+
+;; A = номер глифа -> HL = запись {w, off16} (fbase + 6 + номер · 3). Портит DE.
+glyph_entry_i:
+	ld	l, a
+	ld	h, #0
+	ld	e, l
+	ld	d, h
+	add	hl, hl
+	add	hl, de
+	ld	de, (tx_fbase)
+	add	hl, de
+	ld	de, #6
+	add	hl, de
+	ret
 
 ;; Глиф A в (tx_x, tx_y) с отсечением рамкой tx_box и экраном. Целиком внутри и
 ;; mul = 1 — glyph_run по кускам в одной странице экрана; иначе — по точкам.

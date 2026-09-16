@@ -18,7 +18,8 @@ SCREEN_PAGE	= 0x10
 PAGE3_PORT	= 0x13AF
 
 	.area	_DATA
-pool_map:	.ds	8		; 1 — занята (бит i — страница POOL_FIRST + i)
+_pg_pool_map::
+pool_map:	.ds	8		; 1 — занята (бит i — страница POOL_FIRST + i); _pg_pool_map — метка для сценариев (peek)
 win3_page:	.ds	1
 pa_n:		.ds	1
 pa_align:	.ds	1

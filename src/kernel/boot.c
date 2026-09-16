@@ -28,6 +28,7 @@ extern uint8_t tx_font_cw[4], tx_font_ch[4];
 extern int8_t tx_font_sp[4];
 extern far_t tx_str_base;
 extern uint16_t tx_str_n;
+extern uint8_t tx_atlas_ok;
 
 // Шрифты — в свою страницу пула (при выводе она подключается в Win2), строки —
 // ресурс STRINGS на месте (text.s читает его через Win3).
@@ -46,6 +47,7 @@ void text_init(void) __banked
 		tx_font_cw[i] = h[0]; tx_font_ch[i] = h[1]; tx_font_sp[i] = (int8_t)h[2];
 		off += (uint16_t)((r.size + 1) & ~1ul);
 	}
+	tx_atlas_ok = off <= 0x3800;               // таблицы мест атласа глифов — с #3800 этой страницы (text.s)
 	if (res_find(RES_STRINGS, &r)) {
 		tx_str_base = r.phys;
 		tx_str_n = far_word(r.phys);
