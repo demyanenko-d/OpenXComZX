@@ -263,7 +263,19 @@ edge1:
 	ld	d, (hl)
 	inc	hl
 	ld	(e_xb), de
-	ld	a, b			; x обоих в [0, 1023]
+	ld	a, b			; оба конца левее окна (x < 0) — ребра в окне нет (события
+	and	a, d			; левого края такие рёбра не дают: xclip выходит раньше)
+	ret	m
+	ld	a, b
+	or	a, d
+	jp	m, 2$			; один левее — обычный разбор
+	ld	a, b
+	cp	a, #4
+	jr	c, 2$
+	ld	a, d
+	cp	a, #4
+	ret	nc			; оба правее окна (x >= 1024)
+2$:	ld	a, b			; x обоих в [0, 1023]
 	or	a, d
 	and	a, #0xFC
 	jp	nz, edge1s

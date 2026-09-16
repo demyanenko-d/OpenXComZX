@@ -12,6 +12,7 @@
 	.globl	_in_prev_keys
 	.globl	_in_btn_latch
 	.globl	_in_key_latch
+	.globl	_in_key_rep
 
 KEY_ESC		= 27
 KEY_ENTER	= 13
@@ -26,6 +27,7 @@ _in_prev_btn::	.ds	1		; кнопки прошлого кадра
 _in_prev_keys::	.ds	1
 _in_btn_latch::	.ds	1		; нажатия до опроса
 _in_key_latch::	.ds	1
+_in_key_rep::	.ds	1		; 1 — защёлка от автоповтора (клавишу могли уже отпустить)
 rk_cs:		.ds	1
 rk_ss:		.ds	1
 in_rep:		.ds	1		; кадров до автоповтора удерживаемой клавиши
@@ -145,6 +147,8 @@ input_isr:
 	or	a
 	ret	z
 	ld	(_in_key_latch), a
+	xor	a, a
+	ld	(_in_key_rep), a	; настоящее нажатие
 	ret
 1$:	or	a			; держится: автоповтор стрелок и +/- (поворот и зум глобуса)
 	ret	z
@@ -163,4 +167,6 @@ input_isr:
 	ld	(hl), #REP_RATE
 	ld	a, b
 	ld	(_in_key_latch), a
+	ld	a, #1
+	ld	(_in_key_rep), a	; автоповтор: если клавишу отпустят до опроса — не считать
 	ret

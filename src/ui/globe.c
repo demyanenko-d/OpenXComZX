@@ -132,6 +132,21 @@ static void dma_go(uint8_t sp, uint16_t so, uint8_t dp, uint16_t do_, uint8_t le
 	TS_DMACTRL = ctrl;
 }
 
+// Копия bytes (чётно) со страницы sp, смещение so (может уходить за 16 КБ — в следующие
+// страницы), в страницу dp со смещением doff, пачками по 512 байт. Лёгкая замена far_copy:
+// тот считает 32-битные адреса и ждёт дважды (~2 750 тактов на вызов), здесь — байты и слова
+static void far_dma(uint8_t sp, uint16_t so, uint8_t dp, uint16_t doff, uint16_t bytes)
+{
+	sp += (uint8_t)((uint8_t)(so >> 8) >> 6);
+	so &= 0x3FFF;
+	while (bytes) {
+		uint16_t b = bytes > 512 ? 512 : bytes;
+		dma_go(sp, so, dp, doff, (uint8_t)((b >> 1) - 1), 0, DMA_RAM_RAM);
+		so += b; doff += b; bytes -= b;
+		if (so >= 0x4000) { so -= 0x4000; sp++; }
+	}
+}
+
 // Узоры набора set (0 — зумы 4–5, 1 — 2–3, 2 — 0–1): в каждом блоке — 32 байта строки узора
 // (океан — заливка словом), затем три удвоения сразу по всем 56 блокам страницы (2D DMA,
 // пачка на блок, шаг 256): [0, 32) -> [32, 64), [0, 64) -> [64, 128), [0, 128) -> [128, 256).
@@ -336,7 +351,8 @@ static void render(uint16_t lon, int16_t lat, uint8_t z, uint16_t sun)
 	gl_wpg = work; gl_epg = epage;
 	gl_res = 0xC000 + RES_OFF;
 	uint8_t ncells = 0;
-	far_t fsrc = FAR(work, VSRC), fstg = FAR(work, STG);
+	uint8_t bt_pg = FAR_PAGE(bt);                   // страница и смещение блоков ячеек — один раз
+	uint16_t bt_of = FAR_OFFS(bt);
 	for (uint8_t c = 0; c < h[0]; c++) {
 		uint16_t vn = cr[c][1], en = cr[c][2];
 		if (!en) continue;
@@ -357,14 +373,16 @@ static void render(uint16_t lon, int16_t lat, uint8_t z, uint16_t sun)
 		ncells++;
 		// вся ячейка на передней стороне — z вершин не нужен
 		gl_noz = sr < 16384 && (int16_t)(zc - sr4) > 64;
-		far_copy(fsrc, bt + cr[c][0], (vn + en) * 6u);   // блок ячейки: вершины, рёбра
+		far_dma(bt_pg, bt_of + cr[c][0], work, VSRC, (vn + en) * 6u);   // блок ячейки: вершины, рёбра
+		dma_wait();
 		gl_pv = (const uint8_t *)(0xC000 + VSRC); gl_pd = (uint8_t *)(0xC000 + RES_OFF); gl_pn = (uint8_t)vn;
 		gl_project();
 		gl_eb = (const uint8_t *)(0xC000 + VSRC) + vn * 6u; gl_ec = (uint8_t)en;
 		uint16_t e0 = gl_eptr;
 		gl_sptr = 0xC000 + STG;
 		gl_edges();
-		if (gl_eptr != e0) far_copy(FAR(epage, e0 - 0xC000), fstg, gl_eptr - e0);   // записи ячейки -> страница рёбер
+		if (gl_eptr != e0)                              // записи ячейки -> страница рёбер
+			far_dma(work, STG, epage, e0 - 0xC000, gl_eptr - e0);
 	}
 	// сетка 5° (72 x 36 от λ = 0, φ = −90°) в центре вида — если в окне нет рёбер
 	uint8_t gx = (uint8_t)(((uint32_t)lon * 72) >> 16), gy = (uint8_t)(((uint32_t)(lat + 16384) * 36) >> 15);

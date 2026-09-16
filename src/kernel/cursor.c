@@ -12,7 +12,7 @@ uint8_t mouse_buttons;                   // бит 0 L, 1 R (1 — нажата)
 static uint8_t mouse_px, mouse_py;
 
 extern uint8_t in_prev_btn;
-extern volatile uint8_t in_btn_latch, in_key_latch;
+extern volatile uint8_t in_btn_latch, in_key_latch, in_key_rep, in_prev_keys;
 
 // Стрелка 11 строк: '#' — контур, '.' — заливка
 static const char arrow[11][9] = {
@@ -90,7 +90,9 @@ uint8_t input_poll(event_t *e) __banked
 	pressed = in_btn_latch;
 	if (pressed & 1) in_btn_latch = pressed & 2;
 	else if (pressed) in_btn_latch = 0;
-	else { k = in_key_latch; in_key_latch = 0; }
+	// защёлка от автоповтора, а клавишу уже отпустили (за долгую перерисовку успевает
+	// взвестись лишний раз) — выбросить: иначе глобус доворачивается после отпускания
+	else { k = in_key_latch; in_key_latch = 0; if (k && in_key_rep && in_prev_keys != k) k = 0; }
 	__asm__("ei");
 	mouse_buttons = in_prev_btn;
 	e->x = cursor_x; e->y = cursor_y;
