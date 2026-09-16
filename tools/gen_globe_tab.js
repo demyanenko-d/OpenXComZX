@@ -112,33 +112,37 @@ for (let r = 0; r < 4; r++)
 let seed = 0x5A17;
 const shShift = [];
 for (let y = 0; y < 200; y++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; shShift.push((seed >> 16) & 0xFE); }
-fs.writeFileSync(path.join(__dirname, '..', 'src', 'ui', 'globe_sh_tab.h'), `// Сгенерировано tools/gen_globe_tab.js — не править вручную.
-// Тень глобуса (src/ui/globe_sh.c, банк 25): пары диска по строкам, z центров блоков 8x4.
-#ifndef GLOBE_SH_TAB_H
-#define GLOBE_SH_TAB_H
+// (заголовок globe_sh_tab.h больше не пишется: тень на ассемблере, таблицы — globe_sh_tab.s ниже)
 
-#include <stdint.h>
-
-// [(зум * 200 + строка) * 2]: pl, pr (как rows_init; строки нет — 255, 0)
-const uint8_t sh_row[2400] = {
-${rows(shRow, 20)}
-};
-// [зум * 400 + b * 16 + c]: z центра блока (столбец c 0..15, строка блоков b 0..24 — четверть;
-// столбцы 16..31 и строки 25..49 — зеркально) в долях R x 255, вне диска — 0
-const uint8_t sh_z8[2400] = {
-${rows(shZ8, 16)}
-};
-// Шум образцов уровней тени: [строка образца * 256 + x] — 0..3
-const uint8_t sh_noise[1024] = {
-${rows(shNoise, 32)}
-};
-// Сдвиг строки-образца шума по строке экрана (чётный: DMA пишет словами)
-const uint8_t sh_shift[200] = {
-${rows(shShift, 25)}
-};
-
-#endif
-`);
+// Те же таблицы тени — ассемблером (src/ui/globe_sh_tab.s, банк 25: тень переведена с C на
+// ассемблер). Плюс уровень по 2t (globe_sh.s patterns): lut[2t + 128] — число порогов TB, для
+// которых 2t >= 2·TB (сравнение с удвоенным порогом: t — усечение, а не пол).
+{
+	const TB = [-34, -12, -8, -5, -2, 2, 5, 8, 14, 39];
+	const shLut = [];
+	for (let i = 0; i < 256; i++) { const t2 = i - 128; let k = 0; while (k < 10 && t2 >= 2 * TB[k]) k++; shLut.push(k); }
+	const db = (arr, per) => { const o = []; for (let i = 0; i < arr.length; i += per) o.push('\t.db\t' + arr.slice(i, i + per).join(', ')); return o.join('\n'); };
+	fs.writeFileSync(path.join(__dirname, '..', 'src', 'ui', 'globe_sh_tab.s'), [
+		';; Сгенерировано tools/gen_globe_tab.js — не править вручную.',
+		';; Таблицы тени глобуса (банк 25, globe_sh.s и globe_sh_s.s).',
+		'',
+		'\t.module globe_sh_tab',
+		'\t.globl\t_sh_row, _sh_z8, _sh_noise, _sh_shift, _sh_lut',
+		'',
+		'\t.area\t_BANK25',
+		'',
+		';; [(зум * 200 + строка) * 2]: pl, pr (строки нет — 255, 0)',
+		'_sh_row:', db(shRow, 20),
+		';; [зум * 400 + b * 16 + c]: z центра блока (четверть, остальное зеркально) в долях R x 255',
+		'_sh_z8:', db(shZ8, 16),
+		';; шум образцов уровней: [строка образца * 256 + x] — 0..3',
+		'_sh_noise:', db(shNoise, 32),
+		';; сдвиг строки-образца шума по строке экрана (чётный)',
+		'_sh_shift:', db(shShift, 25),
+		';; уровень тени по 2t + 128',
+		'_sh_lut:', db(shLut, 32),
+		''].join('\n'));
+}
 
 // Четверти квадратов floor(n^2 / 4), n = 0..511 — для умножения 8x8 (a*b = q(a+b) - q(|a-b|)):
 // младшие байты — страницы 0 и 1, старшие — 2 и 3 области _GTAB (адрес кратен 256, банк 24).
