@@ -386,7 +386,7 @@ static const wdef_t w_trconfirm[] = {
 };
 
 static const wdef_t w_transfers[] = {
-	WIN(0, 8, 320, 184, UI_EL_WINDOW),
+	WINP(0, 8, 320, 184, UI_EL_WINDOW, POPB),
 	BTN(16, 166, 288, 16, UI_EL_BUTTON, STR_OK, A_POP, 0, ESC),
 	HOT(0, 0, 0, 0, A_POP, 0, ENT),
 	TXT(21, 18, 278, 17, UI_EL_TEXT, STR_TRANSFERS, BIG | TC),

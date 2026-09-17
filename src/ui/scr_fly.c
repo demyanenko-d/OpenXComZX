@@ -100,7 +100,7 @@ static void center_on(const geo_t *p)
 // ---------------------------------------------------------------- окна
 
 static const wdef_t w_intercept[] = {
-	WIN(0, 30, 320, 140, UI_EL_WINDOW),
+	WINP(0, 30, 320, 140, UI_EL_WINDOW, POPH),
 	BTN(16, 146, 288, 16, UI_EL_BUTTON, STR_CANCEL, A_POP, 0, ESC),
 	TXT(10, 46, 300, 17, UI_EL_TEXT1, STR_LAUNCH_INTERCEPTION, BIG | TC),
 	TXT(14, 70, 86, 9, UI_EL_TEXT2, STR_CRAFT, 0),
@@ -114,7 +114,7 @@ static const wdef_t w_intercept[] = {
 // GeoscapeCraftState: кнопки 1–4 — к базе, новая цель, патруль, отмена / к последней
 // позиции НЛО (цель потеряна: GCW_LOST, путевая точка ctx.tidx)
 static const wdef_t w_craft[] = {
-	WIN(8, 8, 240, 184, UI_EL_WINDOW),
+	WINP(8, 8, 240, 184, UI_EL_WINDOW, POPB),
 	BTN(22, 124, 212, 12, UI_EL_BUTTON, STR_RETURN_TO_BASE, A_CUSTOM, 1, 0),
 	BTN(22, 140, 212, 12, UI_EL_BUTTON, STR_SELECT_NEW_TARGET, A_CUSTOM, 2, 0),
 	BTN(22, 156, 212, 12, UI_EL_BUTTON, STR_PATROL, A_CUSTOM, 3, 0),
@@ -141,7 +141,7 @@ static const wdef_t w_craft[] = {
 #define GC_SOLDIERS   18
 
 static const wdef_t w_target[] = {
-	WIN(32, 40, 192, 120, UI_EL_WINDOW),
+	WINP(32, 40, 192, 120, UI_EL_WINDOW, POPB),
 	BTN(48, 124, 160, 12, UI_EL_BUTTON, STR_INTERCEPT, A_PUSH, SCR_INTERCEPT, 0),
 	BTN(48, 140, 160, 12, UI_EL_BUTTON, STR_OK, A_POP, 0, ESC),
 	TXT(37, 46, 182, 32, UI_EL_TEXT2, DYN(0), BIG | TC | TM | TW),
@@ -157,7 +157,7 @@ static const wdef_t w_confirmdest[] = {
 };
 
 static const wdef_t w_patrol[] = {
-	WIN(16, 16, 224, 168, UI_EL_WINDOW),
+	WINP(16, 16, 224, 168, UI_EL_WINDOW, POPB),
 	BTN(58, 144, 140, 12, UI_EL_BUTTON, STR_OK, A_POP, 0, ESC),
 	BTN(58, 160, 140, 12, UI_EL_BUTTON, STR_REDIRECT_CRAFT, A_CUSTOM, 1, ENT),
 	TXT(16, 48, 224, 64, UI_EL_TEXT1, DYN(0), BIG | TC | TW),
@@ -165,7 +165,7 @@ static const wdef_t w_patrol[] = {
 };
 
 static const wdef_t w_lowfuel[] = {
-	WIN(16, 40, 224, 120, UI_EL_WINDOW),
+	WINP(16, 40, 224, 120, UI_EL_WINDOW, POPB),
 	BTN(30, 120, 90, 18, UI_EL_BUTTON, STR_OK, A_POP, 0, ESC),
 	BTN(136, 120, 90, 18, UI_EL_BUTTON, STR_OK_5_SECONDS, A_CUSTOM, 1, ENT),
 	TXT(21, 60, 214, 17, UI_EL_TEXT, DYN(0), BIG | TC),
@@ -173,7 +173,7 @@ static const wdef_t w_lowfuel[] = {
 };
 
 static const wdef_t w_crafterr[] = {
-	WIN(32, 20, 256, 160, UI_EL_WINDOW),
+	WINP(32, 20, 256, 160, UI_EL_WINDOW, POPB),
 	BTN(48, 150, 100, 18, UI_EL_BUTTON, STR_OK, A_POP, 0, ESC),
 	BTN(172, 150, 100, 18, UI_EL_BUTTON, STR_OK_5_SECONDS, A_CUSTOM, 1, ENT),
 	TXT(37, 42, 246, 96, UI_EL_TEXT1, DYN(0), BIG | TC | TM | TW),

@@ -436,7 +436,7 @@ static uint8_t window_click(uint8_t k)
 }
 
 static const wdef_t w_dogerror[] = {
-	WIN(24, 48, 208, 120, UI_EL_WINDOW),
+	WINP(24, 48, 208, 120, UI_EL_WINDOW, POPB),
 	BTN(38, 128, 180, 12, UI_EL_BUTTON, STR_CONTINUE_INTERCEPTION_PURSUIT, A_POP, 0, ESC),
 	BTN(38, 144, 180, 12, UI_EL_BUTTON, STR_RETURN_TO_BASE, A_CUSTOM, 1, ENT),
 	TXT(29, 63, 198, 16, UI_EL_TEXT, DYN(0), BIG | TC),

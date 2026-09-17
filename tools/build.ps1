@@ -33,7 +33,7 @@ $banks = @(
     @{ n = 8; page = 0x37; files = @('game\gtime', 'game\lab') }
     @{ n = 9; page = 0x38; files = @('ui\scr_lab') }
     @{ n = 10; page = 0x39; files = @('ui\scr_craft') }
-    @{ n = 11; page = 0x3A; files = @('kernel\gfx', 'kernel\cursor', 'kernel\boot') }   # графика, опрос ввода, запуск
+    @{ n = 11; page = 0x3A; files = @('kernel\gfx', 'kernel\cursor', 'kernel\boot'); ram = 0xBF00 }   # графика, опрос ввода, запуск; с #BF00 — фон под всплывающими окнами (gfx.c)
     @{ n = 12; page = 0x3B; files = @('kernel\fat', 'kernel\sdres') }
     @{ n = 13; page = 0x3C; files = @('ui\scr_ufop') }
     @{ n = 14; page = 0x3E; files = @('test\bank_a') }

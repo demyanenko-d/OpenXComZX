@@ -18,8 +18,14 @@ static void dma_wait(void)
 		;
 }
 
+// Фон под всплывающими окнами (gfx_bgsave): прямоугольник экрана построчно в страницах пула
+#define BG_LEVELS 8
+typedef struct { int16_t x, y, w, h; uint8_t page, n; } bgsave_t;
+static bgsave_t __at(0xBF00) bgs[BG_LEVELS];      // память банка 11 (окно 1 занято); gfx_init обнуляет
+
 void gfx_init(void) __banked
 {
+	memset(bgs, 0, sizeof bgs);
 	TS_VPAGE = SCREEN_PAGE;
 	TS_GXOFFSL = 0; TS_GXOFFSH = 0;
 	TS_GYOFFSL = 0; TS_GYOFFSH = 0;
@@ -258,4 +264,88 @@ void gfx_pal_cycle(uint8_t lo, uint8_t n) __banked
 	TS_DMANUM = 0;
 	TS_DMACTRL = DMA_RAM_CRAM;
 	dma_wait();
+}
+
+// ---------------------------------------------------------------- всплывающие окна
+
+extern volatile uint16_t frames;
+
+// Строки прямоугольника: экран -> страницы пула (to_screen = 0) или обратно — одним 2D DMA: на экране
+// строки через 512 байт (ALGN), в пуле — подряд (w чётная, h <= 200 — DMANum байт)
+static void bg_copy(const bgsave_t *b, uint8_t to_screen)
+{
+	uint16_t so = (((uint16_t)b->y & 31) << 9) | (uint16_t)b->x;
+	uint8_t sp = SCREEN_PAGE + (uint8_t)(b->y >> 5);
+	dma_wait();
+	if (to_screen) {
+		TS_DMASAL = 0; TS_DMASAH = 0; TS_DMASAX = b->page;
+		TS_DMADAL = (uint8_t)so; TS_DMADAH = (uint8_t)(so >> 8); TS_DMADAX = sp;
+	} else {
+		TS_DMASAL = (uint8_t)so; TS_DMASAH = (uint8_t)(so >> 8); TS_DMASAX = sp;
+		TS_DMADAL = 0; TS_DMADAH = 0; TS_DMADAX = b->page;
+	}
+	TS_DMALEN = (uint8_t)(b->w / 2 - 1);
+	TS_DMANUM = (uint8_t)(b->h - 1);
+	TS_DMACTRL = DMA_RAM_RAM | DMA_ASZ | (to_screen ? DMA_D_ALGN : DMA_S_ALGN);
+	dma_wait();
+}
+
+uint8_t gfx_bgsave(uint8_t lvl, int16_t x, int16_t y, int16_t w, int16_t h) __banked
+{
+	if (lvl >= BG_LEVELS) return 0;
+	gfx_bgrestore(lvl, 0);
+	if (!clip(&x, &y, &w, &h)) return 0;
+	if (x & 1) { x--; w++; }
+	if (w & 1) w++;
+	uint8_t n = (uint8_t)(((uint32_t)w * (uint16_t)h + 0x3FFF) >> 14);
+	uint8_t p = pg_alloc(n, 1);
+	if (p == PG_NONE) return 0;
+	bgsave_t *b = &bgs[lvl];
+	b->x = x; b->y = y; b->w = w; b->h = h; b->page = p; b->n = n;
+	bg_copy(b, 0);
+	return 1;
+}
+
+uint8_t gfx_bgrestore(uint8_t lvl, uint8_t draw) __banked
+{
+	if (lvl >= BG_LEVELS) return 0;
+	bgsave_t *b = &bgs[lvl];
+	if (!b->n) return 0;
+	if (draw) bg_copy(b, 1);
+	pg_free(b->page, b->n);
+	b->n = 0;
+	return draw;
+}
+
+// Кольцо рамки окна
+static void ring(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c)
+{
+	gfx_fill(x, y, w, 1, c);
+	gfx_fill(x, y + h - 1, w, 1, c);
+	gfx_fill(x, y + 1, 1, h - 2, c);
+	gfx_fill(x + w - 1, y + 1, 1, h - 2, c);
+}
+
+// Window::popup / draw: 10 шагов по кадру (POPUP_SPEED 0.05 по 10 мс у OpenXcom — те же ~200 мс), рамка
+// растёт от середины по горизонтали (flags & 2) и/или вертикали (flags & 4): 5 колец c+3, c+2, c+1, c+2,
+// c+3, внутри — фон окна bg (или c+3). Растёт — прошлый шаг накрыт, фон под окном не нужен.
+void gfx_popup(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c, uint16_t bg, uint8_t flags) __banked
+{
+	for (uint8_t s = 1; s <= 10; s++) {
+		uint16_t f = frames;
+		int16_t sw = (flags & 2) ? w * s / 10 : w, sh = (flags & 4) ? h * s / 10 : h;
+		int16_t sx = x + (w - sw) / 2, sy = y + (h - sh) / 2;
+		uint8_t k = c + 3;
+		for (uint8_t i = 0; i < 5; i++) {
+			ring(sx, sy, sw, sh, k);
+			k = i < 2 ? k - 1 : k + 1;
+			sx++; sy++;
+			sw = sw >= 2 ? sw - 2 : 1;
+			sh = sh >= 2 ? sh - 2 : 1;
+		}
+		if (bg) gfx_bg(bg, sx, sy, sw, sh);
+		else gfx_fill(sx, sy, sw, sh, c + 3);
+		while (frames == f)
+			;
+	}
 }

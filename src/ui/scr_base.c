@@ -430,7 +430,7 @@ static const wdef_t w_costs[] = {
 // ---------------------------------------------------------------- постройки
 
 static const wdef_t w_build[] = {
-	WIN(192, 40, 128, 160, UI_EL_WINDOW),
+	WINP(192, 40, 128, 160, UI_EL_WINDOW, POPV),
 	BTN(200, 176, 112, 16, UI_EL_BUTTON, STR_OK, A_POP, 0, ESC),
 	TXT(197, 48, 118, 17, UI_EL_TEXT, STR_INSTALLATION, BIG | TC),
 	LST(202, 64, 102, 104, UI_EL_LIST, 0, WF_SEL | TW),

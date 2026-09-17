@@ -249,7 +249,7 @@ static char *soldier_row_start(const soldier_t *s, char *buf, uint8_t *alt)
 // ---------------------------------------------------------------- оружие
 
 static const wdef_t w_weapons[] = {
-	WIN(50, 20, 220, 160, UI_EL_WINDOW),
+	WINP(50, 20, 220, 160, UI_EL_WINDOW, POPB),
 	BTN(90, 156, 140, 16, UI_EL_BUTTON, STR_CANCEL_UC, A_POP, 0, ESC),
 	TXT(56, 28, 208, 17, UI_EL_TEXT, STR_SELECT_ARMAMENT, BIG | TC),
 	TXT(66, 52, 76, 9, UI_EL_TEXT, STR_ARMAMENT, 0),
@@ -444,7 +444,7 @@ static const wdef_t w_carmor[] = {
 };
 
 static const wdef_t w_sarmor[] = {
-	WIN(64, 20, 192, 160, UI_EL_WINDOW),
+	WINP(64, 20, 192, 160, UI_EL_WINDOW, POPB),
 	BTN(90, 156, 140, 16, UI_EL_BUTTON, STR_CANCEL_UC, A_POP, 0, ESC),
 	TXT(69, 28, 182, 16, UI_EL_TEXT, DYN(0), TC),
 	TXT(80, 52, 90, 9, UI_EL_TEXT, STR_TYPE, 0),

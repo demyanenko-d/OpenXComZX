@@ -29,7 +29,7 @@ static uint16_t rec_name(uint16_t table, uint16_t i)
 // ---------------------------------------------------------------- исследования, производство
 
 static const wdef_t w_rescomplete[] = {
-	WIN(45, 30, 230, 140, UI_EL_WINDOW),
+	WINP(45, 30, 230, 140, UI_EL_WINDOW, POPB),
 	BTN(64, 146, 80, 16, UI_EL_BUTTON, STR_OK, A_POP, 0, ESC),
 	BTN(176, 146, 80, 16, UI_EL_BUTTON, STR_VIEW_REPORTS, A_CUSTOM, 3, ENT),
 	TXT(45, 70, 230, 17, UI_EL_TEXT1, STR_RESEARCH_COMPLETED, BIG | TC),
@@ -53,14 +53,14 @@ static const wdef_t w_newmanuf[] = {
 };
 
 static const wdef_t w_proddone[] = {
-	WIN(32, 20, 256, 160, UI_EL_WINDOW),
+	WINP(32, 20, 256, 160, UI_EL_WINDOW, POPB),
 	BTN(40, 154, 118, 18, UI_EL_BUTTON, STR_OK, A_POP, 0, ESC),
 	BTN(162, 154, 118, 18, UI_EL_BUTTON, DYN(1), A_CUSTOM, 1, 0),
 	TXT(37, 35, 246, 110, UI_EL_TEXT1, DYN(0), BIG | TC | TM | TW),
 };
 
 static const wdef_t w_items[] = {
-	WIN(0, 8, 320, 184, UI_EL_WINDOW),
+	WINP(0, 8, 320, 184, UI_EL_WINDOW, POPB),
 	BTN(16, 166, 142, 16, UI_EL_BUTTON, STR_OK, A_POP, 0, ESC),
 	BTN(162, 166, 142, 16, UI_EL_BUTTON, STR_GO_TO_BASE, A_CUSTOM, 1, ENT),
 	TXT(5, 18, 310, 17, UI_EL_TEXT1, STR_ITEMS_ARRIVING, BIG | TC),
@@ -221,7 +221,7 @@ static const wdef_t w_basedestroyed[] = {
 // ---------------------------------------------------------------- высадка
 
 static const wdef_t w_landing[] = {
-	WIN(20, 20, 216, 160, UI_EL_WINDOW),
+	WINP(20, 20, 216, 160, UI_EL_WINDOW, POPB),
 	BTN(40, 150, 80, 20, UI_EL_BUTTON, STR_YES, A_CUSTOM, 2, ENT),
 	BTN(136, 150, 80, 20, UI_EL_BUTTON, STR_NO, A_CUSTOM, 3, ESC),
 	TXT(25, 40, 206, 80, UI_EL_TEXT, DYN(0), BIG | TC | TW),

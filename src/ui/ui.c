@@ -596,12 +596,15 @@ static void draw_all(void)
 	for (uint8_t i = 0; i < S.n; i++) draw_widget(i);
 }
 
+static uint8_t bg_broken;                     // закрыто окно без перерисовки — на экране его остатки
+
 // Весь видимый стек: от последнего полноэкранного экрана до верхнего.
 static void redraw(void)
 {
 	uint8_t top = depth - 1, b = top;
 	while (b > 0 && (stkf[b] & SF_POPUP)) b--;
 	dirty_clear();                           // всё и так перерисуется
+	bg_broken = 0;
 	load(top);
 	apply_palette();
 	if (!(stkf[b] & SF_POPUP)) gfx_fill(0, 0, SCREEN_W, SCREEN_H, 0);   // полноэкранный: под ним ничего
@@ -627,7 +630,17 @@ static void do_push(uint8_t id)
 		return;
 	}
 	stkf[depth - 1] = S.flags;
-	if ((S.flags & SF_POPUP) && depth > 1 && !dirty) {
+	const wdef_t *w = W;                         // окно: фон под всплывающим — запомнить, рамка растёт (Window::popup)
+	uint8_t pop = (S.flags & SF_POPUP) && depth > 1 && !dirty;
+	if (depth > 1 && w->type == W_WINDOW) {
+		if (pop) gfx_bgsave(depth - 1, w->x, w->y, w->w, w->h);
+		if (w->flags & (WF_POPH | WF_POPV)) {
+			apply_palette();
+			wcolors(w);
+			gfx_popup(w->x, w->y, w->w, w->h, col, S.bg, w->flags);
+		}
+	}
+	if (pop) {
 		apply_palette();
 		draw_all();
 	} else
@@ -636,12 +649,22 @@ static void do_push(uint8_t id)
 
 static void do_pop(uint8_t draw)
 {
+	uint8_t lvl = depth - 1;
 	if (depth) {
 		scr_event(stk[depth - 1], EVT_CLOSE, 0);
 		depth--;
 	}
 	if (!depth) { dirty = 1; do_push(SCR_MAIN_MENU); return; }
 	dirty = 1;
+	if (gfx_bgrestore(lvl, draw && !bg_broken)) { // фон под окном — назад; у открывшегося — только DYN
+		load(depth - 1);
+		apply_palette();
+		dirty_clear();
+		redraw_dyn();
+		dirty = 0;
+		return;
+	}
+	if (!draw) bg_broken = 1;
 	if (draw) redraw();
 	else load(depth - 1);
 }
@@ -651,6 +674,7 @@ static void do_set(uint8_t id)
 	while (depth) {
 		scr_event(stk[depth - 1], EVT_CLOSE, 0);
 		depth--;
+		gfx_bgrestore(depth, 0);
 	}
 	dirty = 1;
 	do_push(id);

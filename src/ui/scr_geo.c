@@ -466,7 +466,7 @@ static void fmt1s(char *buf, uint16_t pat, uint16_t arg)
 // «DETECTED» — только во всплывшем при обнаружении (DYN(2)); с гиперволной — выше,
 // второй список (тип, раса, миссия, зона) и своя палитра (setInterface(…, hyperwave)).
 static const wdef_t w_ufo[] = {
-	WIN(16, 44, 224, 128, UI_EL_WINDOW),
+	WINP(16, 44, 224, 128, UI_EL_WINDOW, POPB),
 	BTN(28, 118, 200, 12, UI_EL_BUTTON, STR_INTERCEPT, A_CUSTOM, 2, 0),
 	BTN(28, 134, 200, 12, UI_EL_BUTTON, STR_CENTER_ON_UFO_TIME_5_SECONDS, A_CUSTOM, 1, 0),
 	BTN(28, 150, 200, 12, UI_EL_BUTTON, STR_CANCEL_UC, A_POP, 0, ESC),
@@ -475,7 +475,7 @@ static const wdef_t w_ufo[] = {
 	LST(28, 80, 217, 32, UI_EL_TEXT, 1, 0),
 };
 static const wdef_t w_ufo_hyper[] = {
-	WIN(16, 10, 224, 180, UI_EL_WINDOW),
+	WINP(16, 10, 224, 180, UI_EL_WINDOW, POPB),
 	BTN(28, 136, 200, 12, UI_EL_BUTTON, STR_INTERCEPT, A_CUSTOM, 2, 0),
 	BTN(28, 152, 200, 12, UI_EL_BUTTON, STR_CENTER_ON_UFO_TIME_5_SECONDS, A_CUSTOM, 1, 0),
 	BTN(28, 168, 200, 12, UI_EL_BUTTON, STR_CANCEL_UC, A_POP, 0, ESC),
@@ -494,14 +494,14 @@ static const uint16_t heading_str[8] = {
 };
 
 static const wdef_t w_ufolost[] = {
-	WIN(32, 48, 192, 104, UI_EL_WINDOW),
+	WINP(32, 48, 192, 104, UI_EL_WINDOW, POPB),
 	BTN(98, 112, 60, 12, UI_EL_BUTTON, STR_OK, A_POP, 0, ESC),
 	TXT(48, 72, 160, 32, UI_EL_TEXT, DYN(0), BIG | TC),
 };
 
 // MissionDetectedState: фон и заголовок — из развёртывания (alertBackground, alert), город
 static const wdef_t w_mission[] = {
-	WIN(0, 0, 256, 200, UI_EL_WINDOW),
+	WINP(0, 0, 256, 200, UI_EL_WINDOW, POPB),
 	BTN(28, 130, 200, 16, UI_EL_BUTTON, STR_INTERCEPT, A_CUSTOM, 2, 0),
 	BTN(28, 150, 200, 16, UI_EL_BUTTON, STR_CENTER_ON_SITE_TIME_5_SECONDS, A_CUSTOM, 1, 0),
 	BTN(28, 170, 200, 16, UI_EL_BUTTON, STR_CANCEL_UC, A_POP, 0, ESC),
@@ -512,7 +512,7 @@ static const wdef_t w_mission[] = {
 // ---------------------------------------------------------------- финансы, отчёт
 
 static const wdef_t w_funding[] = {
-	WIN(0, 0, 320, 200, UI_EL_WINDOW),
+	WINP(0, 0, 320, 200, UI_EL_WINDOW, POPB),
 	BTN(135, 180, 50, 12, UI_EL_BUTTON, STR_OK, A_POP, 0, ESC),
 	TXT(0, 8, 320, 17, UI_EL_TEXT1, STR_INTERNATIONAL_RELATIONS, BIG | TC),
 	TXT(32, 30, 100, 9, UI_EL_TEXT2, STR_COUNTRY, 0),
@@ -546,7 +546,7 @@ static const wdef_t w_report[] = {
 // ---------------------------------------------------------------- база: имя, постройка
 
 static const wdef_t w_basename[] = {
-	WIN(32, 60, 192, 80, UI_EL_WINDOW),
+	WINP(32, 60, 192, 80, UI_EL_WINDOW, POPB),
 	BTN(47, 118, 162, 12, UI_EL_BUTTON, STR_OK, A_CUSTOM, 1, ENT),
 	TXT(37, 70, 182, 17, UI_EL_TEXT, STR_BASE_NAME, BIG | TC),
 	{ W_EDIT, 59, 94, 127, 16, UI_EL_TEXT, NOSTR, BIG, 0, NAME_LEN - 1, 0 },

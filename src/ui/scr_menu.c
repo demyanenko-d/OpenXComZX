@@ -17,7 +17,7 @@ static uint8_t ng_diff, ng_iron;
 // ---------------------------------------------------------------- главное меню
 
 static const wdef_t w_main[] = {
-	WIN(32, 20, 256, 160, UI_EL_WINDOW),
+	WINP(32, 20, 256, 160, UI_EL_WINDOW, POPB),
 	BTN(64, 90, 92, 20, UI_EL_BUTTON, STR_NEW_GAME, A_PUSH, SCR_NEW_GAME, 'n'),
 	BTN(164, 90, 92, 20, UI_EL_BUTTON, STR_LOAD_SAVED_GAME, A_PUSH, SCR_LOAD, 'l'),
 	BTN(64, 118, 92, 20, UI_EL_BUTTON, STR_OPTIONS, A_PUSH, SCR_OPTIONS, 'o'),
@@ -29,7 +29,7 @@ static const wdef_t w_main[] = {
 // ---------------------------------------------------------------- новая игра
 
 static const wdef_t w_newgame[] = {
-	WIN(64, 10, 192, 180, UI_EL_WINDOW),
+	WINP(64, 10, 192, 180, UI_EL_WINDOW, POPV),
 	TGL(80, 32, 160, 18, UI_EL_BUTTON, STR_1_BEGINNER, 0, 1, 0, 0),
 	TGL(80, 52, 160, 18, UI_EL_BUTTON, STR_2_EXPERIENCED, 0, 1, 1, 0),
 	TGL(80, 72, 160, 18, UI_EL_BUTTON, STR_3_VETERAN, 0, 1, 2, 0),
@@ -45,7 +45,7 @@ static const wdef_t w_newgame[] = {
 // ---------------------------------------------------------------- загрузка / сохранение
 
 static const wdef_t w_saves[] = {
-	WIN(0, 0, 320, 200, UI_EL_WINDOW),
+	WINP(0, 0, 320, 200, UI_EL_WINDOW, POPB),
 	BTN(120, 172, 80, 16, UI_EL_BUTTON, STR_CANCEL, A_POP, 0, ESC),
 	TXT(5, 7, 310, 17, UI_EL_TEXT, DYN(2), BIG | TC),
 	TXT(5, 23, 310, 9, UI_EL_TEXT, STR_RIGHT_CLICK_TO_DELETE, TC),
@@ -57,7 +57,7 @@ static const wdef_t w_saves[] = {
 
 // DeleteGameState: правый клик по слоту в списке сохранений
 static const wdef_t w_delete[] = {
-	WIN(32, 50, 256, 100, UI_EL_CONFIRMDELETE),
+	WINP(32, 50, 256, 100, UI_EL_CONFIRMDELETE, POPB),
 	BTN(60, 122, 60, 18, UI_EL_CONFIRMDELETE, STR_YES, A_CUSTOM, 1, ENT),
 	BTN(200, 122, 60, 18, UI_EL_CONFIRMDELETE, STR_NO, A_POP, 0, ESC),
 	TXT(37, 70, 246, 32, UI_EL_CONFIRMDELETE, STR_IS_IT_OK_TO_DELETE_THE_SAVED_GAME, BIG | TC | TW),
@@ -122,7 +122,7 @@ static void quick_game(void)
 // ---------------------------------------------------------------- пауза, выход, ошибка
 
 static const wdef_t w_pause[] = {
-	WIN(20, 20, 216, 160, UI_EL_WINDOW),
+	WINP(20, 20, 216, 160, UI_EL_WINDOW, POPB),
 	BTN(38, 52, 180, 18, UI_EL_BUTTON, STR_LOAD_GAME, A_PUSH, SCR_LOAD, 0),
 	BTN(38, 74, 180, 18, UI_EL_BUTTON, STR_SAVE_GAME, A_PUSH, SCR_SAVE, 0),
 	BTN(38, 96, 180, 18, UI_EL_BUTTON, STR_ABANDON_GAME, A_PUSH, SCR_ABANDON, 0),
@@ -132,14 +132,14 @@ static const wdef_t w_pause[] = {
 };
 
 static const wdef_t w_abandon[] = {
-	WIN(20, 20, 216, 160, UI_EL_GENERICWINDOW),
+	WINP(20, 20, 216, 160, UI_EL_GENERICWINDOW, POPB),
 	BTN(38, 140, 50, 20, UI_EL_GENERICBUTTON2, STR_YES, A_CUSTOM, 1, ENT),
 	BTN(168, 140, 50, 20, UI_EL_GENERICBUTTON2, STR_NO, A_POP, 0, ESC),
 	TXT(25, 70, 206, 17, UI_EL_GENERICTEXT, STR_ABANDON_GAME_QUESTION, BIG | TC),
 };
 
 static const wdef_t w_error[] = {
-	WIN(32, 20, 256, 160, UI_EL_GENERICWINDOW),
+	WINP(32, 20, 256, 160, UI_EL_GENERICWINDOW, POPB),
 	BTN(100, 154, 120, 18, UI_EL_GENERICBUTTON2, STR_OK, A_POP, 0, ESC),
 	TXT(37, 50, 246, 80, UI_EL_GENERICTEXT, DYN(0), BIG | TC | TM | TW),
 };
@@ -169,7 +169,7 @@ static const char *const opt_text[] = {
 
 // Кнопки разделов добавляются в menu_get (как _btnSections в UfopaediaStartState).
 static const wdef_t w_ufop[] = {
-	WIN(32, 10, 256, 180, UI_EL_WINDOW),
+	WINP(32, 10, 256, 180, UI_EL_WINDOW, POPB),
 	TXT(50, 33, 220, 17, UI_EL_TEXT, STR_UFOPAEDIA, BIG | TC),
 	BTN(50, 167, 220, 12, UI_EL_BUTTON1, STR_OK, A_POP, 0, ESC),
 };

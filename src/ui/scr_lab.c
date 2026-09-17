@@ -111,7 +111,7 @@ static const wdef_t w_research[] = {
 };
 
 static const wdef_t w_newres[] = {
-	WIN(45, 30, 230, 140, UI_EL_WINDOW),
+	WINP(45, 30, 230, 140, UI_EL_WINDOW, POPB),
 	BTN(53, 146, 214, 16, UI_EL_BUTTON, STR_OK, A_POP, 0, ESC),
 	TXT(53, 38, 214, 16, UI_EL_TEXT, STR_NEW_RESEARCH_PROJECTS, TC),
 	LST(61, 54, 190, 88, UI_EL_LIST, 0, WF_SEL | TC),
@@ -154,7 +154,7 @@ static const wdef_t w_manuf[] = {
 };
 
 static const wdef_t w_newman[] = {
-	WIN(0, 22, 320, 156, UI_EL_WINDOW),
+	WINP(0, 22, 320, 156, UI_EL_WINDOW, POPB),
 	BTN(8, 154, 304, 16, UI_EL_BUTTON, STR_OK, A_POP, 0, ESC),
 	TXT(0, 30, 320, 17, UI_EL_TEXT, STR_PRODUCTION_ITEMS, BIG | TC),
 	TXT(10, 62, 156, 9, UI_EL_TEXT, STR_ITEM, 0),
@@ -183,7 +183,7 @@ static const wdef_t w_mstart_go[] = {            // только если мож
 };
 
 static const wdef_t w_minfo[] = {
-	WIN(0, 20, 320, 160, UI_EL_WINDOW),
+	WINP(0, 20, 320, 160, UI_EL_WINDOW, POPB),
 	TXT(0, 30, 320, 17, UI_EL_TEXT, DYN(0), BIG | TC),
 	TXT(16, 50, 160, 9, UI_EL_TEXT, DYN(1), 0),
 	TXT(16, 60, 160, 9, UI_EL_TEXT, DYN(2), 0),
