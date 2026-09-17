@@ -242,12 +242,14 @@ static void clock_add(uint16_t s)
 // (остаток хода отброшен — как timerReset при окне).
 uint8_t game_advance(uint16_t sec, uint16_t min) __banked
 {
-	uint32_t left = (sec + (uint32_t)min * 60) / 5;
+	// шагов по 5 с: (sec + min · 60) / 5 = sec / 5 + min · 12 — без 32-битного деления (~2600 такт
+	// на каждый ход времени) и счётчик 16-битный (сутки — 17 280 шагов)
+	uint16_t left = sec / 5 + min * 12;
 	if (ST->months < 0) return 0;              // до первой базы время стоит
 	while (left) {
 		// шагов до границы 10 минут (граница — на последнем шаге)
-		uint16_t to10 = (600 - ((ST->minute % 10) * 60 + ST->second)) / 5;
-		uint16_t k = left < to10 ? (uint16_t)left : to10;
+		uint16_t to10 = 120 - ((ST->minute % 10) * 12 + ST->second / 5);   // то же без деления на 5
+		uint16_t k = left < to10 ? left : to10;
 		k = ufo_limit(k);                        // прибытие / взлёт — не раньше k-го шага
 		k = craft_limit(k);
 		if (k > 1) { clock_add((k - 1) * 5); ufo_advance(k - 1); craft_advance(k - 1); }

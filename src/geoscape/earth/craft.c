@@ -295,6 +295,12 @@ static uint16_t consumption(uint8_t type, uint16_t speed)
 	return cword(type, offsetof(r_crafts_t, refuel_item)) != RNONE ? 1 : speed / 100;
 }
 
+// Умножение 32x16 двумя 16x16 (32x32 __mullong дороже втрое); старшие биты за 2^32 отбрасываются
+static uint32_t mul32x16u(uint32_t a, uint16_t n)
+{
+	return (uint32_t)(uint16_t)a * n + ((uint32_t)(uint16_t)(a >> 16) * n << 16);
+}
+
 // Craft::getFuelLimit: floor(расход · расстояние / _speedMaxRadian) — топливо на путь до базы на
 // максимальной скорости; _speedMaxRadian — путь за 10 минут (скорость за шаг 5 с · 120, Craft.cpp:65),
 // расход — тоже за 10 минут
@@ -307,7 +313,9 @@ uint16_t craft_fuel_limit(uint8_t c) __banked
 	uint32_t sm = geo_speed(mx) * 120, d = geo_angle(&p, &b);
 	if (!sm) return 0;
 	uint16_t use = consumption(type, mx);
-	return (uint16_t)((uint32_t)use * (d / sm) + (uint32_t)use * ((d % sm) >> 8) / (sm >> 8));   // без переполнения
+	// без переполнения и с одним делением вместо двух: остаток — d − q · sm (умножение 32x16 дешевле)
+	uint32_t q = d / sm, r = d - mul32x16u(sm, (uint16_t)q);
+	return (uint16_t)((uint32_t)use * q + (uint32_t)use * (r >> 8) / (sm >> 8));
 }
 
 // time10Minutes: расход топлива, возврат при нехватке; патруль ищет базы пришельцев
