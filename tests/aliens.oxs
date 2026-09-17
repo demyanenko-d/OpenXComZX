@@ -3,7 +3,7 @@
 # 5 с); место миссии (порт) -> MissionDetected -> «центр» -> нажатие по метке ->
 # TargetInfo. Порядок окон детерминирован (под сценарием зерно ГСЧ постоянное,
 # newgame.c); сменится логика — поправить.
-# Журнал миссий и НЛО — строки «alien:» / «ufo:» консоли. src/game/alien.c, ufo.c.
+# Журнал миссий и НЛО — строки «alien:» / «ufo:» консоли. src/geoscape/earth/alien.c, ufo.c.
 # Запуск: powershell -File tools\run.ps1 -Script tests\aliens.oxs -Headless
 
 waitmark 1 600

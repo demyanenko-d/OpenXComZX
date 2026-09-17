@@ -7,7 +7,7 @@
 //
 // Эти значения повторяются в ассемблере и сборке — при смене править вместе:
 //   tools/build.ps1 ($KERNEL_PAGE, $DATA_PAGE, $RES_PAGE, $RES_LAST, таблица $banks),
-//   src/kernel/win0/crt0.s, far.s, pages.s, text.s, src/ui/globe.s, globe_sh_s.s (равенства *_PAGE).
+//   src/kernel/win0/crt0.s, far.s, pages.s, text.s, src/geoscape/earth/globe.s, globe_sh_s.s (равенства *_PAGE).
 // Подробности — project_docs/08_ui_port_plan.md §4.
 #ifndef MAP_H
 #define MAP_H

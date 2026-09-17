@@ -1,6 +1,6 @@
 // Банк 21: окна полёта кораблей (InterceptState, GeoscapeCraftState, TargetInfoState,
 // ConfirmDestinationState, CraftPatrolState, LowFuelState, CraftErrorState,
-// MultipleTargetsState). Логика полёта — src/game/craft.c. Выбор цели на глобусе
+// MultipleTargetsState). Логика полёта — src/geoscape/earth/craft.c. Выбор цели на глобусе
 // (SelectDestinationState) — в scr_geo.c: он знает проекцию глобуса.
 //
 // Цель — ctx.tkind (TGT_* = DK_*) и ctx.tidx; корабль — ctx.craft. Стек окон как в

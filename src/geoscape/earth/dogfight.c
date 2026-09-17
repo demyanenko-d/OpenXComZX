@@ -1,7 +1,7 @@
 // Банк 22: логика воздушного (подводного) боя — DogfightState::update / think и
 // GeoscapeState::handleDogfights / startDogfight OpenXcom (REF/OpenXcom/src/Geoscape/
 // DogfightState.cpp, GeoscapeState.cpp, Savegame/CraftWeaponProjectile.cpp). 14_todo §3.5.
-// Окна и рисование — src/ui/scr_dogf.c (банк 23), данные — dogfight.h (Win1).
+// Окна и рисование — src/geoscape/earth/scr_dogf.c (банк 23), данные — dogfight.h (Win1).
 //
 // До DF_MAX боёв. Развёрнутые — окна экрана SCR_DOGFIGHT (время стоит, пока развёрнут
 // хоть один), свёрнутые — значки на глобусе (время идёт, бой лишь следит за условиями

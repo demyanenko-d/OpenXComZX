@@ -1,7 +1,7 @@
 // Банк 5: база (BasescapeState, BaseInfoState, StoresState, MonthlyCostsState,
 // BuildFacilitiesState, PlaceFacilityState, DismantleFacilityState, CraftsState,
 // SoldiersState, SoldierInfoState, SackSoldierState) + своё окно имени сохранения.
-// Раскладки — tmp/screens_basescape.json; логика — src/game/econ.c.
+// Раскладки — tmp/screens_basescape.json; логика — src/geoscape/base/econ.c.
 // Состояние (ST) подключено в Win3 на время вызовов (диспетчер screens.c).
 #include <stdint.h>
 #include <stddef.h>

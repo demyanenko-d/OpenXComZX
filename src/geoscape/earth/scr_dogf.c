@@ -1,6 +1,6 @@
 // Банк 23: окна воздушного (подводного) боя — DogfightState (рисование, кнопки) и
 // DogfightErrorState OpenXcom (REF/OpenXcom/src/Geoscape/DogfightState.cpp,
-// DogfightErrorState.cpp); логика — src/game/dogfight.c (банк 22), данные — dogfight.h.
+// DogfightErrorState.cpp); логика — src/geoscape/earth/dogfight.c (банк 22), данные — dogfight.h.
 //
 // SCR_DOGFIGHT — окна 160x96 всех развёрнутых боёв поверх геоскейпа и область значков
 // свёрнутых (их рисует глобус). Окно рисует себя само (W_CUSTOM на всё окно): картинка

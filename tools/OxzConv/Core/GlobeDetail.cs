@@ -1,7 +1,7 @@
 // Детали глобуса (ресурс GLOBEDET, RULES.PAK) — Globe::drawDetail OpenXcom (REF/OpenXcom/src/Geoscape/
 // Globe.cpp): линии рек и границ (globe.polylines, зум >= 1), подписи стран (countries.labelLon/Lat,
 // зум >= 2), города — значок GlobeMarkers 8 и подпись (точечные области missionZones с именем,
-// RuleRegion::getCities, зум >= 3). Движок — src/ui/globe.s detail (отсев групп и проекция) и
+// RuleRegion::getCities, зум >= 3). Движок — src/geoscape/earth/globe.s detail (отсев групп и проекция) и
 // globe_det.c (вывод); project_docs/globe.md §12.12.
 //
 // Группы: движок проецирует только центры групп, отсевает их как ячейки карты (_gl_cull: сзади —

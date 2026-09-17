@@ -23,32 +23,32 @@ $c_common   = @()   # Win0 — только ассемблер (14_todo.md §1.3
 # Банки кода (Win2): номер -> физическая страница и файлы C.
 # Страницы: резидентные #30-#3F, оверлей #40-#4F (08 §4.2, §4.3a).
 $banks = @(
-    @{ n = 1; page = 0x30; files = @('ui\ui', 'ui\screens') }   # ядро интерфейса + диспетчер экранов
-    @{ n = 2; page = 0x31; files = @('ui\scr_menu', 'ui\names', 'ui\scr_end', 'ui\globe_ui', 'ui\globe_ui_tab') }   # меню; имена объектов для всех окон; концовки; точки глобуса
-    @{ n = 3; page = 0x32; files = @('ui\scr_geo') }
-    @{ n = 4; page = 0x33; files = @('ui\scr_geo2', 'ui\scr_graph') }
-    @{ n = 5; page = 0x34; files = @('ui\scr_base') }
-    @{ n = 6; page = 0x35; files = @('ui\scr_base2') }
-    @{ n = 7; page = 0x36; files = @('game\save', 'game\newgame', 'game\econ', 'kernel\bios') }   # bios — только для save.c
-    @{ n = 8; page = 0x37; files = @('game\gtime', 'game\lab') }
-    @{ n = 9; page = 0x38; files = @('ui\scr_lab') }
-    @{ n = 10; page = 0x39; files = @('ui\scr_craft') }
+    @{ n = 1; page = 0x30; files = @('common\ui', 'common\screens') }   # ядро интерфейса + диспетчер экранов
+    @{ n = 2; page = 0x31; files = @('common\scr_menu', 'common\names', 'geoscape\scr_end', 'geoscape\earth\globe_ui', 'geoscape\earth\globe_ui_tab') }   # меню; имена объектов для всех окон; концовки; точки глобуса
+    @{ n = 3; page = 0x32; files = @('geoscape\earth\scr_geo') }
+    @{ n = 4; page = 0x33; files = @('geoscape\earth\scr_geo2', 'geoscape\earth\scr_graph') }
+    @{ n = 5; page = 0x34; files = @('geoscape\base\scr_base') }
+    @{ n = 6; page = 0x35; files = @('geoscape\base\scr_base2') }
+    @{ n = 7; page = 0x36; files = @('geoscape\save', 'geoscape\newgame', 'geoscape\base\econ', 'kernel\bios') }   # bios — только для save.c
+    @{ n = 8; page = 0x37; files = @('geoscape\gtime', 'geoscape\base\lab') }
+    @{ n = 9; page = 0x38; files = @('geoscape\base\scr_lab') }
+    @{ n = 10; page = 0x39; files = @('geoscape\base\scr_craft') }
     @{ n = 11; page = 0x3A; files = @('kernel\gfx', 'kernel\cursor', 'kernel\boot'); ram = 0xBF00 }   # графика, опрос ввода, запуск; с #BF00 — фон под всплывающими окнами (gfx.c)
     @{ n = 12; page = 0x3B; files = @('kernel\fat', 'kernel\sdres') }
-    @{ n = 13; page = 0x3C; files = @('ui\scr_ufop') }
+    @{ n = 13; page = 0x3C; files = @('common\scr_ufop') }
     @{ n = 14; page = 0x3E; files = @('test\bank_a') }
     @{ n = 15; page = 0x3F; files = @('test\bank_b') }
-    @{ n = 16; page = 0x3D; files = @('game\month') }   # конец месяца
-    @{ n = 17; page = 0x40; files = @('game\world', 'game\geo') }   # ГСЧ, регионы, сфера, маска суши
-    @{ n = 18; page = 0x41; files = @('game\alien') }   # стратегия и миссии пришельцев
-    @{ n = 19; page = 0x42; files = @('game\ufo') }     # НЛО, обнаружение, места миссий, базы пришельцев
-    @{ n = 20; page = 0x43; files = @('game\craft') }   # полёты кораблей X-COM
-    @{ n = 21; page = 0x44; files = @('ui\scr_fly') }   # окна полёта: перехват, корабль, цель
-    @{ n = 22; page = 0x45; files = @('game\dogfight') }   # воздушный бой: логика
-    @{ n = 23; page = 0x46; files = @('ui\scr_dogf') }     # воздушный бой: окна
-    @{ n = 24; page = 0x47; files = @('ui\globe', 'ui\globe_s', 'ui\globe_tab', 'ui\globe_sq'); tab = 0xBC00 }   # глобус (globe.md): globe_s.s — асм, globe_sq.s — таблица _GTAB с #BC00
-    @{ n = 25; page = 0x48; files = @('ui\globe_sh', 'ui\globe_sh_s', 'ui\globe_view', 'ui\globe_sh_tab'); ram = 0xB800 }   # глобус, банк 25 — ассемблер: тень (globe_sh.s — кадр, globe_sh_s.s — блоки и строки, globe_sh_tab.s — таблицы), предрасчитанные виды (globe_view.s); с #B800 — рабочие таблицы тени
-    @{ n = 26; page = 0x49; files = @('ui\globe_det', 'ui\globe_det_s'); ram = 0xA800 }   # детали глобуса: линии, подписи, города (globe_det.c; точки и отрезки — globe_det_s.s); с #A800 — рабочая память
+    @{ n = 16; page = 0x3D; files = @('geoscape\month') }   # конец месяца
+    @{ n = 17; page = 0x40; files = @('geoscape\earth\world', 'geoscape\earth\geo') }   # ГСЧ, регионы, сфера, маска суши
+    @{ n = 18; page = 0x41; files = @('geoscape\earth\alien') }   # стратегия и миссии пришельцев
+    @{ n = 19; page = 0x42; files = @('geoscape\earth\ufo') }     # НЛО, обнаружение, места миссий, базы пришельцев
+    @{ n = 20; page = 0x43; files = @('geoscape\earth\craft') }   # полёты кораблей X-COM
+    @{ n = 21; page = 0x44; files = @('geoscape\earth\scr_fly') }   # окна полёта: перехват, корабль, цель
+    @{ n = 22; page = 0x45; files = @('geoscape\earth\dogfight') }   # воздушный бой: логика
+    @{ n = 23; page = 0x46; files = @('geoscape\earth\scr_dogf') }     # воздушный бой: окна
+    @{ n = 24; page = 0x47; files = @('geoscape\earth\globe', 'geoscape\earth\globe_s', 'geoscape\earth\globe_tab', 'geoscape\earth\globe_sq'); tab = 0xBC00 }   # глобус (globe.md): globe_s.s — асм, globe_sq.s — таблица _GTAB с #BC00
+    @{ n = 25; page = 0x48; files = @('geoscape\earth\globe_sh', 'geoscape\earth\globe_sh_s', 'geoscape\earth\globe_view', 'geoscape\earth\globe_sh_tab'); ram = 0xB800 }   # глобус, банк 25 — ассемблер: тень (globe_sh.s — кадр, globe_sh_s.s — блоки и строки, globe_sh_tab.s — таблицы), предрасчитанные виды (globe_view.s); с #B800 — рабочие таблицы тени
+    @{ n = 26; page = 0x49; files = @('geoscape\earth\globe_det', 'geoscape\earth\globe_det_s'); ram = 0xA800 }   # детали глобуса: линии, подписи, города (globe_det.c; точки и отрезки — globe_det_s.s); с #A800 — рабочая память
 )
 
 # Пакеты данных игры: выход конвертера OxzConv (tmp\sd\OXZ\<игра>), вшиваются в SPG.
@@ -96,7 +96,7 @@ Invoke-Tool $conv @('headers', $gen)
 
 # --debug: отладочные записи (.adb -> oxz.cdb) с адресами и статических функций —
 # для меток отладчика и профилировщика эмулятора (tools/mklabels.js); код не меняется.
-$cflags = @('-mz80', '--sdcccall', '1', '--opt-code-size', '--std-sdcc11', '--debug', '-I', (Join-Path $src 'inc'), '-I', (Join-Path $src 'ui'), '-I', (Join-Path $src 'game'), '-I', $gen)
+$cflags = @('-mz80', '--sdcccall', '1', '--opt-code-size', '--std-sdcc11', '--debug', '-I', (Join-Path $src 'inc'), '-I', (Join-Path $src 'common'), '-I', $gen)
 $rels = @()
 $utf8 = New-Object System.Text.UTF8Encoding $false
 

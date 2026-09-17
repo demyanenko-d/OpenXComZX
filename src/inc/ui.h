@@ -122,7 +122,7 @@ extern char ui_msg[128];
 #define UI_EDIT_MAX 32
 extern char ui_edit[UI_EDIT_MAX];
 
-// --- диспетчер экранов (общий код, src/ui/screens.c): по номеру экрана — в банк
+// --- диспетчер экранов (общий код, src/common/screens.c): по номеру экрана — в банк
 uint8_t scr_get(uint8_t id, sdef_t *s, wdef_t *w);                // описание -> Win1; 0 — нет экрана
 void scr_text(uint8_t id, uint8_t slot, uint8_t row, char *buf);   // динамический текст/строка списка (buf >= 256)
 uint8_t scr_rows(uint8_t id, uint8_t slot);                        // число строк списка

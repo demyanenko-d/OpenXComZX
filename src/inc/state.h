@@ -156,7 +156,7 @@ typedef struct { uint8_t base, topic; uint16_t assigned, spent, cost; } research
 #define PF_SELL     0x02
 typedef struct { uint8_t base, manuf; uint16_t engineers; uint32_t spent; uint16_t amount; uint8_t flags; } prod_t;
 
-// --- пришельцы (src/game/alien.c, ufo.c; 14_todo §3.6–3.9)
+// --- пришельцы (src/geoscape/earth/alien.c, ufo.c; 14_todo §3.6–3.9)
 #define US_FLYING    0
 #define US_LANDED    1
 #define US_CRASHED   2

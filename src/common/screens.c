@@ -24,7 +24,7 @@ gevent_t arrivals[GEV_MAX];
 uint8_t narr;
 combo_t combo;
 
-// craft_name, ufo_name, fmt_funds — src/ui/names.c (банк 2).
+// craft_name, ufo_name, fmt_funds — src/common/names.c (банк 2).
 
 // На время любого вызова экрана в Win3 подключено ядро состояния кампании
 // (STATE_PAGE, state.h: указатель ST); прежняя страница восстанавливается.

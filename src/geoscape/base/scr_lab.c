@@ -1,7 +1,7 @@
 // Банк 9: исследования и производство (ResearchState, NewResearchListState,
 // ResearchInfoState, ManufactureState, NewManufactureListState,
 // ManufactureStartState, ManufactureInfoState). Раскладки — tmp/screens_basescape.json,
-// логика — src/game/lab.c. База — ctx.base.
+// логика — src/geoscape/base/lab.c. База — ctx.base.
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>

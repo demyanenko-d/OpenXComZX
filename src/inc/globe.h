@@ -1,4 +1,4 @@
-// Глобус (банк 24, src/ui/globe.c; точки и клики — банк 2, globe_ui.c; план —
+// Глобус (банк 24, src/geoscape/earth/globe.c; точки и клики — банк 2, globe_ui.c; план —
 // project_docs/globe.md, метод М4). Окно
 // 256x200 в (0, 0), центр (128, 100); вид — ctx.globe_lon/lat и ST->zoom (0..5).
 // Рисует в задний буфер (строки экрана 280..479) и копирует на экран; перерисовка —
@@ -30,7 +30,7 @@ void globe_invalidate(void) __banked;
 // Globe::getSunDirection без сезонов — λs = 90° − 360° · ((час + 18) % 24 … ) / сутки.
 // «Эпоха» (λs >> 7, 0.7°) сменилась — глобус перерисовывается (тень). Банк 25.
 uint16_t globe_sunlon(void) __banked;
-// Тень кадра (банк 25, src/ui/globe_sh.c): уровни по строкам -> подкладка суши L (x 0..255)
+// Тень кадра (банк 25, src/geoscape/earth/globe_sh.c): уровни по строкам -> подкладка суши L (x 0..255)
 // и цвет океана O (x 256..511) строк заднего буфера; флаги строк с тенью (1 байт на строку) —
 // в возвращённой странице с GLOBE_SH_FLG (PG_NONE — страницы нет). Вызывает globe.c перед
 // проходом строк.
@@ -39,10 +39,10 @@ uint8_t globe_shadow(uint16_t lon, int16_t lat, uint8_t zoom, uint16_t sunlon, u
 
 // Пары диска [pl, pr] строк зума в записи строк (6 байт на строку) — таблицей банка 25
 void globe_rows_pl(uint8_t zoom, uint8_t *dst) __banked;
-// sin 16-битного угла (65536 = 360°) в Q14 (банк 2, src/ui/globe_ui.c)
+// sin 16-битного угла (65536 = 360°) в Q14 (банк 2, src/geoscape/earth/globe_ui.c)
 int16_t globe_sin(uint16_t a) __banked;
 
-// Предрасчитанные виды с карты (банк 25, src/ui/globe_view.c; globe.md §12.5): на зумах 0–2
+// Предрасчитанные виды с карты (банк 25, src/geoscape/earth/globe_view.c; globe.md §12.5): на зумах 0–2
 // вид берётся из GVIEW.PAK готовыми отрезками строк, геометрии в кадре нет.
 uint8_t gview_open(uint8_t ep) __banked;                                        // 1 — предрасчёт есть
 uint8_t gview_pick(uint8_t z, uint16_t *lon, int16_t *lat, uint16_t *iv) __banked;   // вид сетки

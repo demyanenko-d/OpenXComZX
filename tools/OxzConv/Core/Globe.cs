@@ -1,5 +1,5 @@
 // Геометрия глобуса (ресурс GLOBE, GEO.PAK) из GEODATA/WORLD.DAT — для рендера глобуса
-// движком (src/ui/globe.c, globe_s.s; план — project_docs/globe.md §5.4 М4б).
+// движком (src/geoscape/earth/globe.c, globe_s.s; план — project_docs/globe.md §5.4 М4б).
 //
 // Многоугольники WORLD.DAT перекрываются (TFTD — ~5% точек сферы в двух и более, OpenXcom
 // рисует их по порядку, поздний сверху) и стыкуются с T-стыками (вершина одного на ребре

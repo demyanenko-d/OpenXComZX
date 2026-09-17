@@ -1,7 +1,7 @@
-// Таблицы глобуса: src/ui/globe_tab.h (банк 24, рендер) — обратные величины 65536/dy
-// (dy 2..511) для шага рёбер; src/ui/globe_ui_tab.h (банк 2, точки и клики, углы вида) —
+// Таблицы глобуса: src/geoscape/earth/globe_tab.h (банк 24, рендер) — обратные величины 65536/dy
+// (dy 2..511) для шага рёбер; src/geoscape/earth/globe_ui_tab.h (банк 2, точки и клики, углы вида) —
 // синус четверти круга Q14 (1025 значений, шаг 16 единиц 16-битного угла = 0.088°) и
-// арктангенс atan(i/256) в единицах угла (65536 = 360°, 257 значений); src/ui/globe_sq.s —
+// арктангенс atan(i/256) в единицах угла (65536 = 360°, 257 значений); src/geoscape/earth/globe_sq.s —
 // четверти квадратов для умножения 8x8 (область _GTAB банка 24).
 // Запуск: node tools\gen_globe_tab.js
 'use strict';
@@ -27,10 +27,10 @@ for (let i = 0; i <= 256; i++) sqz.push(Math.round(Math.sqrt(1 - i / 256) * 1638
 for (let k = 0; k <= 36; k++) sin5.push(Math.round(Math.sin((5 * k - 90) * Math.PI / 180) * 16384));
 for (let k = 0; k <= 18; k++) { cos5k.push(Math.round(Math.cos(5 * k * Math.PI / 180) * 16384)); sin5k.push(Math.round(Math.sin(5 * k * Math.PI / 180) * 16384)); }
 
-// Таблицы рендера — ассемблером (src/ui/globe_tab.s, банк 24: кадр глобуса переведён с C)
+// Таблицы рендера — ассемблером (src/geoscape/earth/globe_tab.s, банк 24: кадр глобуса переведён с C)
 {
 	const dw = (arr, per) => { const o = []; for (let i = 0; i < arr.length; i += per) o.push('\t.dw\t' + arr.slice(i, i + per).map(v => v & 0xFFFF).join(', ')); return o.join('\n'); };
-	fs.writeFileSync(path.join(__dirname, '..', 'src', 'ui', 'globe_tab.s'), [
+	fs.writeFileSync(path.join(__dirname, '..', 'src', 'geoscape', 'earth', 'globe_tab.s'), [
 		';; Сгенерировано tools/gen_globe_tab.js — не править вручную.',
 		';; Таблицы рендера глобуса (банк 24, globe.s и globe_s.s).',
 		'',
@@ -53,10 +53,10 @@ for (let k = 0; k <= 18; k++) { cos5k.push(Math.round(Math.cos(5 * k * Math.PI /
 
 // (заголовок globe_tab.h больше не пишется: кадр глобуса на ассемблере, таблицы — globe_tab.s выше)
 
-// Таблицы точек и кликов — ассемблером (src/ui/globe_ui_tab.s, банк 2)
+// Таблицы точек и кликов — ассемблером (src/geoscape/earth/globe_ui_tab.s, банк 2)
 {
 	const dw = (arr, per) => { const o = []; for (let i = 0; i < arr.length; i += per) o.push('\t.dw\t' + arr.slice(i, i + per).join(', ')); return o.join('\n'); };
-	fs.writeFileSync(path.join(__dirname, '..', 'src', 'ui', 'globe_ui_tab.s'), [
+	fs.writeFileSync(path.join(__dirname, '..', 'src', 'geoscape', 'earth', 'globe_ui_tab.s'), [
 		';; Сгенерировано tools/gen_globe_tab.js — не править вручную.',
 		';; Таблицы точек и кликов глобуса (банк 2, globe_ui.s).',
 		'',
@@ -74,7 +74,7 @@ for (let k = 0; k <= 18; k++) { cos5k.push(Math.round(Math.cos(5 * k * Math.PI /
 
 // (заголовок globe_ui_tab.h больше не пишется: точки и клики на ассемблере, таблицы — globe_ui_tab.s выше)
 
-// Тень (src/ui/globe_sh.c, банк 25): по зумам 0..5 и строкам 0..199 — пары диска pl, pr (как
+// Тень (src/geoscape/earth/globe_sh.c, банк 25): по зумам 0..5 и строкам 0..199 — пары диска pl, pr (как
 // globe.c rows_init; строки нет — 255, 0); z центров блоков 8x4 (доли R x 255, вне диска — 0):
 // четверть — столбцы 0..15 (X = 8c − 124), строки блоков 0..24 (Y = 4b − 98), остальное зеркально
 const ZRAD = [90, 120, 180, 280, 450, 720];
@@ -115,7 +115,7 @@ const shShift = [];
 for (let y = 0; y < 200; y++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; shShift.push((seed >> 16) & 0xFE); }
 // (заголовок globe_sh_tab.h больше не пишется: тень на ассемблере, таблицы — globe_sh_tab.s ниже)
 
-// Те же таблицы тени — ассемблером (src/ui/globe_sh_tab.s, банк 25: тень переведена с C на
+// Те же таблицы тени — ассемблером (src/geoscape/earth/globe_sh_tab.s, банк 25: тень переведена с C на
 // ассемблер). Плюс уровень по 2t (globe_sh.s patterns): lut[2t + 128] — число порогов TB, для
 // которых 2t >= 2·TB (сравнение с удвоенным порогом: t — усечение, а не пол).
 {
@@ -123,7 +123,7 @@ for (let y = 0; y < 200; y++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff;
 	const shLut = [];
 	for (let i = 0; i < 256; i++) { const t2 = i - 128; let k = 0; while (k < 10 && t2 >= 2 * TB[k]) k++; shLut.push(k); }
 	const db = (arr, per) => { const o = []; for (let i = 0; i < arr.length; i += per) o.push('\t.db\t' + arr.slice(i, i + per).join(', ')); return o.join('\n'); };
-	fs.writeFileSync(path.join(__dirname, '..', 'src', 'ui', 'globe_sh_tab.s'), [
+	fs.writeFileSync(path.join(__dirname, '..', 'src', 'geoscape', 'earth', 'globe_sh_tab.s'), [
 		';; Сгенерировано tools/gen_globe_tab.js — не править вручную.',
 		';; Таблицы тени глобуса (банк 25, globe_sh.s и globe_sh_s.s).',
 		'',
@@ -162,5 +162,5 @@ const asm = [
 ];
 for (const tab of [lo, hi])
 	for (let i = 0; i < 512; i += 16) asm.push('\t.db\t' + tab.slice(i, i + 16).join(', '));
-fs.writeFileSync(path.join(__dirname, '..', 'src', 'ui', 'globe_sq.s'), asm.join('\n') + '\n');
+fs.writeFileSync(path.join(__dirname, '..', 'src', 'geoscape', 'earth', 'globe_sq.s'), asm.join('\n') + '\n');
 console.log('globe_tab.h: recip 512, cell tables; globe_ui_tab.h: sin 1025, atan 257; globe_sq.s: squares 512');

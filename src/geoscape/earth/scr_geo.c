@@ -296,7 +296,7 @@ static const wdef_t w_geo[] = {
 	CUS(0, 0, 256, 200, DYN(10), A_CUSTOM, 10),  // глобус: ui_dirty(10)
 };
 
-// Глобус — src/ui/globe.c (банк 24): настоящая проекция OpenXcom, вид — ctx.globe_lon/lat
+// Глобус — src/geoscape/earth/globe.c (банк 24): настоящая проекция OpenXcom, вид — ctx.globe_lon/lat
 // и ST->zoom.
 #define to_screen(p, x, y) globe_xy(p, x, y)
 #define from_screen(x, y, p) globe_lonlat(x, y, p)

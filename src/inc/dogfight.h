@@ -1,5 +1,5 @@
-// Воздушный (подводный) бой: общие данные логики (src/game/dogfight.c, банк 22) и
-// окон (src/ui/scr_dogf.c, банк 23). Бои — в Win1 (не сохраняются, как в OpenXcom).
+// Воздушный (подводный) бой: общие данные логики (src/geoscape/earth/dogfight.c, банк 22) и
+// окон (src/geoscape/earth/scr_dogf.c, банк 23). Бои — в Win1 (не сохраняются, как в OpenXcom).
 // Внешний интерфейс для геоскейпа и кораблей — game.h (df_*).
 #ifndef DOGFIGHT_H
 #define DOGFIGHT_H
