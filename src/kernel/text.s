@@ -146,6 +146,10 @@ ln_h:		.ds	1		; высота глифа шрифта строки
 ln_dah:		.ds	1		; DAH, DAX начала строки экрана
 ln_dax:		.ds	1
 ln_xmax:	.ds	2		; min(box_r, 320): глиф строки целиком левее — атлас
+ln_top:		.ds	2		; видимые строки глифов строки: max(y, box_y, 0) .. min(y + h, box_b, 200)
+ln_bot:		.ds	2
+ln_rows:	.ds	1		; сколько (0 — строка не видна)
+ln_skip2:	.ds	1		; 2 · (top − y): сдвиг источника в атласе (старший байт)
 dga_i:		.ds	1		; глиф: номер, чётность x, место в таблице, смещение данных, ширина места
 dga_p:		.ds	1
 dga_sp:		.ds	2
@@ -896,26 +900,55 @@ line_fast:
 	add	hl, de
 	ld	a, (hl)
 	ld	(ln_h), a
-	ld	hl, (tx_y)		; box_y <= y, 0 <= y
-	bit	7, h
-	ret	nz
+	ld	hl, (tx_y)		; top = max(y, box_y, 0)
+	ld	(ln_top), hl
 	ld	de, (box_y)
 	call	lt_s
-	ret	c
-	ld	hl, (tx_y)		; y + h <= box_b, <= 200
+	jr	nc, 11$
+	ld	(ln_top), de
+11$:	ld	hl, (ln_top)
+	bit	7, h
+	jr	z, 12$
+	ld	hl, #0
+	ld	(ln_top), hl
+12$:	ld	hl, (tx_y)		; bot = min(y + h, box_b, 200)
 	ld	a, (ln_h)
 	ld	e, a
 	ld	d, #0
 	add	hl, de
+	ld	(ln_bot), hl
 	ex	de, hl
-	push	de
 	ld	hl, (box_b)
 	call	lt_s
-	pop	de
-	ret	c
-	ld	hl, #SCREEN_H
+	jr	nc, 13$
+	ld	hl, (box_b)
+	ld	(ln_bot), hl
+13$:	ld	hl, #SCREEN_H
+	ld	de, (ln_bot)
 	call	lt_s
-	ret	c
+	jr	nc, 14$
+	ld	hl, #SCREEN_H
+	ld	(ln_bot), hl
+14$:	ld	hl, (ln_bot)		; строк = bot − top (не больше 0 — не видна)
+	ld	de, (ln_top)
+	or	a
+	sbc	hl, de
+	ld	a, l
+	bit	7, h
+	jr	nz, 15$
+	ld	a, h
+	or	a
+	ld	a, l
+	jr	z, 16$
+15$:	xor	a
+16$:	ld	(ln_rows), a
+	ld	hl, (ln_top)		; skip2 = 2 · (top − y)
+	ld	de, (tx_y)
+	or	a
+	sbc	hl, de
+	ld	a, l
+	add	a, a
+	ld	(ln_skip2), a
 	ld	hl, (tx_x)		; box_x <= x, 0 <= x
 	bit	7, h
 	ret	nz
@@ -932,7 +965,7 @@ line_fast:
 1$:	ld	(ln_xmax), hl
 	ld	a, #1
 	ld	(ln_fast), a
-	ld	a, (tx_y)		; начало строки экрана y: DAH = (y & 31) · 2, DAX = #10 + y >> 5
+	ld	a, (ln_top)		; первая видимая строка экрана: DAH = (y & 31) · 2, DAX = #10 + y >> 5
 	ld	b, a
 	and	a, #31
 	add	a, a
@@ -1103,6 +1136,9 @@ glyph_out:
 
 ;; Глиф dga_c через атлас ключа tk: место (нет — нарисовать), DMA BLT1 на экран
 dg_atlas:
+	ld	a, (ln_rows)		; строка не видна — ничего
+	or	a
+	ret	z
 	ld	a, (dga_c)
 	cp	#0x80			; номер глифа (как glyph_entry)
 	jr	c, 1$
@@ -1180,7 +1216,8 @@ dg_atlas:
 	ld	b, #0x1A
 	out	(c), e			; SAL
 	inc	b
-	ld	a, d
+	ld	a, (ln_skip2)		; первая видимая строка глифа
+	add	a, d
 	and	#0x3F
 	out	(c), a			; SAH
 	inc	b
@@ -1196,9 +1233,9 @@ dg_atlas:
 	ld	a, (ln_dax)
 	out	(c), a			; DAX
 	ld	b, #0x28
-	ld	a, (ln_h)
+	ld	a, (ln_rows)
 	dec	a
-	out	(c), a			; DMANum — строк − 1
+	out	(c), a			; DMANum — видимых строк − 1
 	ld	b, #0x27
 	ld	a, #0xB9		; BLT1 | S_ALGN | D_ALGN | ASZ — пуск
 	out	(c), a
