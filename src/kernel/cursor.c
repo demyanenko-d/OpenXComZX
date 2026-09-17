@@ -1,17 +1,15 @@
-// Ввод, опрос (банк 11): мышь Kempston с абсолютным курсором — спрайт TSU 0,
-// события для интерфейса. Защёлки нажатий ведёт кадровое прерывание (input.c, Win0).
+// Ввод, опрос (банк 11): события для интерфейса. Курсор — аппаратный спрайт TSU 0, и мышь, и
+// положение спрайта ведёт кадровое прерывание (src/kernel/win0/input.s): из главного цикла курсор
+// залипал на кадре глобуса и блитах. Здесь остались только картинка курсора и разбор нажатий.
 #include <stdint.h>
 #include "tsconf.h"
 #include "memmap.h"
 #include "pages.h"
 #include "input.h"
 
-int16_t cursor_x = 160, cursor_y = 100;
-uint8_t cursor_off;                      // 1 — курсор скрыт (заставки: Cursor::setVisible(false))
-uint8_t mouse_buttons;                   // бит 0 L, 1 R (1 — нажата)
-static uint8_t mouse_px, mouse_py;
-
 extern uint8_t in_prev_btn;
+extern uint8_t cur_lock;                 // 1 — S-file занят: прерывание не трогает спрайт курсора
+void cursor_sync(void);                  // input.s: запомнить показания мыши, не двигая курсор
 extern volatile uint8_t in_btn_latch, in_key_latch, in_key_rep, in_key_reps, in_prev_keys;
 uint8_t in_reps;                     // нажатий за один опрос (поворот глобуса делает столько шагов)
 
@@ -45,21 +43,10 @@ void cursor_color(uint8_t color) __banked
 	pg_map3(old);
 }
 
-static void cursor_update(void)
-{
-	uint8_t old = pg_win3();
-	pg_map3(SCRATCH_PAGE);
-	TS_FMADDR = FMADDR_EN | 0x0C;
-	sfile_write(0, ((uint16_t)cursor_y & 0x1FF) | (1 << 9) | (cursor_off ? 0 : 1 << 13) | (1 << 14));
-	sfile_write(1, ((uint16_t)cursor_x & 0x1FF) | (1 << 9));
-	sfile_write(2, (uint16_t)15 << 12);
-	TS_FMADDR = 0;
-	pg_map3(old);
-}
-
 void input_init(void) __banked
 {
 	uint8_t old = pg_win3();
+	cur_lock = 1;                      // весь список спрайтов — под запрет прерыванию курсора
 	pg_map3(SCRATCH_PAGE);
 	TS_FMADDR = FMADDR_EN | 0x0C;
 	for (uint16_t i = 0; i < 256; i++) sfile_write((uint8_t)i, 0);
@@ -68,25 +55,14 @@ void input_init(void) __banked
 	TS_SGPAGE = TSU_PAGE;
 	cursor_color(0x0C);
 	TS_TSCONFIG = TSCONF_S_EN;
-	mouse_px = KMOUSE_X;
-	mouse_py = KMOUSE_Y;
+	cursor_sync();                     // показания мыши — без скачка курсора на первом кадре
 	in_prev_btn = ~KMOUSE_BTN & 3;
-	cursor_update();
+	cur_lock = 0;                      // дальше спрайт ведёт прерывание
 }
 
 uint8_t input_poll(event_t *e) __banked
 {
-	uint8_t x = KMOUSE_X, y = KMOUSE_Y;
-	cursor_x += (int8_t)(x - mouse_px);
-	cursor_y -= (int8_t)(y - mouse_py);
-	mouse_px = x; mouse_py = y;
-	if (cursor_x < 0) cursor_x = 0;
-	if (cursor_x > SCREEN_W - 1) cursor_x = SCREEN_W - 1;
-	if (cursor_y < 0) cursor_y = 0;
-	if (cursor_y > SCREEN_H - 1) cursor_y = SCREEN_H - 1;
-	cursor_update();
-
-	uint8_t pressed, k = 0;
+	uint8_t pressed, k = 0;             // мышь и спрайт курсора — в прерывании (input.s)
 	__asm__("di");
 	in_reps = 0;                       // по одному событию за вызов
 	pressed = in_btn_latch;

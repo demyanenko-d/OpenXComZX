@@ -47,6 +47,7 @@
 	.globl	_get_bank
 	.globl	_set_bank
 	.globl	_far_read
+	.globl	win3_real
 
 PAGE2_PORT	= 0x12AF
 PAGE3_PORT	= 0x13AF
@@ -2008,6 +2009,7 @@ _str_copy::
 	call	_pg_win3
 	ld	(sc_old), a
 	ld	a, (sc_pg)
+	ld	(win3_real), a			; фактическая страница Win3 — для прерывания курсора
 	ld	bc, #PAGE3_PORT
 	out	(c), a
 	pop	hl
@@ -2035,6 +2037,7 @@ sc_loop:
 	ld	a, (sc_pg)
 	inc	a
 	ld	(sc_pg), a
+	ld	(win3_real), a
 	push	bc
 	ld	bc, #PAGE3_PORT
 	out	(c), a
@@ -2044,6 +2047,7 @@ sc_end:
 	xor	a
 	ld	(de), a
 	ld	a, (sc_old)
+	ld	(win3_real), a
 	ld	bc, #PAGE3_PORT
 	out	(c), a
 	ret

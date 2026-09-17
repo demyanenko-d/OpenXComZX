@@ -8,12 +8,38 @@
 
 	.module input
 	.globl	input_isr
+	.globl	win3_real
+	.globl	_cursor_x
+	.globl	_cursor_y
+	.globl	_cursor_off
+	.globl	_mouse_buttons
+	.globl	_cursor_sync
+	.globl	_cur_lock
 	.globl	_in_prev_btn
 	.globl	_in_prev_keys
 	.globl	_in_btn_latch
 	.globl	_in_key_latch
 	.globl	_in_key_rep
 	.globl	_in_key_reps
+
+;; Курсор мыши — аппаратный спрайт TSU 0, и позиция ему ставится здесь же, в кадровом
+;; прерывании: главный цикл занят кадром глобуса или блитами по несколько кадров, и курсор
+;; при обновлении из цикла залипал. Список спрайтов — один спрайт, дальше в S-file нули
+;; (конец списка), поэтому ни шина, ни TSU от этого не нагружены. Запись в S-file идёт через
+;; окно FMAddr и попадает ещё и в ОЗУ под окном, поэтому в Win3 на это время подставляется
+;; SCRATCH_PAGE, а потом возвращается страница вызывающего (теневая win3_page — она
+;; поддерживается в согласии с портом во всех местах, где Win3 переключают напрямую).
+MOUSE_X		= 0xFBDF		; Kempston: абсолютные счётчики, y растёт вверх
+MOUSE_Y		= 0xFFDF
+FMADDR_PORT	= 0x15AF
+FMADDR_C000	= 0x1C			; FM_EN | A[15:12] = #C — окно 4 КБ на #C000
+SFILE_W0	= 0xC200		; спрайт 0: три слова
+SFILE_W1	= 0xC202
+SFILE_W2	= 0xC204
+SCRATCH_PAGE	= 0x0F
+PAGE3_PORT	= 0x13AF
+SCREEN_W	= 320
+SCREEN_H	= 200
 
 KEY_ESC		= 27
 KEY_ENTER	= 13
@@ -33,6 +59,14 @@ _in_key_reps::	.ds	1		; накоплено нажатий до опроса (з�
 rk_cs:		.ds	1
 rk_ss:		.ds	1
 in_rep:		.ds	1		; кадров до автоповтора удерживаемой клавиши
+_cursor_x::	.dw	160		; курсор экрана (сценарии ставят напрямую: pokew _cursor_x)
+_cursor_y::	.dw	100
+_cursor_off::	.ds	1		; 1 — курсор скрыт (заставки)
+_mouse_buttons::	.ds	1	; кнопки сейчас: бит 0 L, 1 R
+_cur_lock::	.ds	1		; 1 — S-file занят основным кодом (input_init): спрайт не трогать
+mo_px:		.ds	1		; показания мыши прошлого кадра
+mo_py:		.ds	1
+cur_pg:		.ds	1		; страница Win3 вызывающего на время записи S-file
 
 	.area	_CODE
 
@@ -122,8 +156,126 @@ rk_found:
 	sub	#32
 	ret
 
+;; void cursor_sync(void) — запомнить показания мыши, не двигая курсор (input_init)
+_cursor_sync::
+	ld	bc, #MOUSE_X
+	in	a, (c)
+	ld	(mo_px), a
+	ld	bc, #MOUSE_Y
+	in	a, (c)
+	ld	(mo_py), a
+	ret
+
+;; cursor_x += A (знаковое), клип 0..SCREEN_W-1
+cur_addx:
+	ld	hl, #_cursor_x
+	ld	de, #SCREEN_W - 1
+	jr	cur_add
+
+;; cursor_y += A, клип 0..SCREEN_H-1
+cur_addy:
+	ld	hl, #_cursor_y
+	ld	de, #SCREEN_H - 1
+;; HL — адрес координаты, DE — предел, A — сдвиг со знаком
+cur_add:
+	or	a, a
+	ret	z
+	ld	c, a				; BC — сдвиг с расширением знака
+	ld	b, #0
+	bit	7, a
+	jr	z, 1$
+	ld	b, #0xFF
+1$:	push	hl
+	ld	a, (hl)
+	inc	hl
+	ld	h, (hl)
+	ld	l, a
+	add	hl, bc
+	bit	7, h				; ушёл влево/вверх
+	jr	z, 2$
+	ld	hl, #0
+	jr	4$
+2$:	ld	a, h				; HL > DE — прижать к пределу
+	cp	a, d
+	jr	c, 4$
+	jr	nz, 3$
+	ld	a, l
+	cp	a, e
+	jr	c, 4$
+3$:	ld	h, d
+	ld	l, e
+4$:	pop	de
+	ex	de, hl
+	ld	(hl), e
+	inc	hl
+	ld	(hl), d
+	ret
+
+;; Спрайт 0 в S-file: Y | видимость, X, палитра 15 (дальше в списке нули — конец).
+;; Страницу Win3 подменяем через фактическую теневую (win3_real), а не pg_map3: логическую
+;; страницу (pg_win3) вызывающие используют для сохранения и восстановления — её трогать нельзя
+cur_spr:
+	ld	a, (win3_real)
+	ld	(cur_pg), a
+	ld	a, #SCRATCH_PAGE
+	ld	(win3_real), a
+	ld	bc, #PAGE3_PORT
+	out	(c), a
+	ld	bc, #FMADDR_PORT
+	ld	a, #FMADDR_C000
+	out	(c), a
+	ld	hl, (_cursor_y)
+	ld	a, h
+	and	#1				; y & #1FF, биты 9 и 14
+	or	a, #0x42
+	ld	h, a
+	ld	a, (_cursor_off)
+	or	a, a
+	jr	nz, 1$
+	set	5, h				; бит 13 — спрайт виден
+1$:	ld	(SFILE_W0), hl
+	ld	hl, (_cursor_x)
+	ld	a, h
+	and	#1
+	or	a, #0x02			; бит 9
+	ld	h, a
+	ld	(SFILE_W1), hl
+	ld	hl, #0xF000			; палитра 15 (CRAM #F0..#FF)
+	ld	(SFILE_W2), hl
+	ld	bc, #FMADDR_PORT
+	xor	a, a
+	out	(c), a
+	ld	a, (cur_pg)
+	ld	(win3_real), a
+	ld	bc, #PAGE3_PORT
+	out	(c), a
+	ret
+
+;; Курсор: сдвиг по показаниям мыши и спрайт на новое место
+cur_isr:
+	ld	a, (_cur_lock)
+	or	a, a
+	ret	nz
+	ld	bc, #MOUSE_X
+	in	a, (c)
+	ld	e, a
+	ld	hl, #mo_px
+	sub	a, (hl)
+	ld	(hl), e
+	call	cur_addx
+	ld	bc, #MOUSE_Y
+	in	a, (c)
+	ld	e, a
+	ld	hl, #mo_py
+	ld	a, (hl)
+	sub	a, e				; y растёт вверх — сдвиг вниз
+	ld	(hl), e
+	call	cur_addy
+	jr	cur_spr
+
 ;; Из кадрового прерывания (crt0.s)
 input_isr:
+	call	cur_isr
 	ld	bc, #0xFADF		; кнопки Kempston, активны нулём
 	in	a, (c)
 	cpl

@@ -15,6 +15,7 @@
 	.globl	_far_copy
 	.globl	_near_phys
 	.globl	_pg_win3
+	.globl	win3_real
 
 PAGE3_PORT	= 0x13AF
 KERNEL_PAGE	= 0x04
@@ -54,6 +55,7 @@ far_setup:
 ;; BC = n = min(f_len, #10000 - HL), f_len -= n. HL сохраняется.
 f_chunk:
 	ld	a, (f_pg)
+	ld	(win3_real), a			; фактическая страница Win3 — для прерывания курсора
 	ld	bc, #PAGE3_PORT
 	out	(c), a
 	ld	bc, (f_len)
@@ -91,6 +93,7 @@ f_next:
 ;; Вернуть в Win3 страницу из теневого регистра и выйти (IY — адрес возврата)
 f_exit:
 	call	_pg_win3
+	ld	(win3_real), a
 	ld	bc, #PAGE3_PORT
 	out	(c), a
 	jp	(iy)
@@ -164,10 +167,12 @@ ff_loop:
 _far_byte::
 	call	far_setup
 	ld	a, (f_pg)
+	ld	(win3_real), a
 	ld	bc, #PAGE3_PORT
 	out	(c), a
 	ld	e, (hl)
 	call	_pg_win3
+	ld	(win3_real), a
 	out	(c), a
 	ld	a, e
 	ret

@@ -238,18 +238,21 @@ rs_old:	.ds	1
 
 ;; Win3 = A (прежняя — в rs_old), вернуть прежнюю. Теневой регистр не меняется.
 	.globl	_pg_win3
+	.globl	win3_real
 map3:
 	push	bc
 	push	af
 	call	_pg_win3
 	ld	(rs_old), a
 	pop	af
+	ld	(win3_real), a			; фактическая страница Win3 — для прерывания курсора
 	ld	bc, #PAGE3_PORT
 	out	(c), a
 	pop	bc
 	ret
 unmap3:
 	ld	a, (rs_old)
+	ld	(win3_real), a
 	ld	bc, #PAGE3_PORT
 	out	(c), a
 	ret

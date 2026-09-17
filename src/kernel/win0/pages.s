@@ -8,6 +8,7 @@
 	.globl	_pg_free
 	.globl	_pg_free_count
 	.globl	_pg_map3
+	.globl	win3_real
 	.globl	_pg_win3
 	.globl	_gfx_map
 
@@ -20,7 +21,9 @@ PAGE3_PORT	= 0x13AF
 	.area	_DATA
 _pg_pool_map::
 pool_map:	.ds	8		; 1 — занята (бит i — страница POOL_FIRST + i); _pg_pool_map — метка для сценариев (peek)
-win3_page:	.ds	1
+win3_page:	.ds	1		; страница Win3 для pg_win3: логическая, её восстанавливают вызывающие
+win3_real::	.ds	1		; фактическая (порт): её подменяет и возвращает прерывание курсора,
+				;   поэтому её обновляют и места, где Win3 переключают напрямую
 pa_n:		.ds	1
 pa_align:	.ds	1
 
@@ -173,6 +176,7 @@ _pg_map3::
 	ld	hl, #win3_page
 	ld	e, (hl)
 	ld	(hl), a
+	ld	(win3_real), a			; раньше порта: прерывание вернёт уже новую страницу
 	ld	bc, #PAGE3_PORT
 	out	(c), a
 	ld	a, e

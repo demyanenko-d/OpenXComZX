@@ -36,6 +36,7 @@
 	.optsdcc -mz80 sdcccall(1)
 
 	.globl	_gl_edges, edge1, edge1s, e_rows, e_fast, hclip, lerpz, xclip, lerpx, div32, eslope, bord_ev, e_store
+	.globl	win3_real
 	.globl	_gl_bands, _gl_nb, _gl_bl, gb_end, ai_put, ai_redo, rw_emit_s, em_run_s
 	.globl	_gl_rows, ael_ins, ai_fix2, f2_near, f2_score, ai_cmp, ael_fix, fx_pair, rw_emit, rw_band, rw_pfill, rw_flush, ael_step, ael_sort
 	.globl	_gl_rows_pre, _gl_rows_edg, eg_row, eg_walk, eg_step, eg_end, eg_last, eg_starts, eg_piece, eg_emit, _gl_rows_cap, _gl_capok, _gl_capwant, rp_row, rp_next, em_run_p, cap_begin, cap_row, cap_end
@@ -796,6 +797,7 @@ bord_ev:
 	ret	nc
 	push	bc
 	ld	a, (_gl_epg)
+	ld	(win3_real), a			; фактическая страница Win3 — для прерывания курсора
 	ld	bc, #PAGE3_PORT
 	out	(c), a
 	pop	bc
@@ -814,6 +816,7 @@ bord_ev:
 	ld	h, #>EP_EVA
 	ld	(hl), e
 2$:	ld	a, (_gl_wpg)
+	ld	(win3_real), a
 	ld	bc, #PAGE3_PORT
 	out	(c), a
 	ret
