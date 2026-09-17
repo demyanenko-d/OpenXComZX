@@ -872,9 +872,9 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			break;
 		}
 		if (ev == EVT_TICK) {
-			globe_marks_tick();                      // подвижные метки (корабли, летящие НЛО) и мигание
-			if (icons_on) df_draw_icons();           // значки свёрнутых боёв — поверх меток
-if (rep_arg) {                           // кнопка поворота / зума держится
+			// подвижные метки (корабли, летящие НЛО) и мигание — сам следит за частотой (100 мс)
+			if (globe_marks_tick() && icons_on) df_draw_icons();   // значки свёрнутых боёв — поверх меток
+			if (rep_arg) {                           // кнопка поворота / зума держится
 				uint8_t a = rep_arg;
 				const uint8_t *r = rep_box[a - 30];
 				if (!(mouse_buttons & 1)) rep_arg = 0;

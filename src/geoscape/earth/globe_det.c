@@ -16,6 +16,7 @@
 #include "state.h"
 #include "globe.h"
 #include "rules.h"
+#include "game.h"
 #include <stddef.h>
 
 #define DT_VIS    0x2540          // рабочая страница (globe.s): число взятых групп, их номера
@@ -53,6 +54,14 @@ static uint8_t __at(0xB993) mk_n;
 static uint8_t __at(0xB994) mk_still;          // сколько в списке неподвижных (в хвосте — подвижные)
 static uint8_t __at(0xB9A0) mk_list[MK_MAX * 3];
 static uint8_t __at(0xBA60) mk_save[MK_MAX * 9];   // точки под метками (det_marks / det_unmark)
+#define MK_TYPES  32                           // кадры меток по типу цели (mk_fr): правил не больше
+static int8_t __at(0xBCA0) fr_ufo[MK_TYPES];
+static int8_t __at(0xBCC0) fr_craft[MK_TYPES];
+static uint16_t __at(0xBCE0) mk_t;             // кадр прошлого такта меток (не чаще 100 мс)
+static uint16_t __at(0xBCE2) mk_lon;           // вид, под который нарисованы метки: пока глобус на
+static int16_t __at(0xBCE4) mk_lat;            // экране не перерисован под новый вид (поворот, зум,
+static uint8_t __at(0xBCE6) mk_zoom;           // центр), такт молчит — иначе точки стирались бы не
+extern volatile uint16_t frames;               // там, где нарисованы, и на глобусе оставался мусор
 static int16_t __at(0xBFF0) dl_x0;
 static int16_t __at(0xBFF2) dl_y0;
 static int16_t __at(0xBFF4) dl_x1;
@@ -229,6 +238,24 @@ static int8_t rule_i8(uint16_t id, uint16_t i, uint8_t off)
 	return (int8_t)rtab_word(&t, i, off);
 }
 
+// Кадр метки летящего НЛО и корабля по типу — кэш на весь сеанс: подвижные метки пересобираются
+// раз в тик, а открытие таблицы правил (res_find + чтение из дальней памяти) на каждую цель — самое
+// дорогое в сборе; правила не меняются. MK_NOFR — ещё не читано (память банка при старте — мусор,
+// поэтому годность кэша — по mk_ok, который ставит globe_marks)
+#define MK_NOFR   0x7F
+static int8_t mk_fr(uint16_t id, uint8_t type, uint8_t off, int8_t def, int8_t *cache)
+{
+	int8_t m;
+	if (type >= MK_TYPES) return def;
+	m = cache[type];
+	if (m == MK_NOFR) {
+		m = rule_i8(id, type, off);
+		if (m < 0 || m > 8) m = def;
+		cache[type] = m;
+	}
+	return m;
+}
+
 // Метки поверх глобуса после копии заднего буфера (scr_geo.c draw_globe; ST — в Win3): базы, путевые
 // точки, места миссий, базы пришельцев, НЛО, корабли в полёте — порядок Globe::drawMarkers
 // Места и кадры неподвижных меток по состоянию (ST — в Win3): базы, путевые точки, места миссий, базы
@@ -260,7 +287,7 @@ static void mk_collect_still(void)
 }
 
 // Подвижные метки (порядок Globe::drawMarkers — последними): летящие НЛО и корабли в полёте.
-// Пересчитываются каждый тик, поэтому идут в хвосте списка
+// Пересчитываются каждый тик, поэтому идут в хвосте списка, а кадры берутся из кэша по типу
 static void mk_collect_moving(void)
 {
 	uint8_t k;
@@ -268,14 +295,12 @@ static void mk_collect_moving(void)
 	for (k = 0; k < MAX_UFOS; k++) {
 		const ufo_t *u = &ST->ufo[k];
 		if (u->type == NONE8 || !(u->flags & UF_DETECTED) || u->status != US_FLYING) continue;
-		int8_t m = rule_i8(RES_RULE_UFOS, u->type, offsetof(r_ufos_t, marker));
-		mk_add(&u->pos, m < 0 ? 2 : m);
+		mk_add(&u->pos, mk_fr(RES_RULE_UFOS, u->type, offsetof(r_ufos_t, marker), 2, fr_ufo));
 	}
 	for (k = 0; k < MAX_CRAFTS; k++)
-		if (ST->craft[k].type != NONE8 && ST->craft[k].status == CS_OUT) {
-			int8_t m = rule_i8(RES_RULE_CRAFTS, ST->craft[k].type, offsetof(r_crafts_t, marker));
-			mk_add(&ST->craft[k].pos, m < 0 ? 1 : m);
-		}
+		if (ST->craft[k].type != NONE8 && ST->craft[k].status == CS_OUT)
+			mk_add(&ST->craft[k].pos,
+			       mk_fr(RES_RULE_CRAFTS, ST->craft[k].type, offsetof(r_crafts_t, marker), 1, fr_craft));
 }
 
 void globe_marks(void) __banked
@@ -286,19 +311,33 @@ void globe_marks(void) __banked
 	if (!res_find(RES_GLOBEDET, &r)) return;
 	far_read(r.phys, &h, sizeof h);
 	far_read(r.phys + h.r0, mk_spr, sizeof mk_spr);
+	memset(fr_ufo, MK_NOFR, sizeof fr_ufo);
+	memset(fr_craft, MK_NOFR, sizeof fr_craft);
 	mk_collect_still();
 	mk_collect_moving();
+	mk_lon = ctx.globe_lon;
+	mk_lat = ctx.globe_lat;
+	mk_zoom = ST->zoom;
 	mk_ok = MK_OK;
 	mk_draw();
 }
 
-// Раз в тик геоскейпа (100 мс): метки едут вместе с кораблями и НЛО, не дожидаясь нового кадра глобуса
-// (тень и картинка пересчитываются гораздо реже), и мигают (Globe::blink). Точки под прошлыми метками
-// возвращаются из mk_save — копия глобуса не нужна.
-void globe_marks_tick(void) __banked
+// Метки едут вместе с кораблями и НЛО, не дожидаясь нового кадра глобуса (тень и картинка
+// пересчитываются гораздо реже), и мигают (Globe::blink). Точки под прошлыми метками возвращаются из
+// mk_save — копия глобуса не нужна. Вызывается из такта интерфейса, то есть каждый проход главного
+// цикла, поэтому сама отсекает частые вызовы: раз в 100 мс, как `Globe::blink`. 1 — метки нарисованы
+// заново (значки свёрнутых боёв рисуются поверх — их надо вернуть)
+uint8_t globe_marks_tick(void) __banked
 {
-	if (mk_ok != MK_OK) return;
+	if (mk_ok != MK_OK) return 0;
+	if ((uint16_t)(frames - mk_t) < 5) return 0;   // 5 кадров 50 Гц = 100 мс
 	uint8_t old3 = pg_win3();
+	pg_map3(STATE_PAGE);
+	uint8_t z = ST->zoom;
+	pg_map3(old3);
+	// вид сменился (поворот, зум, центр), а глобус на экране ещё старый — ждём его кадра
+	if (z != mk_zoom || ctx.globe_lon != mk_lon || ctx.globe_lat != mk_lat) return 0;
+	mk_t = frames;
 	dl_yb = 0;
 	det_unmark();
 	pg_map3(STATE_PAGE);
@@ -306,4 +345,5 @@ void globe_marks_tick(void) __banked
 	mk_blink = (mk_blink ^ 1) & 1;               // память банка при старте не обнулена
 	mk_draw();
 	pg_map3(old3);
+	return 1;
 }

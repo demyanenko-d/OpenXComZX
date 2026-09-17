@@ -165,9 +165,30 @@ _det_unmark::
 	ld	a, (MK_N)
 	or	a, a
 	jr	z, 8$
-	ld	b, a
-	ld	ix, #MK_LIST
-	ld	iy, #MK_SAVE
+	ld	b, a				; с последней метки: метки перекрываются, и в точках под
+	dec	a				; верхней лежит нижняя — возвращать строго обратным
+	ld	l, a				; порядком (иначе верхняя впечатывается в фон — хвосты)
+	ld	h, #0
+	ld	e, l
+	ld	d, h
+	add	hl, hl
+	add	hl, de				; HL = (n − 1) · 3
+	ld	e, l
+	ld	d, h
+	push	de
+	ld	de, #MK_LIST
+	add	hl, de
+	push	hl
+	pop	ix				; IX = последняя запись списка
+	pop	hl				; HL = (n − 1) · 3
+	ld	e, l
+	ld	d, h
+	add	hl, hl
+	add	hl, de				; HL = (n − 1) · 9
+	ld	de, #MK_SAVE
+	add	hl, de
+	push	hl
+	pop	iy				; IY = её точки
 1$:	push	bc
 	xor	a, a
 	ld	(ln_sy), a
@@ -193,8 +214,10 @@ _det_unmark::
 	call	ystep
 	pop	bc
 	djnz	2$
-	ld	de, #3
+	ld	de, #-3				; предыдущая метка (IY прошёл 9 вперёд — назад на 18)
 	add	ix, de
+	ld	de, #-18
+	add	iy, de
 	pop	bc
 	djnz	1$
 8$:	pop	iy
