@@ -32,7 +32,7 @@
 	.globl	_gl_eb, _gl_ec, _gl_wpg, _gl_epg, _gl_limb, _gl_gtex, _gl_res, _gl_eptr, _gl_sptr, _gl_nedge
 	.globl	_gl_crp, _gl_cpp, _gl_cmp, _gl_vsp, _gl_nvis, _gl_cn, _gl_nb, _gl_bl
 	.globl	_gl_pv, _gl_pd, _gl_pn, _gl_noz, _gl_k, _gl_kpg
-	.globl	_gl_edges, _gl_rows, _gl_rows_pre, _gl_rows_cap, _gl_capok, _gl_capwant, _gl_bands, _gl_project, _gl_ktab, _gl_cull
+	.globl	_gl_edges, _gl_rows, _gl_rows_pre, _gl_rows_edg, _gl_rows_cap, _gl_capok, _gl_capwant, _gl_bands, _gl_project, _gl_ktab, _gl_cull
 	.globl	_sqz_q14, _sin5_q14, _cos5k_q14, _sin5k_q14
 	.globl	_res_find, _res_game, _far_read, _far_copy, _far_fill, _far_byte, _pg_map3, _pg_alloc, _pg_win3
 	.globl	_dbg_puts, _dbg_dec, ___mulsint2slong, ___muluint2ulong, _frames, _dma_fill_word, _st_, _ctx
@@ -1479,7 +1479,7 @@ render:
 	ld	a, (epage)
 	call	_pg_map3
 	call	r_shadow
-	call	_gl_rows_pre
+	call	_gl_rows_edg			; вид рёбрами (GVE1)
 	ld	a, (work)
 	call	_pg_map3
 	call	dma_wait

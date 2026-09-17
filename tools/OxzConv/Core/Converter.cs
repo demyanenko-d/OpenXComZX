@@ -196,8 +196,8 @@ namespace OxzConv
 				geo.Add(ids.Id("GLOBE"), ResType.Blob, globe);
 				report.Add($"GLOBE: {info}, {Kb(globe.Length)} KB");
 				nGeo++;
-				// предрасчитанные виды глобуса (зумы 0–2) на карту — globe.md §12.5
-				var gv = GlobeViews.Build(arcs, Path.Combine(OutDir, "GVIEW.PAK"));
+				// предрасчитанные виды глобуса (зумы 0–2) на карту рёбрами — globe.md §12.11
+				var gv = GlobeEdges.Build(arcs, Path.Combine(OutDir, "GVIEW.PAK"));
 				report.Add($"GVIEW.PAK: {gv.info}; {gv.bytes / 1048576.0:0.0} MB");
 				// узоры глобуса: 39 кадров 32x32 как есть (3 набора по 13, зумы 4–5, 2–3, 0–1)
 				var tex = gfs.Read("GEOGRAPH/TEXTURE.DAT");

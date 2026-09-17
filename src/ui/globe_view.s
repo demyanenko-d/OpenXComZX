@@ -139,7 +139,7 @@ go_new:
 	ld	de, #EP_VIDX
 	call	gv_fard
 	call	_far_read
-	ld	hl, #gv_hdr		; 'GVW1', nZoom >= 3, первый зум 0
+	ld	hl, #gv_hdr		; 'GVE1' (виды рёбрами, globe.md §12.11), nZoom >= 3, первый зум 0
 	ld	a, (hl)
 	cp	a, #0x47
 	jp	nz, go_fail
@@ -149,7 +149,7 @@ go_new:
 	jp	nz, go_fail
 	inc	hl
 	ld	a, (hl)
-	cp	a, #0x57
+	cp	a, #0x45
 	jp	nz, go_fail
 	inc	hl
 	ld	a, (hl)

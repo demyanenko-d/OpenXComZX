@@ -71,6 +71,9 @@ namespace OxzConv
 		struct Bnd { public double X; public byte Right, Left; }
 
 		// Один вид -> байты (200 строк: u8 n, n × (len−1, tex))
+		// Отрезки вида путь А — для сверки видов рёбрами (GlobeEdges)
+		public static byte[] ViewRuns(GlobeArcs a, int zoom, double lonDeg, double tiltDeg) => View(a, zoom, lonDeg, tiltDeg);
+
 		static byte[] View(GlobeArcs a, int zoom, double lonDeg, double tiltDeg)
 		{
 			int R = ZR[zoom];

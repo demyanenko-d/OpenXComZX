@@ -38,7 +38,7 @@
 	.globl	_gl_edges, edge1, edge1s, e_rows, e_fast, hclip, lerpz, xclip, lerpx, div32, eslope, bord_ev, e_store
 	.globl	_gl_bands, _gl_nb, _gl_bl, gb_end, ai_put, ai_redo, rw_emit_s, em_run_s
 	.globl	_gl_rows, ael_ins, ai_fix2, f2_near, f2_score, ai_cmp, ael_fix, fx_pair, rw_emit, rw_band, rw_pfill, rw_flush, ael_step, ael_sort
-	.globl	_gl_rows_pre, _gl_rows_cap, _gl_capok, _gl_capwant, rp_row, rp_next, em_run_p, cap_begin, cap_row, cap_end
+	.globl	_gl_rows_pre, _gl_rows_edg, eg_row, eg_walk, eg_step, eg_end, eg_last, eg_starts, eg_piece, eg_emit, _gl_rows_cap, _gl_capok, _gl_capwant, rp_row, rp_next, em_run_p, cap_begin, cap_row, cap_end
 	.globl	_gl_cull, cu_loop, cu_take, cu_next
 	.globl	_gl_crp, _gl_cpp, _gl_cmp, _gl_vsp, _gl_nvis, _gl_cn
 	.globl	_gl_eb
@@ -3072,6 +3072,465 @@ em_run_p:
 	out	(c), a			; DMACtrl: RAM -> RAM, старт
 	exx
 	ret
+
+;; ================================================================ вид рёбрами (GVE1)
+
+;; Проход строк по виду «рёбрами» (GVIEW.PAK 'GVE1', конвертер Core/GlobeEdges.cs, globe.md §12.11).
+;; Поток вида с EP_VIEW: текстура левого края по строкам, группы начал цепочек кусков (X0, место в
+;; списке активных, кусок), куски с продолжениями. Активные куски — ячейки EV_* (64), порядок слева
+;; направо — EV_ORD (готовое место из потока: ни сравнений, ни сортировки). На строку: вставить
+;; начала, вывести отрезки (пара границы — (X + 192) >> 8 − 64, прижата к диску строки; до неё —
+;; текстура прошлого куска, за ней — текстура справа от куска), X += dX, конец куска — продолжение
+;; (поправка X, следующий кусок) или удаление. Вывод — как у _gl_rows_pre: em_run_p / em_run_s.
+;; Win3 — страница рёбер; IX — запись строки, IY — флаг тени строки.
+EV_XL		= 0xC000 + 0x0700	; ячейка: X (8.8 пар + 64), dX, строк осталось, текстура | продолжение << 7,
+EV_XH		= 0xC000 + 0x0800	;   место в потоке после куска
+EV_DL		= 0xC000 + 0x0900
+EV_DH		= 0xC000 + 0x0A00
+EV_RW		= 0xC000 + 0x0B00
+EV_TX		= 0xC000 + 0x0C00
+EV_PL		= 0xC000 + 0x0D00
+EV_PH		= 0xC000 + 0x0E00
+EV_ORD		= 0xC000 + 0x0F00	; активные слева направо (номера ячеек)
+EV_FREE		= 0xC000 + 0x1000	; стек свободных ячеек
+EV_MAX		= 64
+EG_BIAS		= 192			; пара границы: (X + 192) >> 8 − 64 (центр точки, округление до пары)
+EG_OFF		= 64
+
+_gl_rows_edg::
+	push	ix
+	push	iy
+	xor	a, a
+	ld	(_gl_capok), a		; запись отрезков рёберного прохода затёрта потоком вида
+	ld	(eg_n), a
+	ld	(eg_cur), a
+	ld	bc, #0x28AF		; DMANum = 0 на весь вывод
+	out	(c), a
+	ld	hl, #EV_FREE		; свободные ячейки 0..63
+	ld	b, #EV_MAX
+1$:	ld	(hl), a
+	inc	hl
+	inc	a
+	djnz	1$
+	ld	(eg_nfree), a
+	ld	hl, #EP_VIEW		; текстура левого края: число, пары (строка, текстура)
+	ld	a, (hl)
+	inc	hl
+	ld	(eg_seedn), a
+	ld	(eg_seedp), hl
+	add	a, a
+	ld	e, a
+	ld	d, #0
+	add	hl, de
+	ld	a, (hl)			; первая группа: шаг от строки 0, число начал
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	ld	(eg_sp), hl
+	ld	(eg_grow), a
+	ld	a, b
+	ld	(eg_gn), a
+	or	a, a
+	jr	nz, 2$
+	ld	a, #0xFF		; пустой вид
+	ld	(eg_grow), a
+2$:	ld	ix, #EP_ROW
+	ld	iy, #EP_SHF
+	xor	a, a
+	ld	(eg_y), a
+eg_row:
+	ld	a, (eg_grow)		; начала этой строки
+	ld	b, a
+	ld	a, (eg_y)
+	cp	a, b
+	call	z, eg_starts
+	ld	a, (eg_seedn)		; текстура левого края с этой строки
+	or	a, a
+	jr	z, 3$
+	ld	hl, (eg_seedp)
+	ld	a, (eg_y)
+	cp	a, (hl)
+	jr	nz, 3$
+	inc	hl
+	ld	a, (hl)
+	ld	(eg_cur), a
+	inc	hl
+	ld	(eg_seedp), hl
+	ld	hl, #eg_seedn
+	dec	(hl)
+3$:	ld	a, 1 (ix)		; диска нет (pl > pr) — кусков в строке тоже нет
+	cp	a, 0 (ix)
+	jp	c, eg_rowdone
+	ld	bc, #0x27AF		; адреса строки — после конца прошлой передачи
+6$:	in	a, (c)
+	jp	m, 6$
+	ld	a, 0 (ix)
+	add	a, a
+	ld	b, #0x1A
+	out	(c), a			; SAL
+	ld	b, #0x1D
+	out	(c), a			; DAL
+	ld	a, 5 (ix)
+	ld	b, #0x1C
+	out	(c), a			; SAX
+	ld	a, 2 (ix)
+	ld	b, #0x1E
+	out	(c), a			; DAH
+	ld	a, 3 (ix)
+	inc	b
+	out	(c), a			; DAX
+	exx
+	ld	c, #0xAF
+	ld	d, 4 (ix)		; блок узора строки
+	exx
+	ld	a, 0 (ix)		; в код: пределы пары pl + 64, pr + 65; вывод строки с тенью или без
+	add	a, #EG_OFF
+	ld	(eg_lo1), a
+	ld	(eg_lo2), a
+	ld	a, 1 (ix)
+	add	a, #EG_OFF + 1
+	ld	(eg_hi1), a
+	ld	(eg_hi2), a
+	ld	hl, #em_run_p
+	ld	a, 0 (iy)
+	or	a, a
+	jr	z, 7$
+	ld	hl, #em_run_s
+7$:	ld	(eg_emv), hl
+	ld	(eg_emv2), hl
+	ld	a, (eg_cur)		; D — текстура отрезка, E — начало (пара)
+	ld	d, a
+	ld	e, 0 (ix)
+	push	iy
+	ld	iy, #EV_ORD		; IY — место в списке, B — кусков осталось
+	ld	a, (eg_n)
+	or	a, a
+	jp	z, eg_last
+	ld	b, a
+eg_walk:
+	ld	c, 0 (iy)		; C — ячейка
+	ld	l, c			; A = старший байт X + 192
+	ld	h, #>EV_XL
+	ld	a, (hl)
+	add	a, #EG_BIAS
+	inc	h
+	ld	a, (hl)
+	adc	a, #0
+	jr	c, eg_w2			; >= 256 — правее диска
+	.db	0xFE			; cp #pl + 64
+eg_lo1:	.db	0
+	jr	nc, eg_w1
+	.db	0x3E			; ld a, #pl + 64
+eg_lo2:	.db	0
+eg_w1:	.db	0xFE			; cp #pr + 65
+eg_hi1:	.db	0
+	jr	c, eg_w3
+eg_w2:	.db	0x3E			; ld a, #pr + 65
+eg_hi2:	.db	0
+eg_w3:	sub	a, #EG_OFF		; пара границы
+	sub	a, e
+	jr	z, eg_step
+	jr	c, eg_step
+	ld	h, a			; отрезок [E, граница − 1] текстурой D
+	add	a, e
+	ld	e, a
+	ld	a, h
+	dec	a
+	ld	l, a			; слов − 1
+	ld	a, d
+	.db	0xCD			; call em_run_p / em_run_s (основной набор цел, кроме A)
+eg_emv:	.dw	em_run_p
+eg_step:
+	ld	l, c
+	ld	h, #>EV_TX		; текстура справа от куска
+	ld	a, (hl)
+	and	a, #0x0F
+	ld	d, a
+	ld	h, #>EV_DL		; X += dX
+	ld	a, (hl)
+	ld	h, #>EV_XL
+	add	a, (hl)
+	ld	(hl), a
+	ld	h, #>EV_DH
+	ld	a, (hl)
+	ld	h, #>EV_XH
+	adc	a, (hl)
+	ld	(hl), a
+	ld	h, #>EV_RW
+	dec	(hl)
+	jr	z, eg_end
+	inc	iy
+	djnz	eg_walk
+	jp	eg_last
+eg_end:					; кусок кончился: продолжение или удаление
+	ld	h, #>EV_TX
+	bit	7, (hl)
+	jr	z, eg_remove
+	push	de
+	push	bc
+	ld	h, #>EV_PL		; поправка X, следующий кусок
+	ld	e, (hl)
+	inc	h
+	ld	d, (hl)
+	ex	de, hl
+	ld	a, (hl)
+	inc	hl
+	cp	a, #0x80
+	jr	nz, 4$
+	ld	e, (hl)
+	inc	hl
+	ld	d, (hl)
+	inc	hl
+	jr	5$
+4$:	ld	e, a
+	rlca
+	sbc	a, a
+	ld	d, a
+5$:	push	hl
+	ld	l, c
+	ld	h, #>EV_XL
+	ld	a, (hl)
+	add	a, e
+	ld	(hl), a
+	inc	h
+	ld	a, (hl)
+	adc	a, d
+	ld	(hl), a
+	pop	hl
+	call	eg_piece
+	ex	de, hl
+	ld	l, c
+	ld	h, #>EV_PL
+	ld	(hl), e
+	inc	h
+	ld	(hl), d
+	pop	bc
+	pop	de
+	inc	iy
+	dec	b
+	jp	nz, eg_walk
+	jp	eg_last
+eg_remove:				; ячейку — в свободные, список с IY + 1 — на место выше
+	ld	a, (eg_nfree)
+	ld	l, a
+	ld	h, #>EV_FREE
+	ld	(hl), c
+	inc	a
+	ld	(eg_nfree), a
+	ld	hl, #eg_n
+	dec	(hl)
+	dec	b
+	jr	z, eg_last
+	push	de
+	push	bc
+	ld	c, b
+	ld	b, #0
+	push	iy
+	pop	de
+	ld	h, d
+	ld	l, e
+	inc	hl
+	ldir
+	pop	bc
+	pop	de
+	jp	eg_walk			; IY — то же место (там следующий)
+eg_last:
+	pop	iy
+	ld	a, 1 (ix)		; последний отрезок [E, pr]
+	sub	a, e
+	jr	c, eg_rowdone
+	ld	l, a			; слов − 1
+	ld	a, d
+	.db	0xCD			; call em_run_p / em_run_s
+eg_emv2:	.dw	em_run_p
+eg_rowdone:
+	ld	de, #6
+	add	ix, de
+	inc	iy
+	ld	hl, #eg_y
+	inc	(hl)
+	ld	a, (hl)
+	cp	a, #GH
+	jp	c, eg_row
+	pop	iy
+	pop	ix
+	ret
+
+;; Отрезок: A — текстура, L — слов − 1: строка с тенью (IY) — em_run_s, иначе em_run_p
+eg_emit:
+	ld	b, a
+	ld	a, 0 (iy)
+	or	a, a
+	ld	a, b
+	jp	nz, em_run_s
+	jp	em_run_p
+
+;; Кусок потока (HL) в ячейку C: флаги, строки, dX. -> HL после куска. Портит A, B, DE.
+eg_piece:
+	ld	a, (hl)
+	inc	hl
+	ld	b, a
+	and	a, #0x8F		; текстура и бит продолжения
+	ld	e, c
+	ld	d, #>EV_TX
+	ld	(de), a
+	bit	6, b
+	jr	nz, 1$
+	ld	a, (hl)			; короткая: (строк − 1) << 4 | dX >> 8 & 15, dX & 255
+	inc	hl
+	ld	b, a
+	rrca
+	rrca
+	rrca
+	rrca
+	and	a, #0x0F
+	inc	a
+	ld	d, #>EV_RW
+	ld	(de), a
+	ld	a, (hl)
+	inc	hl
+	ld	d, #>EV_DL
+	ld	(de), a
+	ld	a, b			; старшие 4 бита dX со знаком
+	and	a, #0x0F
+	bit	3, a
+	jr	z, 2$
+	or	a, #0xF0
+2$:	inc	d
+	ld	(de), a
+	ret
+1$:	ld	a, (hl)			; длинная: строк − 1, i16 dX
+	inc	hl
+	inc	a
+	ld	d, #>EV_RW
+	ld	(de), a
+	ld	a, (hl)
+	inc	hl
+	ld	d, #>EV_DL
+	ld	(de), a
+	ld	a, (hl)
+	inc	hl
+	inc	d
+	ld	(de), a
+	ret
+
+;; Начала цепочек строки eg_y (группы потока с eg_sp): ячейка, X0, кусок, вставка по месту,
+;; пропуск продолжений цепочки; затем следующая группа (или конец).
+eg_starts:
+	ld	a, (eg_gn)
+	or	a, a
+	jr	z, 9$
+	ld	b, a
+1$:	push	bc
+	ld	a, (eg_nfree)		; ячейка
+	dec	a
+	ld	(eg_nfree), a
+	ld	l, a
+	ld	h, #>EV_FREE
+	ld	c, (hl)
+	ld	hl, (eg_sp)
+	ld	e, c			; X0
+	ld	d, #>EV_XL
+	ld	a, (hl)
+	inc	hl
+	ld	(de), a
+	inc	d
+	ld	a, (hl)
+	inc	hl
+	ld	(de), a
+	ld	a, (hl)			; место
+	inc	hl
+	ld	(eg_pos), a
+	call	eg_piece
+	ex	de, hl
+	ld	l, c
+	ld	h, #>EV_PL
+	ld	(hl), e
+	inc	h
+	ld	(hl), d
+	ex	de, hl			; HL — после куска: пропустить продолжения
+	ld	e, c
+	ld	d, #>EV_TX
+	ld	a, (de)
+2$:	bit	7, a
+	jr	z, 4$
+	ld	a, (hl)			; поправка
+	inc	hl
+	cp	a, #0x80
+	jr	nz, 3$
+	inc	hl
+	inc	hl
+3$:	ld	a, (hl)			; флаги продолжения
+	inc	hl
+	ld	b, a
+	inc	hl
+	inc	hl
+	bit	6, b
+	jr	z, 31$
+	inc	hl
+31$:	ld	a, b
+	jr	2$
+4$:	ld	(eg_sp), hl
+	ld	a, (eg_n)		; вставка: EV_ORD[pos .. n − 1] на место ниже
+	ld	b, a
+	ld	a, (eg_pos)
+	ld	e, a
+	ld	a, b
+	sub	a, e
+	jr	z, 5$
+	push	bc
+	ld	c, a
+	ld	b, #0
+	ld	a, (eg_n)
+	ld	l, a
+	dec	l
+	ld	h, #>EV_ORD
+	ld	d, h
+	ld	e, l
+	inc	e
+	lddr
+	pop	bc
+5$:	ld	a, (eg_pos)
+	ld	l, a
+	ld	h, #>EV_ORD
+	ld	(hl), c
+	ld	hl, #eg_n
+	inc	(hl)
+	pop	bc
+	djnz	1$
+9$:	ld	hl, (eg_sp)		; следующая группа
+	ld	a, (hl)
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	ld	(eg_sp), hl
+	ld	c, a
+	or	a, b
+	jr	nz, 10$
+	ld	a, #0xFF		; 0, 0 — конец
+	ld	(eg_grow), a
+	ret
+10$:	ld	a, b
+	ld	(eg_gn), a
+	ld	a, (eg_grow)
+	add	a, c
+	ld	(eg_grow), a
+	ld	b, a			; шаг 0 не бывает (кроме первой группы): другая строка — выход
+	ld	a, (eg_y)
+	cp	a, b
+	jp	z, eg_starts
+	ret
+
+eg_n:		.ds	1		; активных кусков
+eg_nfree:	.ds	1
+eg_grow:	.ds	1		; строка следующей группы начал (#FF — нет)
+eg_gn:		.ds	1		; начал в ней
+eg_sp:		.ds	2		; поток: следующая группа
+eg_pos:		.ds	1
+eg_seedn:	.ds	1		; текстура левого края: пар осталось, следующая пара
+eg_seedp:	.ds	2
+eg_cur:		.ds	1
+eg_y:		.ds	1
 
 rp_n:	.ds	1
 rp_cnt:	.ds	1
