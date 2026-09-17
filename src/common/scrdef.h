@@ -33,6 +33,7 @@ typedef struct { uint8_t id; sdef_t s; const wdef_t *w; } scr_t;
 #define IMGAT(x, y, w, h, res, ox, oy)        { W_IMAGE, x, y, w, h, 0xFF, res, 0, (ox) / 2, (oy) / 2, 0 }
 #define HOT(x, y, w, h, act, arg, key)        { W_HOTSPOT, x, y, w, h, 0xFF, NOSTR, 0, act, arg, key }
 #define CUS(x, y, w, h, str, act, arg)        { W_CUSTOM, x, y, w, h, 0xFF, str, 0, act, arg, 0 }
+#define CUSR(x, y, w, h, str, act, arg)       { W_CUSTOM, x, y, w, h, 0xFF, str, WF_RSEL, act, arg, 0 }   // и правая кнопка (ui_arrow_max = 1)
 #define FIL(x, y, w, h, el, c)                { W_FILL, x, y, w, h, el, NOSTR, 0, 0, c, 0 }
 
 // Флаги текста коротко

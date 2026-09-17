@@ -134,11 +134,18 @@ static uint8_t underwater(void)
 	return 0;
 }
 
-// Центр глобуса на точку и скорость 5 с (globe->center + timerReset)
+// Центр глобуса на точку и скорость 5 с (globe->center + timerReset). Вид — по сетке предрасчитанных
+// видов (globe_snap), как при повороте и смене зума: иначе центрирование уводит вид с сетки и кадр
+// считается рёберным путём (в разы дольше)
 static void center_on(const geo_t *p)
 {
-	ctx.globe_lon = (uint16_t)((uint32_t)p->lon >> 16);
-	ctx.globe_lat = (int16_t)(p->lat >> 16);
+	uint16_t lon = (uint16_t)((uint32_t)p->lon >> 16);
+	int16_t lat = (int16_t)(p->lat >> 16);
+	uint8_t z = ST->zoom;
+	if (z >= GLOBE_ZOOMS) z = GLOBE_ZOOMS - 1;
+	globe_snap(z, &lon, &lat);
+	ctx.globe_lon = lon;
+	ctx.globe_lat = lat;
 	ST->speed = 0;
 }
 
@@ -219,6 +226,7 @@ static void show_event(void)
 		geo_base_attack();
 		break;
 	case GE_DOGFIGHT:                            // корабль догнал НЛО (df_start); base: 1/2 — ошибка TFTD
+		ST->speed = 0;                           // бой идёт на «5 сек» (timerReset)
 		if (dz_state != DZ_IN && dz_state != DZ_FIGHT) {   // первый бой: центр на корабль, наезд (startDogfight)
 			geo_t p = ST->craft[(uint8_t)ev_cur.what].pos;
 			center_on(&p);
@@ -262,7 +270,7 @@ static const wdef_t w_geo[] = {
 	IMG(0, 0, 320, 200, RES_GEOBORD_SCR),
 	// глобус — сразу после рамки: при полной перерисовке окно не мигает звёздным фоном без
 	// планеты (копия заднего буфера — кадр); часы и кнопки рисуются следом
-	CUS(0, 0, 256, 200, DYN(10), A_CUSTOM, 10),  // глобус: ui_dirty(10)
+	CUSR(0, 0, 256, 200, DYN(10), A_CUSTOM, 10),  // глобус: ui_dirty(10); правая кнопка — центр
 	BTNF(257, 0, 63, 11, UI_EL_BUTTON, STR_INTERCEPT, WF_GEO, A_CUSTOM, 12, 'i'),
 	BTNF(257, 12, 63, 11, UI_EL_BUTTON, STR_BASES, WF_GEO, A_CUSTOM, 11, 'b'),
 	BTNF(257, 24, 63, 11, UI_EL_BUTTON, STR_GRAPHS, WF_GEO, A_PUSH, SCR_GRAPHS, 'g'),
@@ -400,6 +408,13 @@ static void get_targets(uint8_t craft)
 // GeoscapeState::globeClick: одна цель — её окно, несколько — MultipleTargets
 static void globe_click(void)
 {
+	if (ui_arrow_max) {                          // правая кнопка — центр на точку (Globe::mouseClick)
+		geo_t p;
+		from_screen(ui_click_x, ui_click_y, &p);
+		center_on(&p);
+		ui_dirty(10);
+		return;
+	}
 	if (df_count) {                              // значок свёрнутого боя
 		uint8_t r = df_icon_click();
 		if (r == 1) { ui_dirty(10); UI_GO(A_PUSH, SCR_DOGFIGHT); }   // значок убрать с глобуса

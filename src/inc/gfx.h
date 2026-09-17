@@ -27,6 +27,8 @@ void gfx_pal_cycle(uint8_t lo, uint8_t n) __banked;
 // страниц) и вернуть на экран (draw = 1) или только забыть (draw = 0). 1 — фон возвращён.
 uint8_t gfx_bgsave(uint8_t lvl, int16_t x, int16_t y, int16_t w, int16_t h) __banked;
 uint8_t gfx_bgrestore(uint8_t lvl, uint8_t draw) __banked;
+// Рамка окна: 5 колец c+3, c+2, c+1, c+2, c+3 (Window::draw)
+void gfx_rings(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c) __banked;
 // Window::popup: рамка окна растёт 10 кадров (flags: 2 — по горизонтали, 4 — по вертикали), фон — bg или c+3
 void gfx_popup(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c, uint16_t bg, uint8_t flags) __banked;
 

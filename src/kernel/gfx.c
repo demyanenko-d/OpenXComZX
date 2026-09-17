@@ -326,6 +326,17 @@ static void ring(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c)
 	gfx_fill(x + w - 1, y + 1, 1, h - 2, c);
 }
 
+// Рамка окна (Window::draw, толщина 5): кольца c+3, c+2, c+1, c+2, c+3 (вынесено из ui.c — банк 1 полон)
+void gfx_rings(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c) __banked
+{
+	uint8_t k = c + 3;
+	for (uint8_t i = 0; i < 5; i++) {
+		ring(x, y, w, h, k);
+		k = i < 2 ? k - 1 : k + 1;
+		x++; y++; w -= 2; h -= 2;
+	}
+}
+
 // Window::popup / draw: 10 шагов по кадру (POPUP_SPEED 0.05 по 10 мс у OpenXcom — те же ~200 мс), рамка
 // растёт от середины по горизонтали (flags & 2) и/или вертикали (flags & 4): 5 колец c+3, c+2, c+1, c+2,
 // c+3, внутри — фон окна bg (или c+3). Растёт — прошлый шаг накрыт, фон под окном не нужен.

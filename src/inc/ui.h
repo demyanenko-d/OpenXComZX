@@ -38,7 +38,8 @@
 #define WF_POPH   0x02  // окно: при открытии растёт по горизонтали (POPUP_HORIZONTAL) —
 #define WF_POPV   0x04  // … по вертикали (POPUP_VERTICAL); оба — BOTH (gfx_popup)
 #define WF_GEO    0x40  // кнопка панели геоскейпа (шрифты GEO, setGeoscapeButton)
-#define WF_RSEL   0x40  // список: и правая кнопка -> EVT_LIST (ui_arrow_max = 1)
+#define WF_RSEL   0x40  // список: и правая кнопка -> EVT_LIST; W_CUSTOM: и правая кнопка -> EVT_BUTTON
+                        //   (ui_arrow_max = 1)
 #define WF_BIG    0x80  // крупный шрифт (setBig)
 
 // Текст виджета: номер строки STR_* или динамический (scr_text), номер слота

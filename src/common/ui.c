@@ -173,25 +173,6 @@ static void draw_text(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t font, 
 	text_draw(&b, buf);
 }
 
-static void ring(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c)
-{
-	gfx_fill(x, y, w, 1, c);
-	gfx_fill(x, y + h - 1, w, 1, c);
-	gfx_fill(x, y + 1, 1, h - 2, c);
-	gfx_fill(x + w - 1, y + 1, 1, h - 2, c);
-}
-
-// Window (и Frame с толщиной 5): кольца c+3, c+2, c+1, c+2, c+3.
-static void draw_rings(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c)
-{
-	uint8_t k = c + 3;
-	for (uint8_t i = 0; i < 5; i++) {
-		ring(x, y, w, h, k);
-		k = (i < 2) ? k - 1 : k + 1;
-		x++; y++; w -= 2; h -= 2;
-	}
-}
-
 static uint8_t inv_mid;
 static uint8_t iv(uint8_t v) { return inv_mid ? (uint8_t)(2 * inv_mid - v) : v; }
 
@@ -225,7 +206,7 @@ static void draw_window(const wdef_t *w)
 	}
 	if (S.bg) gfx_bg(S.bg, w->x + 5, w->y + 5, w->w - 10, w->h - 10);
 	else gfx_fill(w->x + 4, w->y + 4, w->w - 8, w->h - 8, col + 3);
-	draw_rings(w->x, w->y, w->w, w->h, col);
+	gfx_rings(w->x, w->y, w->w, w->h, col);
 }
 
 // TextButton::draw: фаска и текст; нажатая — инверсия вокруг c+3 (геоскейп — c+2).
@@ -410,7 +391,7 @@ static void draw_widget(uint8_t i)
 	case W_WINDOW: draw_window(w); break;
 	case W_FRAME:
 		gfx_fill(w->x + 5, w->y + 5, w->w - 10, w->h - 10, col2);
-		draw_rings(w->x, w->y, w->w, w->h, col);
+		gfx_rings(w->x, w->y, w->w, w->h, col);
 		break;
 	case W_FILL: gfx_fill(w->x, w->y, w->w, w->h, w->el == 0xFF ? w->arg : col); break;
 	case W_IMAGE: draw_image(w, w->x, w->y, w->w, w->h); break;
@@ -874,9 +855,10 @@ static void handle(const event_t *e)
 			activate(i);
 			return;
 		}
-		if (rclick) continue;                  // правая кнопка — только стрелки
+		if (rclick && !(w->type == W_CUSTOM && (w->flags & WF_RSEL))) continue;   // правая — стрелки, списки, свои виджеты
 		if ((w->type == W_BUTTON || w->type == W_TOGGLE || w->type == W_CUSTOM || w->type == W_HOTSPOT
 		     || w->type == W_COMBO) && hit(w, e->x, e->y)) {
+			ui_arrow_max = rclick;
 			activate(i);
 			return;
 		}
