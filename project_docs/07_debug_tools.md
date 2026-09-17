@@ -25,7 +25,7 @@ ini эмулятора `tmp/build/oxz.ini`, метки `tmp/build/oxz.labels`.
    конвертер новее; `OxzConv headers` → `tmp/build/gen/*.h`.
 2. Генерация `tmp/build/banks.s` (таблица «банк → страница») и `packs.s`
    (страницы пакетов данных, вшиваемых в SPG с #50).
-3. `sdasz80` — `src/kernel/crt0.s` (первым: задаёт порядок областей),
+3. `sdasz80` — `src/kernel/win0/crt0.s` (первым: задаёт порядок областей),
    `bank.s`, `dmaq.s`, `dmabuf.s`, `glyph.s`, `banks.s`, `packs.s`.
 4. `sdcc -c` — общие C-модули (`--sdcccall 1 --opt-code-size --std-sdcc11
    --debug`) и банковые (`--codeseg BANKn --constseg BANKn`).
@@ -326,7 +326,7 @@ inc,dec 16 / логика / сдвиги / bit / переходы / call,ret / �
   кодогенерации SDCC»).
 - **Ошибка библиотеки SDCC 4.5.0 `__mulsint2slong`**: знак по младшему байту,
   `(int32_t)a * b` неверно при младшем байте ≥ #80. Своя замена —
-  `src/kernel/mul32.s` (в `oxz.map` символ должен быть из модуля `mul32`).
+  `src/kernel/win0/mul32.s` (в `oxz.map` символ должен быть из модуля `mul32`).
 - **SDCC 4.5 падает** на литеральном указателе на структуру с полем-массивом
   и константным индексом (`((state_t *)0xC000)->base[0]`) — объявлять
   переменную `__at(адрес)` (12 §2).

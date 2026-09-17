@@ -8,7 +8,7 @@
 ;; Формат шрифта (09 §7): cell_w, cell_h, spacing(i8), first, n(u16); n x {w, off16};
 ;; глифы — cell_h строк по (w+1)/2 байт. Строки (STR): u16 n, n x 3-байтное смещение
 ;; (#FFFFFF — нет), строки с нулём.
-;; ABI SDCC --sdcccall 1 (src/kernel/pages.s). tbox_t: x0 y2 w4 h6 font8 color9
+;; ABI SDCC --sdcccall 1 (src/kernel/win0/pages.s). tbox_t: x0 y2 w4 h6 font8 color9
 ;; color2 10 flags11.
 
 	.module text

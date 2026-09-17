@@ -6,7 +6,7 @@
 volatile uint16_t frames;
 uint8_t input_on;                        // ставит boot() после input_init
 
-// Вызывается из isr_frame (src/kernel/crt0.s).
+// Вызывается из isr_frame (src/kernel/win0/crt0.s).
 void frame_isr(void)
 {
 	frames++;

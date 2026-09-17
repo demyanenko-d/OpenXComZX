@@ -8,7 +8,7 @@
 //   Win2 #8000-#BFFF  банки кода (__banked), страница = bank_page[банк]
 //   Win3 #C000-#FFFF  дальние данные (без кэша: сюда пишет DMA)
 //
-// Значения должны совпадать с tools/build.ps1 и src/kernel/crt0.s.
+// Значения должны совпадать с tools/build.ps1 и src/kernel/win0/crt0.s.
 #ifndef MEMMAP_H
 #define MEMMAP_H
 

@@ -17,7 +17,7 @@ $ENTRY = '0x7FE0'; $STACK_TOP = '0x3E00'
 $RES_PAGE = 0x50; $RES_LAST = 0xAF          # пакеты данных (memmap.h RES_PAGE..RES_LAST)
 
 # Общий код (Win0): ассемблер ядра и C-модули без банка.
-$asm_common = @('kernel\crt0', 'kernel\bank', 'kernel\dmabuf', 'kernel\glyph', 'kernel\mul32', 'kernel\sd', 'kernel\pages', 'kernel\far', 'kernel\res', 'kernel\dbg', 'kernel\input', 'ui\scrutil', 'kernel\text')   # crt0 — первым: порядок областей
+$asm_common = @('kernel\win0\crt0', 'kernel\win0\bank', 'kernel\dmabuf', 'kernel\win0\glyph', 'kernel\win0\mul32', 'kernel\sd', 'kernel\win0\pages', 'kernel\win0\far', 'kernel\win0\res', 'kernel\win0\dbg', 'kernel\win0\input', 'kernel\win0\scrutil', 'kernel\win0\text')   # crt0 — первым: порядок областей; kernel\win0 — код окна 0; dmabuf (буферы DMA в Win1) и sd (код в банке 12) — ассемблер ядра вне Win0
 $c_common   = @()   # Win0 — только ассемблер (14_todo.md §1.3)
 
 # Банки кода (Win2): номер -> физическая страница и файлы C.
@@ -99,7 +99,7 @@ $cflags = @('-mz80', '--sdcccall', '1', '--opt-code-size', '--std-sdcc11', '--de
 $rels = @()
 $utf8 = New-Object System.Text.UTF8Encoding $false
 
-# Таблица «банк -> страница» для set_bank (src/kernel/bank.s)
+# Таблица «банк -> страница» для set_bank (src/kernel/win0/bank.s)
 $maxBank = ($banks | ForEach-Object { $_.n } | Measure-Object -Maximum).Maximum
 $tbl = @("`t.module banks", "`t.area _CODE", '_bank_page::', "`t.db 0x02`t; bank 0: Win2 page at SPG start")
 for ($n = 1; $n -le $maxBank; $n++) {
@@ -110,7 +110,7 @@ for ($n = 1; $n -le $maxBank; $n++) {
 $banksAsm = Join-Path $out 'banks.s'
 [System.IO.File]::WriteAllText($banksAsm, ($tbl -join "`r`n") + "`r`n", $utf8)
 
-# Раскладка пакетов по страницам и таблица pack_page для src/kernel/res.c
+# Раскладка пакетов по страницам и таблица pack_page для src/kernel/win0/res.s
 $page = $RES_PAGE
 $dataArgs = @()
 $ptbl = @("`t.module packs", "`t.area _CODE", '_pack_page::')

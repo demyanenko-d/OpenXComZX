@@ -168,7 +168,7 @@ int16_t text_width(uint8_t f, const char *s)
 // Цвет пикселя по уровню глифа: color + v*mul (+ 2*(mid - v) при инверсии).
 static uint8_t lut[16];
 
-// src/kernel/glyph.s: строки глифа в одной странице экрана (быстрый путь)
+// src/kernel/win0/glyph.s: строки глифа в одной странице экрана (быстрый путь)
 extern uint8_t *gr_dst;
 extern const uint8_t *gr_src;
 extern uint8_t gr_bpr, gr_rows, gr_col, gr_inv;
