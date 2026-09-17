@@ -394,7 +394,7 @@ static void rd_draw(void)
 	if (rv_ok != RD_OK) return;
 	uint8_t old3 = pg_win3();
 	dl_yb = 0;
-	dl_ocean = res_game() == 2 ? 16 : 192;      // globe.rul oceanPalette · 16
+	dl_c = res_game() == 2 ? 123 : 11;          // жёлтый контур (252, 252, 0) палитры геоскейпа TFTD / UFO
 	uint16_t pt = RD_PT;
 	for (uint8_t k = 0; k < rc_n; k++) {
 		int16_t pb[RVB * 2];
@@ -455,6 +455,6 @@ void globe_marks(uint8_t radar) __banked
 void globe_blink(void) __banked
 {
 	if (mk_ok != MK_OK) return;
-	mk_blink ^= 1;
+	mk_blink = (mk_blink ^ 1) & 1;               // память банка при старте не обнулена
 	mk_draw();
 }

@@ -88,7 +88,10 @@ namespace OxzConv
 		{
 			sections.TryGetValue("globe", out var g);
 			int Col(string k, int def) { var v = Y.Get(g, k); return v == null ? def : (int)Y.Num(v); }
-			var head = new List<byte> { (byte)Col("lineColor", 162), (byte)Col("countryColor", 239), (byte)Col("cityColor", 138), (byte)Col("baseColor", 133) };
+			// TFTD: линии — реки, синие (92: 52, 124, 208) вместо чёрного lineColor 111 — просьба пользователя;
+			// UFO — границы стран, цвет оригинала
+			int line = folder == "xcom2" ? 92 : Col("lineColor", 162);
+			var head = new List<byte> { (byte)line, (byte)Col("countryColor", 239), (byte)Col("cityColor", 138), (byte)Col("baseColor", 133) };
 
 			// значок города — кадр 8 набора GlobeMarkers (extraSprites.rul: 3x3, файл UI/globe_*.png)
 			string png = null;

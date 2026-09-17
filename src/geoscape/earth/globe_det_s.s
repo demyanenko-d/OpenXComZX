@@ -478,7 +478,7 @@ _det_xline::
 	ld	a, (DL_X0)
 	ld	de, (DL_Y0)
 	call	addr				; HL — первая точка
-	ld	a, (DL_OCEAN)
+	ld	a, (DL_C)
 	ld	c, a
 	ld	a, (XL_LEN)
 	ld	b, a
@@ -521,7 +521,7 @@ xl_ymaj:				; ось y: строка ± 1, x += Δx / len — при смене 
 	ld	a, (DL_X0)
 	ld	de, (DL_Y0)
 	call	addr
-	ld	a, (DL_OCEAN)
+	ld	a, (DL_C)
 	ld	c, a
 	ld	a, (XL_LEN)
 	ld	b, a
@@ -542,29 +542,10 @@ xl_done:
 	pop	ix
 	ret
 
-;; (HL) — точка цветом тени; C — первый цвет океана. Портит A, E
+;; (HL) — точка цветом C (круг радара — сплошной контур, просьба пользователя; у OpenXcom XuLine
+;; затемняет точку под линией)
 xl_shade:
-	ld	a, (hl)
-	or	a, a
-	ret	z
-	ld	e, a
-	sub	a, c
-	cp	a, #32
-	jr	nc, 1$
-	ld	a, c				; океан
-	add	a, #14
-	ld	(hl), a
-	ret
-1$:	ld	a, e				; суша: +6, не дальше конца группы
-	and	a, #0x0F
-	cp	a, #10
-	ld	a, e
-	jr	c, 2$
-	or	a, #0x0F
-	ld	(hl), a
-	ret
-2$:	add	a, #6
-	ld	(hl), a
+	ld	(hl), c
 	ret
 
 ;; HL — Δ (|Δ| <= len), A — len (1..255) -> DE = Δ · 256 / len с отбрасыванием дроби (деление 16 / 8)
