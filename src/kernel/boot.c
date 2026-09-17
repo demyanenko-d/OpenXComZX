@@ -47,7 +47,7 @@ void text_init(void) __banked
 		tx_font_cw[i] = h[0]; tx_font_ch[i] = h[1]; tx_font_sp[i] = (int8_t)h[2];
 		off += (uint16_t)((r.size + 1) & ~1ul);
 	}
-	tx_atlas_ok = off <= 0x3800;               // таблицы мест атласа глифов — с #3800 этой страницы (text.s)
+	tx_atlas_ok = off <= 0x3600;               // таблицы мест атласа глифов и шагов символов — с #3600 этой страницы (text.s)
 	if (res_find(RES_STRINGS, &r)) {
 		tx_str_base = r.phys;
 		tx_str_n = far_word(r.phys);

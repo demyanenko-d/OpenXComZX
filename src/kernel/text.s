@@ -38,7 +38,7 @@
 	.globl	_gr_inv
 	.globl	_tx_atlas_ok
 	.globl	_dma_fill_word
-	.globl	copy_s, map_font, glyph_entry, font_field, char_adv, add_line, layout, ly_loop, calc_th, layout_box, set_lut, make_lut, td_line, td_char, dma_idle, zfill, line_fast, ta_key, ta_clear, glyph_out, dg_atlas, ta_render, tp_lut, tr_done, glyph_entry_i, draw_glyph, dg_fast, dg_slow, lt_s	; для профилировщика (07 §6)
+	.globl	copy_s, map_font, adv_build, char_adv_slow, glyph_entry, font_field, char_adv, add_line, layout, ly_loop, calc_th, layout_box, set_lut, make_lut, td_line, td_char, dma_idle, zfill, line_fast, ta_key, ta_clear, glyph_out, dg_atlas, ta_render, tp_lut, tr_done, glyph_entry_i, draw_glyph, dg_fast, dg_slow, lt_s	; для профилировщика (07 §6)
 	.globl	_pg_alloc
 	.globl	_gfx_map
 	.globl	_pg_win3
@@ -67,7 +67,9 @@ TX_INVERT	= 0x40
 TA_K		= 4			; ключей атласа глифов (страниц)
 TA_NG		= 97			; глифов в шрифте, у которых есть место в таблице
 TA_PER		= TA_NG * 4		; на ключ: место глифа u16 для чётного и нечётного x
-TA_SLOT		= 0xB800		; таблицы мест — в хвосте страницы шрифтов (Win2), text_init
+TA_SLOT		= 0xB600		; таблицы мест — в хвосте страницы шрифтов (Win2), text_init
+ADV_TAB		= 0xBC10		; шаги символов 0..ADV_N−1 по 4 шрифтам (там же)
+ADV_N		= 130
 DATA_PAGE	= 0x05			; Win1: dma_fill_word (dmabuf.s)
 
 	.area	_DATA
@@ -159,6 +161,8 @@ dga_c:		.ds	1
 tp_rows:	.ds	1		; ta_render: строк и байт на строку
 tp_bpr:		.ds	1
 tp_x0:		.ds	1		; 0 — место с начала полосы (полосу обнулить)
+adv_ok:		.ds	1		; таблицы шагов построены
+tx_advb:	.ds	2		; таблица шагов текущего шрифта (Win2)
 fn_out:		.ds	2
 sf_a0:		.ds	2		; str_fmt
 sf_a1:		.ds	2
@@ -252,6 +256,67 @@ map_font:
 	ld	a, (_tx_font_page)
 	ld	bc, #PAGE2_PORT
 	out	(c), a
+	ld	a, (tx_f)		; tx_advb = ADV_TAB + f · ADV_N
+	ld	hl, #ADV_TAB
+	ld	de, #ADV_N
+	or	a
+	jr	z, 2$
+1$:	add	hl, de
+	dec	a
+	jr	nz, 1$
+2$:	ld	(tx_advb), hl
+	ld	a, (adv_ok)
+	or	a
+	ret	nz
+	ld	a, (_tx_atlas_ok)	; хвост страницы занят шрифтами — без таблиц
+	or	a
+	ret	z
+;; Таблицы шагов всех шрифтов (один раз): шаг символа c = char_adv_slow
+adv_build:
+	ld	a, (tx_f)
+	push	af
+	ld	hl, (tx_fbase)
+	push	hl
+	ld	hl, #ADV_TAB
+	xor	a
+3$:	push	af			; шрифт
+	ld	(tx_f), a
+	push	hl
+	add	a, a
+	ld	e, a
+	ld	d, #0
+	ld	hl, #_tx_font_off
+	add	hl, de
+	ld	e, (hl)
+	inc	hl
+	ld	d, (hl)
+	ld	hl, #0x8000
+	add	hl, de
+	ld	(tx_fbase), hl
+	pop	hl
+	ld	c, #0			; символ
+4$:	push	bc
+	push	hl
+	ld	a, c
+	call	char_adv_slow
+	pop	hl
+	ld	(hl), a
+	inc	hl
+	pop	bc
+	inc	c
+	ld	a, c
+	cp	#ADV_N
+	jr	c, 4$
+	pop	af
+	inc	a
+	cp	#4
+	jr	c, 3$
+	pop	hl
+	ld	(tx_fbase), hl
+	pop	af
+	ld	(tx_f), a
+	ld	a, #1
+	ld	(adv_ok), a
 	ret
 
 ;; A = символ -> HL = запись глифа {w, off16} (fbase + 6 + idx*3). Портит DE.
@@ -284,6 +349,19 @@ font_field:
 
 ;; A = символ -> A = шаг (текущий шрифт tx_f). Портит DE, HL.
 char_adv:
+	cp	#ADV_N			; таблица шрифта (map_font)
+	jr	nc, char_adv_slow
+	ld	e, a
+	ld	a, (adv_ok)
+	or	a
+	ld	a, e
+	jr	z, char_adv_slow
+	ld	d, #0
+	ld	hl, (tx_advb)
+	add	hl, de
+	ld	a, (hl)
+	ret
+char_adv_slow:
 	cp	#' '
 	jr	nz, 1$
 	ld	hl, #_tx_font_cw
