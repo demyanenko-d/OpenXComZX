@@ -509,11 +509,10 @@ uint8_t geo2_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			UI_GO(A_POP_PUSH, SCR_BASESCAPE);
 		}
 		break;
-	case SCR_ALIEN_BASE:                          // btnOkClick: timerReset, центр на базу
+	case SCR_ALIEN_BASE:                          // btnOkClick: timerReset, центр на базу (сетка видов, z2+)
 		if (ev == EVT_BUTTON) {
-			ctx.globe_lon = (uint16_t)((uint32_t)ST->abase[ctx.tidx].pos.lon >> 16);
-			ctx.globe_lat = (int16_t)(ST->abase[ctx.tidx].pos.lat >> 16);
-			ST->speed = 0;
+			geo_t p = ST->abase[ctx.tidx].pos;
+			geo_center(&p, 2);
 			UI_GO(A_POP, 0);
 		}
 		break;

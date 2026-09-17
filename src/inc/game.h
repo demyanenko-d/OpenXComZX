@@ -184,6 +184,8 @@ void craft_checkup(uint8_t c) __banked;      // gtime.c: ремонт / пере
 void craft_set_dest(uint8_t c, uint8_t kind, uint8_t idx) __banked;   // DK_NONE — патруль
 void craft_launch(uint8_t c, uint8_t kind, uint8_t idx) __banked;     // ConfirmDestination
 void craft_return(uint8_t c) __banked;
+// Центр глобуса на цель (вид — по сетке предрасчитанных видов, масштаб не дальше zmin, скорость 5 с)
+void geo_center(const geo_t *p, uint8_t zmin) __banked;
 uint8_t waypoint_new(const geo_t *p) __banked;   // WP_PENDING до waypoint_confirm
 void waypoint_confirm(uint8_t w) __banked;
 void waypoint_drop(uint8_t w) __banked;

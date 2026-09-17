@@ -477,7 +477,7 @@ static void mark_one(uint8_t i)
 			if (t->x >= x2 || t->x + t->w <= x || t->y >= y2 || t->y + t->h <= y) continue;
 			marked[j] = 1;
 		}
-	} else if (w->type == W_CUSTOM || w->type == W_BUTTON || w->type == W_BAR || w->type == W_COMBO)
+	} else if (w->type == W_CUSTOM || w->type == W_BUTTON || w->type == W_TOGGLE || w->type == W_BAR || w->type == W_COMBO)
 		marked[i] = 1;
 }
 
@@ -493,7 +493,8 @@ static void redraw_dyn(void)
 {
 	for (uint8_t i = 0; i < S.n; i++) {
 		const wdef_t *w = &W[i];
-		if (w->str != NOSTR && (w->str & 0x8000)) mark_one(i);
+		// переключатели — тоже: скорость времени меняется не только щелчком (центр на цель, начало боя)
+		if (w->type == W_TOGGLE || (w->str != NOSTR && (w->str & 0x8000))) mark_one(i);
 	}
 	flush_marked();
 }

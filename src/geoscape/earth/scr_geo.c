@@ -149,6 +149,14 @@ static void center_on(const geo_t *p)
 	ST->speed = 0;
 }
 
+// Центр на цель у окон НЛО, места миссии и базы пришельцев: масштаб не дальше zmin (просьба
+// пользователя: на НЛО и террор — z2), вид — по сетке (center_on)
+void geo_center(const geo_t *p, uint8_t zmin) __banked
+{
+	if (ST->zoom < zmin) ST->zoom = zmin;
+	center_on(p);
+}
+
 // ---------------------------------------------------------------- время
 
 // Номера строк — по алфавиту (str_ids.h), поэтому таблицы, а не STR_JAN + n.
@@ -917,7 +925,7 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	case SCR_UFO_DETECTED:                        // 1 — центр, 2 — перехват (центр, окно перехвата поверх)
 		if (ev == EVT_BUTTON) {
 			geo_t p = ST->ufo[ctx.ufo].pos;
-			center_on(&p);
+			geo_center(&p, 2);
 			if (arg == 2) { ctx.tkind = TGT_UFO; ctx.tidx = ctx.ufo; UI_GO(A_PUSH, SCR_INTERCEPT); }
 			else UI_GO(A_POP, 0);
 		}
@@ -925,7 +933,7 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	case SCR_MISSION_DETECTED:
 		if (ev == EVT_BUTTON) {
 			geo_t p = ST->site[ctx.tidx].pos;
-			center_on(&p);
+			geo_center(&p, 2);
 			if (arg == 2) { ctx.tkind = TGT_SITE; UI_GO(A_PUSH, SCR_INTERCEPT); }
 			else UI_GO(A_POP, 0);
 		}
