@@ -1,12 +1,13 @@
-;; Банк 25: предрасчитанные виды глобуса с SD (GVIEW.PAK, конвертер Core/GlobeViews.cs;
-;; project_docs/globe.md §12.5). На зумах 0–2 вид берётся готовым: на каждую из 200 строк —
-;; число отрезков и пары (длина в парах − 1, текстура 0..13). Геометрии в кадре нет вовсе:
-;; остаются тень, вывод отрезков (globe_s.s _gl_rows_pre) и копия на экран.
+;; Банк 25: предрасчитанные виды глобуса с SD (GVIEW.PAK 'GVE2', конвертер Core/GlobeEdges.cs;
+;; project_docs/globe.md §12.11). Вид хранит куски границ карты (рёбрами): геометрии в кадре нет,
+;; остаются тень, проход кусков (globe_s.s _gl_rows_edg) и копия на экран. Все зумы 0–5.
 ;;
 ;; Сетка видов: поворот i из nLon (угол i · 65536 / nLon), наклон j из nTilt (угол
-;; (j − (nTilt − 1) / 2) · tstep); наклон ограничен ±27°, зумы 3–5 остаются рёберному рендеру.
-;; Поток вида читается прямо в страницу рёбер с EP_VIEW, указатели зума — с EP_VIDX; рёберный
-;; рендер их затирает, поэтому globe_f.s сбрасывает кэш через gview_reset.
+;; (j − (nTilt − 1) / 2) · tstep); наклон ограничен ±27°. Виды зума лежат подряд без выравнивания,
+;; таблица зума — u32 смещение вида в файле (nLon · nTilt + 1 штук). В страницу рёбер с EP_VIDX
+;; читается кусок таблицы одной строки наклона (nLon + 1 смещений): поворот по долготе берёт из
+;; него смещения без чтения таблицы с карты. Вид — прямо в EP_VIEW. Рёберный рендер их затирает,
+;; поэтому globe_f.s сбрасывает кэш через gview_reset.
 ;;
 ;; Соглашения. Банковые функции (__banked): аргументы — в стеке (на входе SP + 5 — первый),
 ;; стек чистит вызывающий, результат-байт — в A. Вызовы банка 12 (fat_*) — так же, через
@@ -19,7 +20,7 @@
 	.globl	_gview_open, _gview_pick, _gview_load, _gview_reset, _globe_snap
 	.globl	b_gview_open, b_gview_pick, b_gview_load, b_gview_reset, b_globe_snap
 	.globl	_fat_mount, _fat_open, _fat_read, b_fat_mount, b_fat_open, b_fat_read
-	.globl	_far_read, _far_word, _res_game
+	.globl	_far_read, _res_game
 	.globl	___sdcc_bcall_ehl, ___muluint2ulong, ___mulsint2slong
 
 b_gview_open	= 25
@@ -28,31 +29,31 @@ b_gview_load	= 25
 b_gview_reset	= 25
 b_globe_snap	= 25
 
-EP_VIEW	= 0x1800			; страница рёбер: поток отрезков вида
-EP_VIDX	= 0x3400			;   указатели видов зума (u16 на вид)
-GV_Z	= 3				; зумов с предрасчётом
-HDR	= 8 + GV_Z * 16			; заголовок пакета: 'GVW1', u16 nZoom, zFirst, по 16 байт на зум
+EP_VIEW	= 0x1800			; страница рёбер: поток кусков вида
+EP_VIDX	= 0x3400			;   смещения видов строки наклона (u32 на вид)
+VIEW_MAX = 0x1C00			; вид — не длиннее (до EP_VIDX)
+GV_Z	= 6				; зумов с предрасчётом
+NLON_MAX = 144
+HDR	= 8 + GV_Z * 16			; заголовок пакета: 'GVE2', u16 nZoom, zFirst, по 16 байт на зум
 
 	.area	_DATA
 
 gv_state:	.ds	1		; 0 — не открывали, 1 — есть, 2 — нет
-gv_izp1:	.ds	1		; зум + 1, чьи указатели лежат в EP_VIDX (0 — ничьи)
+gv_izp1:	.ds	1		; зум + 1, чья строка смещений лежит в EP_VIDX (0 — ничья)
+gv_rb:		.ds	2		;   её первый вид
 gv_curok:	.ds	1		; 1 — в EP_VIEW лежит вид gv_cur
 gv_cur:		.ds	2
 gv_nlon:	.ds	2 * GV_Z
 gv_ntilt:	.ds	2 * GV_Z
 gv_tstep:	.ds	2 * GV_Z	; шаг наклона (65536 = 360°)
-gv_isec:	.ds	4 * GV_Z	; сектор указателей зума
-gv_dsec:	.ds	4 * GV_Z	; сектор данных зума
-gv_lon:		.ds	2 * 72 * GV_Z	; углы поворота сетки i · 65536 / nLon (деление один раз)
+gv_ipos:	.ds	4 * GV_Z	; таблица смещений зума (байт от начала файла)
 gvf:		.ds	69		; fat_file_t
 gv_path:	.ds	20		; путь пакета в окне 1: литерал банка 25 не виден из банка 12
 gv_hdr:		.ds	HDR
 gv_ep:		.ds	1		; страница рёбер текущего вызова
 gv_z:		.ds	1
 gv_iv:		.ds	2
-gv_s0:		.ds	2
-gv_cnt:		.ds	2
+gv_s0:		.ds	8		; смещения вида и следующего (u32, u32)
 gv_tmp4:	.ds	4
 pk_n:		.ds	1		; выбор вида: nLon, k, i, шаг наклона, j
 pk_k:		.ds	1
@@ -139,7 +140,7 @@ go_new:
 	ld	de, #EP_VIDX
 	call	gv_fard
 	call	_far_read
-	ld	hl, #gv_hdr		; 'GVE1' (виды рёбрами, globe.md §12.11), nZoom >= 3, первый зум 0
+	ld	hl, #gv_hdr		; 'GVE2' (виды рёбрами, globe.md §12.11), nZoom >= 6, первый зум 0
 	ld	a, (hl)
 	cp	a, #0x47
 	jp	nz, go_fail
@@ -153,7 +154,7 @@ go_new:
 	jp	nz, go_fail
 	inc	hl
 	ld	a, (hl)
-	cp	a, #0x31
+	cp	a, #0x32
 	jp	nz, go_fail
 	ld	a, (gv_hdr + 4)
 	cp	a, #GV_Z
@@ -164,18 +165,18 @@ go_new:
 	xor	a, a
 	ld	(gv_z), a
 	ld	ix, #gv_hdr + 8
-go_zoom:				; запись зума: nLon, nTilt, шаг наклона, R, isec, dsec
+go_zoom:				; запись зума: nLon, nTilt, шаг наклона, R, смещение таблицы
 	ld	a, (gv_z)
 	add	a, a
 	ld	e, a
 	ld	d, #0			; DE = 2z
-	ld	a, 1 (ix)		; nLon: 1..72
+	ld	a, 1 (ix)		; nLon: 1..144
 	or	a, a
 	jp	nz, go_fail
 	ld	a, 0 (ix)
 	or	a, a
 	jp	z, go_fail
-	cp	a, #73
+	cp	a, #NLON_MAX + 1
 	jp	nc, go_fail
 	ld	hl, #gv_nlon
 	add	hl, de
@@ -203,9 +204,8 @@ go_zoom:				; запись зума: nLon, nTilt, шаг наклона, R, isec
 	ld	a, 5 (ix)
 	ld	(hl), a
 	ex	de, hl
-	add	hl, hl
-	push	hl			; 4z
-	ld	de, #gv_isec
+	add	hl, hl			; 4z
+	ld	de, #gv_ipos
 	add	hl, de
 	ex	de, hl
 	push	ix
@@ -213,55 +213,7 @@ go_zoom:				; запись зума: nLon, nTilt, шаг наклона, R, isec
 	ld	bc, #8
 	add	hl, bc
 	ld	bc, #4
-	ldir				; isec
-	ex	de, hl			; HL — dst isec + 4, DE — запись + 12
-	pop	hl			; 4z
-	push	de
-	ld	de, #gv_dsec
-	add	hl, de
-	ex	de, hl
-	pop	hl
-	ld	bc, #4
-	ldir				; dsec
-	; углы сетки: gv_lon[z][i] = (i · 65536 + n/2) / n; n <= 72 — делитель байт, остаток < n
-	ld	hl, #gv_lon
-	ld	a, (gv_z)
-	or	a, a
-	jr	z, 3$
-	ld	b, a
-	ld	de, #144
-2$:	add	hl, de
-	djnz	2$
-3$:	ld	c, 0 (ix)		; C — n
-	ld	b, #0			; B — i
-4$:	push	bc
-	push	hl
-	ld	a, c
-	srl	a
-	ld	e, a
-	ld	d, #0			; DE — младшее слово делимого, в него же вдвигается частное
-	ld	h, b			; H — остаток (старшее слово делимого = i < n)
-	ld	l, #16
-5$:	sla	e
-	rl	d
-	rl	h
-	ld	a, h
-	sub	a, c
-	jr	c, 6$
-	ld	h, a
-	inc	e
-6$:	dec	l
-	jr	nz, 5$
-	pop	hl
-	ld	(hl), e
-	inc	hl
-	ld	(hl), d
-	inc	hl
-	pop	bc
-	inc	b
-	ld	a, b
-	cp	a, c
-	jr	c, 4$
+	ldir				; смещение таблицы
 	ld	bc, #16
 	add	ix, bc
 	ld	a, (gv_z)
@@ -343,7 +295,7 @@ _gview_pick::
 	add	a, #0x80
 	ld	a, l
 	adc	a, #0
-	ld	b, a			; i < 256
+	ld	b, a			; i <= n
 	ld	a, (pk_n)
 	ld	c, a
 	ld	a, b
@@ -393,22 +345,29 @@ _gview_pick::
 	or	a, a
 	sbc	hl, de
 5$:	ld	(pk_j), hl
-	ld	hl, #gv_lon		; *lon = gv_lon[z][i]
-	ld	a, 7 (ix)
-	or	a, a
-	jr	z, 7$
-	ld	b, a
-	ld	de, #144
-6$:	add	hl, de
-	djnz	6$
-7$:	ld	a, (pk_i)
+	; *lon = (i · 65536 + n/2) / n: делитель — байт, остаток < n <= 144 (сдвиг остатка может
+	; перенести за байт — тогда вычитание обязательно)
+	ld	a, (pk_n)
+	ld	c, a			; C — n
+	srl	a
 	ld	e, a
-	ld	d, #0
-	add	hl, de
-	add	hl, de
-	ld	e, (hl)
-	inc	hl
-	ld	d, (hl)
+	ld	d, #0			; DE — младшее слово делимого, в него же вдвигается частное
+	ld	a, (pk_i)
+	ld	h, a			; H — остаток (старшее слово делимого = i < n)
+	ld	l, #16
+6$:	sla	e
+	rl	d
+	rl	h
+	ld	a, h
+	jr	c, 7$
+	sub	a, c
+	jr	c, 8$
+	jr	9$
+7$:	sub	a, c
+9$:	ld	h, a
+	inc	e
+8$:	dec	l
+	jr	nz, 6$
 	ld	l, 8 (ix)
 	ld	h, 9 (ix)
 	ld	(hl), e
@@ -471,50 +430,74 @@ div16:
 
 ;; ================================================================ чтение вида
 
-;; uint8_t gview_load(uint8_t ep, uint8_t z, uint16_t iv) __banked — указатели зума и сам вид ->
-;; страница рёбер ep (1 — вид в EP_VIEW)
+;; uint8_t gview_load(uint8_t ep, uint8_t z, uint16_t iv) __banked — смещения строки наклона и
+;; сам вид -> страница рёбер ep (1 — вид в EP_VIEW)
 _gview_load::
 	push	ix
 	ld	ix, #0
 	add	ix, sp			; +7 ep, +8 z, +9 iv
 	ld	a, 7 (ix)
 	ld	(gv_ep), a
-	ld	a, (gv_izp1)
-	dec	a
-	cp	a, 8 (ix)
-	jp	z, ld_view
-	ld	a, 8 (ix)		; указатели зума: (nLon · nTilt + 1) · 2 байт с сектора isec
+	ld	a, 8 (ix)		; DE = nLon[z]
 	add	a, a
 	ld	e, a
 	ld	d, #0
 	ld	hl, #gv_nlon
 	add	hl, de
-	ld	a, (hl)
-	ld	hl, #gv_ntilt
-	add	hl, de
 	ld	e, (hl)
-	ld	d, #0
-	ld	l, a
-	ld	h, #0
+	ld	l, 9 (ix)		; rb = iv / n · n — первый вид строки
+	ld	h, 10 (ix)
+	call	div16
 	call	___muluint2ulong
-	inc	de
-	ex	de, hl
+	ld	(gv_iv), de		; rb
+	ld	a, (gv_izp1)		; строка уже лежит
+	dec	a
+	cp	a, 8 (ix)
+	jr	nz, 1$
+	ld	hl, (gv_rb)
+	or	a, a
+	sbc	hl, de
+	jp	z, ld_view
+1$:	xor	a, a
+	ld	(gv_izp1), a
+	ld	(gv_curok), a
+	ld	a, 8 (ix)		; len = (n + 1) · 4
+	add	a, a
+	ld	c, a
+	ld	b, #0
+	ld	hl, #gv_nlon
+	add	hl, bc
+	ld	l, (hl)
+	ld	h, #0
+	inc	hl
+	add	hl, hl
 	add	hl, hl
 	ld	de, #0
-	push	de			; len
+	push	de
 	push	hl
 	ld	de, #EP_VIDX		; dst
 	call	gv_fard
 	push	hl
 	push	de
-	ld	a, 8 (ix)		; pos = isec[z] << 9
+	ld	a, 8 (ix)		; pos = ipos[z] + rb · 4
 	add	a, a
 	add	a, a
 	ld	e, a
 	ld	d, #0
-	ld	hl, #gv_isec
+	ld	hl, #gv_ipos
 	add	hl, de
-	call	shl9
+	ld	de, #gv_tmp4
+	ld	bc, #4
+	ldir
+	ld	hl, (gv_iv)
+	add	hl, hl
+	add	hl, hl
+	ld	de, (gv_tmp4)
+	add	hl, de
+	ex	de, hl
+	ld	hl, (gv_tmp4 + 2)
+	ld	bc, #0
+	adc	hl, bc
 	push	hl
 	push	de
 	ld	hl, #gvf
@@ -527,11 +510,11 @@ _gview_load::
 	ld	sp, hl
 	or	a, a
 	jp	nz, ld_fail
+	ld	hl, (gv_iv)
+	ld	(gv_rb), hl
 	ld	a, 8 (ix)
 	inc	a
 	ld	(gv_izp1), a
-	xor	a, a
-	ld	(gv_curok), a
 ld_view:
 	ld	a, (gv_curok)		; тот же вид — уже лежит
 	or	a, a
@@ -547,58 +530,51 @@ ld_view:
 	ret
 1$:	xor	a, a
 	ld	(gv_curok), a
-	ld	l, 9 (ix)		; s0 = указатель[iv], s1 = указатель[iv + 1]
+	ld	l, 9 (ix)		; far_read(FAR(ep, EP_VIDX + (iv − rb) · 4), gv_s0, 8)
 	ld	h, 10 (ix)
+	ld	de, (gv_rb)
+	or	a, a
+	sbc	hl, de
+	add	hl, hl
 	add	hl, hl
 	ld	de, #EP_VIDX
 	add	hl, de
-	push	hl
 	ex	de, hl
+	ld	hl, #8
+	push	hl
+	ld	hl, #gv_s0
+	push	hl
 	call	gv_fard
-	call	_far_word
-	ld	(gv_s0), de
-	pop	de
-	inc	de
-	inc	de
-	call	gv_fard
-	call	_far_word
-	ld	hl, (gv_s0)
-	ex	de, hl			; HL = s1, DE = s0
+	call	_far_read
+	ld	hl, (gv_s0 + 4)		; len = s1 − s0: 1..VIEW_MAX
+	ld	de, (gv_s0)
 	or	a, a
 	sbc	hl, de
+	ex	de, hl
+	ld	hl, (gv_s0 + 6)
+	ld	bc, (gv_s0 + 2)
+	sbc	hl, bc
+	ld	a, h
+	or	a, l
+	jp	nz, ld_fail
+	ld	a, d
+	or	a, e
 	jp	z, ld_fail
+	ld	hl, #VIEW_MAX
+	or	a, a
+	sbc	hl, de
 	jp	c, ld_fail
-	ld	(gv_cnt), hl		; секторов
-	ld	a, 8 (ix)		; (dsec[z] + s0) — в gv_tmp4
-	add	a, a
-	add	a, a
-	ld	e, a
-	ld	d, #0
-	ld	hl, #gv_dsec
-	add	hl, de
-	ld	de, #gv_tmp4
-	ld	bc, #4
-	ldir
-	ld	hl, (gv_tmp4)
-	ld	de, (gv_s0)
-	add	hl, de
-	ld	(gv_tmp4), hl
-	ld	hl, (gv_tmp4 + 2)
-	ld	de, #0
-	adc	hl, de
-	ld	(gv_tmp4 + 2), hl
-	ld	de, (gv_cnt)		; len = секторов << 9
-	call	shl9w
-	push	hl
+	ld	hl, #0
+	push	hl			; len
 	push	de
 	ld	de, #EP_VIEW		; dst
 	call	gv_fard
 	push	hl
 	push	de
-	ld	hl, #gv_tmp4		; pos
-	call	shl9
+	ld	hl, (gv_s0 + 2)		; pos
 	push	hl
-	push	de
+	ld	hl, (gv_s0)
+	push	hl
 	ld	hl, #gvf
 	push	hl
 	ld	e, #b_fat_read
@@ -621,32 +597,7 @@ ld_fail:
 	pop	ix
 	ret
 
-;; (HL) — uint32 v -> HL (старшее), DE (младшее) = v << 9 (старший байт v не нужен: секторов < 2^23)
-shl9:
-	ld	d, (hl)
-	inc	hl
-	ld	a, (hl)
-	inc	hl
-	ld	h, (hl)
-	ld	l, a
-	ld	e, #0
-	sla	d
-	rl	l
-	rl	h
-	ret
-
-;; DE << 9 -> HL (старшее), DE (младшее)
-shl9w:
-	ld	h, #0
-	ld	l, d
-	ld	d, e
-	ld	e, #0
-	sla	d
-	rl	l
-	rl	h
-	ret
-
-;; void gview_reset(void) __banked — рёберный рендер затёр поток и указатели
+;; void gview_reset(void) __banked — рёберный рендер затёр поток и смещения
 _gview_reset::
 	xor	a, a
 	ld	(gv_izp1), a

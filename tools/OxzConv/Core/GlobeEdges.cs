@@ -31,7 +31,7 @@ namespace OxzConv
 	static class GlobeEdges
 	{
 		static readonly int[] ZR = { 90, 120, 180, 280, 450, 720 };
-		const int H = 200, Sector = 512, XOff = 64 * 256, Bias = 192;
+		const int H = 200, Sector = 512, Bias = 192, MaxView = 0x1C00;
 
 		class Piece
 		{
@@ -43,7 +43,7 @@ namespace OxzConv
 			public Piece Next, Prev;
 		}
 
-		struct Cross { public int Y; public double X, T; public bool Down; public byte Right; }
+		struct Cross { public int Y; public double X, T; public bool Down, Vis; public byte Right, Left; }
 
 		static string Key(GlobeArcs a, int i, bool b) =>
 			b ? $"{Math.Round(a.Bx[i] * 1e9)},{Math.Round(a.By[i] * 1e9)},{Math.Round(a.Bz[i] * 1e9)}"
@@ -93,7 +93,7 @@ namespace OxzConv
 			{
 				if (!Disc(R, y, out int pl, out int pr)) continue;
 				double v = (y + 0.5 - 100) / R, c = Math.Sqrt(Math.Max(0, 1 - v * v));
-				byte left = 0; double lx = double.MaxValue;
+				var row = new List<(int i, Cross q)>();
 				if (c > 1e-9 && rows[y] != null)
 					foreach (int i in rows[y])
 					{
@@ -110,12 +110,22 @@ namespace OxzConv
 							if (sp <= 0 || sp * a.Ct[i] - cp * a.St[i] >= 0) continue;
 							bool down = dA[i] * cp - vA[i] * sp > 0;
 							double x = 128 + R * c * sth + 0.5;                  // как путь А
-							if (cross[i] == null) cross[i] = new List<Cross>();
-							cross[i].Add(new Cross { Y = y, X = x, T = Math.Atan2(sp, cp), Down = down, Right = down ? a.TL[i] : a.TR[i] });
-							if (x < lx) { lx = x; left = down ? a.TR[i] : a.TL[i]; }
+							int pair = (int)Math.Round(x / 2);
+							row.Add((i, new Cross { Y = y, X = x, T = Math.Atan2(sp, cp), Down = down, Vis = pair > pl && pair <= pr,
+								Right = down ? a.TL[i] : a.TR[i], Left = down ? a.TR[i] : a.TL[i] }));
 						}
 					}
-				seed[y] = lx < double.MaxValue ? left : Probe(a, v * eyx + c * ezx, v * eyy + c * ezy, v * eyz + c * ezz);
+				// текстура на левом краю окна (как путь А): левее самой левой границы, затем правее
+				// каждой границы с парой <= pl — такие границы (и правее pr) отрезков не дают и в вид не идут
+				row.Sort((p, q) => p.q.X.CompareTo(q.q.X));
+				byte cur = row.Count > 0 ? row[0].q.Left : Probe(a, v * eyx + c * ezx, v * eyy + c * ezy, v * eyz + c * ezz);
+				foreach (var (i, q) in row)
+				{
+					if ((int)Math.Round(q.X / 2) <= pl) cur = q.Right;
+					if (cross[i] == null) cross[i] = new List<Cross>();
+					cross[i].Add(q);
+				}
+				seed[y] = cur;
 			}
 			// куски: пересечения дуги по параметру t, разрыв — смена направления или пропуск строки
 			var pieces = new List<Piece>();
@@ -126,8 +136,9 @@ namespace OxzConv
 				int k0 = 0;
 				while (k0 < cs.Count)
 				{
+					if (!cs[k0].Vis) { k0++; continue; }
 					int k1 = k0 + 1;
-					while (k1 < cs.Count && cs[k1].Down == cs[k0].Down && Math.Abs(cs[k1].Y - cs[k1 - 1].Y) == 1) k1++;
+					while (k1 < cs.Count && cs[k1].Vis && cs[k1].Down == cs[k0].Down && Math.Abs(cs[k1].Y - cs[k1 - 1].Y) == 1) k1++;
 					var seg = cs.GetRange(k0, k1 - k0);
 					bool down = seg[0].Down;
 					if (!down) seg.Reverse();                             // по строкам сверху вниз
@@ -226,7 +237,7 @@ namespace OxzConv
 			var sd = new List<(int, int)>();
 			int last = -2;
 			for (int y = 0; y < H; y++) if (seed[y] >= 0 && seed[y] != last) { sd.Add((y, seed[y])); last = seed[y]; }
-			if (sd.Count > 255) throw new Exception("GVE1: seeds > 255");
+			if (sd.Count > 255) throw new Exception("GVE2: seeds > 255");
 			b.Add((byte)sd.Count);
 			foreach (var (y, t) in sd) { b.Add((byte)y); b.Add((byte)t); }
 			int prevRow = 0;
@@ -236,22 +247,22 @@ namespace OxzConv
 				var hs = byRow[r].OrderBy(p => p.Pos).ToList();
 				int d = r - prevRow; prevRow = r;
 				while (d > 255) { b.Add(255); b.Add(0); d -= 255; }
-				if (hs.Count > 255) throw new Exception("GVE1: starts > 255");
+				if (hs.Count > 255) throw new Exception("GVE2: starts > 255");
 				b.Add((byte)d); b.Add((byte)hs.Count);
 				foreach (var h in hs)
 				{
-					int xs = h.X0 + XOff;
-					if (xs < 0 || xs > 65535 || h.Pos > 255) throw new Exception("GVE1: X0/pos out of range");
+					int xs = h.X0;
+						if (xs < 0 || xs > 65535 || h.Pos > 255) throw new Exception("GVE2: X0/pos out of range");
 					b.Add((byte)xs); b.Add((byte)(xs >> 8)); b.Add((byte)h.Pos);
 					for (var e = h; ; e = e.Next)
 					{
 						bool shortOk = e.Rows <= 16 && e.DX >= -2048 && e.DX < 2048;
-						if (e.Rows > 256) throw new Exception("GVE1: rows > 256");
+						if (e.Rows > 256) throw new Exception("GVE2: rows > 256");
 						b.Add((byte)((e.Next != null ? 0x80 : 0) | (shortOk ? 0 : 0x40) | e.Tex));
 						if (shortOk) { b.Add((byte)(((e.Rows - 1) << 4) | ((e.DX >> 8) & 15))); b.Add((byte)e.DX); }
 						else { b.Add((byte)(e.Rows - 1)); b.Add((byte)e.DX); b.Add((byte)(e.DX >> 8)); }
 						if (e.Next == null) break;
-						int corr = e.Next.X0 - (e.X0 + e.Rows * e.DX);
+						int corr = (short)(e.Next.X0 - (e.X0 + e.Rows * e.DX));          // по модулю 2^16, как в движке
 						if (corr > -128 && corr < 128) b.Add((byte)corr);
 						else { b.Add(0x80); b.Add((byte)corr); b.Add((byte)(corr >> 8)); }
 					}
@@ -298,7 +309,7 @@ namespace OxzConv
 				{
 					for (int i = 0; i < groupN; i++)
 					{
-						int X = (v[p] | (v[p + 1] << 8)) - XOff, pos = v[p + 2];
+						int X = v[p] | (v[p + 1] << 8), pos = v[p + 2];
 						var s = ReadPiece(X, p + 3);
 						act.Insert(pos, s);
 						p = Skip(s[5], s[4] != 0);
@@ -316,13 +327,11 @@ namespace OxzConv
 					var s = act[k];
 					if (disc)
 					{
-						int bx = ((s[0] + Bias) >> 8);
-						if (bx < pl) bx = pl;
-						if (bx > pr + 1) bx = pr + 1;
+						int bx = ((s[0] + Bias) & 0xFFFF) >> 8;         // без прижатия: в виде только границы окна
 						if (bx > x0) { outb.Add((byte)(bx - x0 - 1)); outb.Add((byte)t); cnt++; x0 = bx; }
 					}
 					t = s[3];
-					s[0] += s[1];
+					s[0] = (s[0] + s[1]) & 0xFFFF;
 					if (--s[2] == 0)
 					{
 						if (s[4] != 0)
@@ -330,7 +339,7 @@ namespace OxzConv
 							int q = s[5];
 							int c = (sbyte)v[q++];
 							if (c == -128) { c = (short)(v[q] | (v[q + 1] << 8)); q += 2; }
-							var ns = ReadPiece(s[0] + c, q);
+							var ns = ReadPiece((s[0] + c) & 0xFFFF, q);
 							act[k] = ns;
 						}
 						else { act.RemoveAt(k); k--; }
@@ -387,12 +396,12 @@ namespace OxzConv
 		{
 			const int NZoom = GlobeViews.NZoom, ZFirst = GlobeViews.ZFirst;
 			var hdr = new byte[Sector];
-			BitConverter.GetBytes(0x31455647u).CopyTo(hdr, 0);          // 'GVE1'
+			BitConverter.GetBytes(0x32455647u).CopyTo(hdr, 0);          // 'GVE2'
 			hdr[4] = NZoom; hdr[6] = ZFirst;
 			var stats = new string[NZoom];
-			long sec = 1;
+			long pos = Sector;
 			var idx = new byte[NZoom][];
-			var blocks = new List<byte[]>[NZoom];
+			var blocks = new byte[NZoom][][];
 			for (int zi = 0; zi < NZoom; zi++)
 			{
 				int z = ZFirst + zi;
@@ -410,45 +419,36 @@ namespace OxzConv
 						diffs[vi] = Compare(GlobeViews.ViewRuns(arcs, z, lon, tilt), Decode(views[vi], z), z);
 					}
 				});
-				long idxSec = sec;
-				int idxBytes = (nv + 1) * 2;
-				sec += (idxBytes + Sector - 1) / Sector;
-				long datSec = sec;
-				var tab = new byte[((idxBytes + Sector - 1) / Sector) * Sector];
-				long off = 0, tot = 0, max = 0, dsum = 0, dmax = 0, psum = 0;
+				long idxPos = pos;
+				var tab = new byte[(nv + 1) * 4];
+				pos += tab.Length;
+				long tot = 0, max = 0, dsum = 0, dmax = 0, psum = 0;
 				for (int k = 0; k < nv; k++)
 				{
-					BitConverter.GetBytes((ushort)off).CopyTo(tab, k * 2);
-					off += (views[k].Length + Sector - 1) / Sector;
+					if (views[k].Length > MaxView) throw new Exception($"GVE2: z{z} view {k} {views[k].Length} bytes > {MaxView}");
+					BitConverter.GetBytes((uint)pos).CopyTo(tab, k * 4);
+					pos += views[k].Length;
 					tot += views[k].Length; max = Math.Max(max, views[k].Length);
 					dsum += diffs[k]; dmax = Math.Max(dmax, diffs[k]); psum += np[k];
 				}
-				BitConverter.GetBytes((ushort)off).CopyTo(tab, nv * 2);
-				idx[zi] = tab; blocks[zi] = views.ToList();
-				sec += off;
+				BitConverter.GetBytes((uint)pos).CopyTo(tab, nv * 4);
+				idx[zi] = tab; blocks[zi] = views;
 				int ho = 8 + zi * 16;
 				BitConverter.GetBytes((ushort)g.nLon).CopyTo(hdr, ho);
 				BitConverter.GetBytes((ushort)g.nTilt).CopyTo(hdr, ho + 2);
 				BitConverter.GetBytes((ushort)Math.Round(g.tiltStep * 65536 / 360)).CopyTo(hdr, ho + 4);
 				BitConverter.GetBytes((ushort)ZR[z]).CopyTo(hdr, ho + 6);
-				BitConverter.GetBytes((uint)idxSec).CopyTo(hdr, ho + 8);
-				BitConverter.GetBytes((uint)datSec).CopyTo(hdr, ho + 12);
-				stats[zi] = $"z{z} {nv} views, {psum / (double)nv:0} pieces, {tot / (double)nv / 1024:0.00} KB avg, {max / 1024.0:0.00} KB max, " +
-					$"{off * Sector / 1048576.0:0.00} MB, pairs differing from runs {dsum} (max {dmax} in a view)";
+				BitConverter.GetBytes((uint)idxPos).CopyTo(hdr, ho + 8);
+				stats[zi] = $"z{z} {g.nLon}x{g.nTilt}={nv} views, {psum / (double)nv:0} pieces, {tot / (double)nv:0} B avg, {max} B max, " +
+					$"{(tot + tab.Length) / 1048576.0:0.00} MB, pairs differing from runs {dsum} (max {dmax} in a view)";
 			}
 			using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write))
 			{
 				fs.Write(hdr, 0, hdr.Length);
-				var pad = new byte[Sector];
 				for (int zi = 0; zi < NZoom; zi++)
 				{
 					fs.Write(idx[zi], 0, idx[zi].Length);
-					foreach (var v in blocks[zi])
-					{
-						fs.Write(v, 0, v.Length);
-						int r = v.Length % Sector;
-						if (r != 0) fs.Write(pad, 0, Sector - r);
-					}
+					foreach (var v in blocks[zi]) fs.Write(v, 0, v.Length);
 				}
 				return (string.Join("; ", stats), fs.Length);
 			}

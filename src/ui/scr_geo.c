@@ -346,7 +346,7 @@ static void rotate(uint8_t d)
 		else if (d == 2) ctx.globe_lat = ctx.globe_lat > -16384 + st ? ctx.globe_lat - st : -16384;
 		else ctx.globe_lat = ctx.globe_lat < 16384 - st ? ctx.globe_lat + st : 16384;
 	}
-	{                                            // зумы 0–2 — по сетке предрасчитанных видов
+	{                                            // по сетке предрасчитанных видов (наклон до ±27°)
 		uint16_t nl = ctx.globe_lon;
 		int16_t na = ctx.globe_lat;
 		if (globe_snap(z, &nl, &na)) { ctx.globe_lon = nl; ctx.globe_lat = na; }
