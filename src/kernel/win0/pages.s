@@ -9,6 +9,7 @@
 	.globl	_pg_free_count
 	.globl	_pg_map3
 	.globl	win3_real
+	.globl	_gfx_yb
 	.globl	_pg_win3
 	.globl	_gfx_map
 
@@ -22,6 +23,7 @@ PAGE3_PORT	= 0x13AF
 _pg_pool_map::
 pool_map:	.ds	8		; 1 — занята (бит i — страница POOL_FIRST + i); _pg_pool_map — метка для сценариев (peek)
 win3_page:	.ds	1		; страница Win3 для pg_win3: логическая, её восстанавливают вызывающие
+_gfx_yb::	.dw	0		; смещение строки для gfx_map (ui.c: сборка виджета в рабочей области)
 win3_real::	.ds	1		; фактическая (порт): её подменяет и возвращает прерывание курсора,
 				;   поэтому её обновляют и места, где Win3 переключают напрямую
 pa_n:		.ds	1
@@ -189,7 +191,14 @@ _pg_win3::
 
 ;; uint8_t *gfx_map(int16_t x /*HL*/, int16_t y /*DE*/) — страница строки y в Win3
 ;; (НЕ восстанавливается), адрес #C000 + (y & 31) * 512 + x (строка 512 байт).
+;; К y прибавляется gfx_yb — смещение строки: 0 — видимый экран, иначе рабочая область
+;; композиции виджетов (ui.c) или задний буфер.
 _gfx_map::
+	push	hl
+	ld	hl, (_gfx_yb)
+	add	hl, de
+	ex	de, hl
+	pop	hl
 	ld	a, e
 	and	#0x1F
 	add	a, a

@@ -177,15 +177,8 @@ static uint8_t inv_mid;                      // цвет середины наж
 
 static void draw_window(const wdef_t *w)
 {
-	if (w->flags & WF_THIN) {                    // ComboBox: фаска, фон внутри с (3,3)
-		inv_mid = 0;
-		gfx_bevel(w->x, w->y, w->w, w->h, col, 0, 0);
-		if (S.bg) gfx_bg(S.bg, w->x + 3, w->y + 3, w->w - 5, w->h - 5);
-		return;
-	}
-	if (S.bg) gfx_bg(S.bg, w->x + 5, w->y + 5, w->w - 10, w->h - 10);
-	else gfx_fill(w->x + 4, w->y + 4, w->w - 8, w->h - 8, col + 3);
-	gfx_rings(w->x, w->y, w->w, w->h, col);
+	inv_mid = 0;
+	gfx_window(w->x, w->y, w->w, w->h, col, S.bg, w->flags & WF_THIN);
 }
 
 // TextButton::draw: фаска и текст; нажатая — инверсия вокруг c+3 (геоскейп — c+2).
@@ -435,6 +428,7 @@ static uint8_t marked[SDEF_MAXW];
 // ни вывод. Это и есть «виджет знает, надо ли перерисовываться»: раньше мигал фоном даже когда текст
 // не менялся (перерисовка стека, закрытие окна, такт геоскейпа). 0 — содержимое неизвестно.
 static uint16_t sig[SDEF_MAXW];
+static int16_t stg_x, stg_y, stg_w, stg_h;   // прямоугольник, собираемый в рабочей области
 
 static uint16_t sig_bytes(const char *p, uint8_t n)
 {
@@ -484,22 +478,58 @@ static void mark_one(uint8_t i)
 	if (content_same(i)) return;                 // то же содержимое — экран не трогаем
 	if (w->type == W_TEXT || w->type == W_LIST) {
 		int16_t x = w->x, y = w->y, x2 = x + w->w, y2 = y + w->h + 1;
-		restore(i, x, y, w->w, w->h + 1);
-		marked[i] = 1;
+		marked[i] = 2;                       // 2 — под ним нужен фон (его вернёт flush_marked)
 		const wdef_t *t = W;
 		for (uint8_t j = 0; j < S.n; j++, t++) {
 			if (t->type != W_TEXT) continue;
 			if (t->x >= x2 || t->x + t->w <= x || t->y >= y2 || t->y + t->h <= y) continue;
-			marked[j] = 1;
+			if (!marked[j]) marked[j] = 1;
 		}
 	} else if (w->type == W_CUSTOM || w->type == W_BUTTON || w->type == W_TOGGLE || w->type == W_BAR || w->type == W_COMBO)
 		marked[i] = 1;
 }
 
+// Группа отмеченных виджетов собирается в рабочей области экранной памяти (строки STAGE_Y…,
+// map.h: видимое окно — 0..199, задний буфер глобуса — 280..479) и уходит на экран одним DMA:
+// фон и содержимое сменяются за одну пересылку, поэтому пустой прямоугольник не мелькает.
+// Не помещается в рабочую область (высокая группа, список во весь экран) — рисуем прямо на экран,
+// как раньше. W_CUSTOM рисует экран сам (globe.s пишет в свои строки) — он идёт отдельно.
+#define STAGE_Y   200
+#define STAGE_H   40
+
 static void flush_marked(void)
 {
+	int16_t x0 = SCREEN_W, y0 = SCREEN_H, x1 = 0, y1 = 0;
+	uint8_t n = 0;
+	for (uint8_t i = 0; i < S.n; i++) {
+		const wdef_t *w = &W[i];
+		if (!marked[i] || w->type == W_CUSTOM) continue;
+		if (w->x < x0) x0 = w->x;
+		if (w->y < y0) y0 = w->y;
+		if (w->x + w->w > x1) x1 = w->x + w->w;
+		if (w->y + w->h + 1 > y1) y1 = w->y + w->h + 1;
+		n++;
+	}
+	uint8_t stage = 0;
+	if (n && x0 >= 0 && y0 >= 0 && x1 <= SCREEN_W && y1 <= SCREEN_H && y1 - y0 <= STAGE_H) {
+		stg_x = x0 & ~1;
+		stg_w = (x1 - stg_x + 1) & ~1;
+		if (stg_x + stg_w > SCREEN_W) stg_w = SCREEN_W - stg_x;
+		stg_y = y0;
+		stg_h = y1 - y0;
+		gfx_yb = tx_yb = (uint16_t)(STAGE_Y - y0);
+		stage = 1;
+	}
+	for (uint8_t i = 0; i < S.n; i++)             // фон под теми, у кого он меняется
+		if (marked[i] == 2) restore(i, W[i].x, W[i].y, W[i].w, W[i].h + 1);
 	for (uint8_t i = 0; i < S.n; i++)
-		if (marked[i]) draw_widget(i);
+		if (marked[i] && W[i].type != W_CUSTOM) draw_widget(i);
+	if (stage) {
+		gfx_yb = tx_yb = 0;
+		gfx_copy(stg_x, STAGE_Y, stg_y, stg_w, stg_h);
+	}
+	for (uint8_t i = 0; i < S.n; i++)             // глобус и прочие «свои» виджеты — прямо на экран
+		if (marked[i] && W[i].type == W_CUSTOM) draw_widget(i);
 	memset(marked, 0, sizeof marked);
 }
 

@@ -64,6 +64,7 @@ static void cpu_column(int16_t x, int16_t y, int16_t h, uint8_t c)
 
 static uint16_t dma_dst(int16_t x, int16_t y)
 {
+	y += gfx_yb;                         // рабочая область композиции (ui.c) или видимый экран
 	uint16_t offs = (((uint16_t)y & 31) << 9) | (uint16_t)x;
 	TS_DMADAL = (uint8_t)offs;
 	TS_DMADAH = (uint8_t)(offs >> 8);
@@ -398,4 +399,41 @@ void gfx_arrow(int16_t x, int16_t y, uint8_t c, uint8_t down) __banked
 	gfx_fill(x + 5, y + (down ? 3 : 8), 3, 3, c + 1);
 	for (uint8_t i = 0; i < 5; i++)
 		gfx_fill(x + 2 + i, down ? y + 6 + i : y + 7 - i, 9 - 2 * i, 1, c + 1);
+}
+
+// Прямоугольник экранной памяти -> другая строка экранной памяти (2D DMA, обе стороны с шагом
+// 512): готовый виджет из рабочей области композиции на экран (ui.c). x и w — чётные.
+void gfx_copy(int16_t x, int16_t ysrc, int16_t ydst, int16_t w, int16_t h) __banked
+{
+	uint16_t so = (((uint16_t)ysrc & 31) << 9) | (uint16_t)x;
+	uint16_t dof = (((uint16_t)ydst & 31) << 9) | (uint16_t)x;
+	while (h > 0) {                      // не больше 256 строк за запуск
+		int16_t n = h > 256 ? 256 : h;
+		dma_wait();
+		TS_DMASAL = (uint8_t)so; TS_DMASAH = (uint8_t)(so >> 8);
+		TS_DMASAX = SCREEN_PAGE + (uint8_t)(ysrc >> 5);
+		TS_DMADAL = (uint8_t)dof; TS_DMADAH = (uint8_t)(dof >> 8);
+		TS_DMADAX = SCREEN_PAGE + (uint8_t)(ydst >> 5);
+		TS_DMALEN = (uint8_t)(w / 2 - 1);
+		TS_DMANUM = (uint8_t)(n - 1);
+		TS_DMACTRL = DMA_RAM_RAM | DMA_ASZ | DMA_S_ALGN | DMA_D_ALGN;
+		ysrc += n; ydst += n; h -= n;
+		so = (((uint16_t)ysrc & 31) << 9) | (uint16_t)x;
+		dof = (((uint16_t)ydst & 31) << 9) | (uint16_t)x;
+	}
+	dma_wait();
+}
+
+// Окно (Window): фон пакета bg или заливка c+3 и кольца рамки; thin — фаска ComboBox
+// (Window::setThinBorder). Вынесено из ui.c — банк 1 полон.
+void gfx_window(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c, uint16_t bg, uint8_t thin) __banked
+{
+	if (thin) {
+		gfx_bevel(x, y, w, h, c, 0, 0);
+		if (bg) gfx_bg(bg, x + 3, y + 3, w - 5, h - 5);
+		return;
+	}
+	if (bg) gfx_bg(bg, x + 5, y + 5, w - 10, h - 10);
+	else gfx_fill(x + 4, y + 4, w - 8, h - 8, c + 3);
+	gfx_rings(x, y, w, h, c);
 }
