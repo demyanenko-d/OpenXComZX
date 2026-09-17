@@ -8,6 +8,9 @@
 
 void gfx_init(void) __banked;
 void gfx_fill(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c) __banked;
+// Фаска кнопки/тонкой рамки (inv — цвет середины нажатой кнопки, 0 — без инверсии) и кнопка-стрелка
+void gfx_bevel(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c, uint8_t geo, uint8_t inv) __banked;
+void gfx_arrow(int16_t x, int16_t y, uint8_t c, uint8_t down) __banked;
 void gfx_pset(int16_t x, int16_t y, uint8_t c) __banked;
 void gfx_line(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t c) __banked;
 // Прямоугольник полноэкранной картинки IMG8 (320 в ширину) в ту же позицию экрана.

@@ -173,34 +173,13 @@ static void draw_text(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t font, 
 	text_draw(&b, buf);
 }
 
-static uint8_t inv_mid;
-static uint8_t iv(uint8_t v) { return inv_mid ? (uint8_t)(2 * inv_mid - v) : v; }
-
-// Фаска TextButton / тонкая рамка Window::setThinBorder: заливки c+1, c+5, c+2, c+4, c+3.
-static void bevel(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c, uint8_t geo)
-{
-	int16_t sx = 0, sy = 0;
-	uint8_t k = c + 1;
-	for (uint8_t i = 0; i < 5; i++) {
-		gfx_fill(x + sx, y + sy, w, h, iv(k));
-		if (!(i & 1)) { sx++; sy++; }
-		w--; h--;
-		switch (i) {
-		case 0: k = c + 5; gfx_pset(x + w, y, iv(k)); break;
-		case 1: k = c + 2; break;
-		case 2: k = c + 4; gfx_pset(x + w + 1, y + 1, iv(k)); break;
-		case 3: k = c + 3; break;
-		default:
-			if (geo) { gfx_pset(x, y, iv(c)); gfx_pset(x + 1, y + 1, iv(c)); }
-		}
-	}
-}
+static uint8_t inv_mid;                      // цвет середины нажатой кнопки (рисует gfx_bevel, банк 11)
 
 static void draw_window(const wdef_t *w)
 {
 	if (w->flags & WF_THIN) {                    // ComboBox: фаска, фон внутри с (3,3)
 		inv_mid = 0;
-		bevel(w->x, w->y, w->w, w->h, col, 0);
+		gfx_bevel(w->x, w->y, w->w, w->h, col, 0, 0);
 		if (S.bg) gfx_bg(S.bg, w->x + 3, w->y + 3, w->w - 5, w->h - 5);
 		return;
 	}
@@ -216,7 +195,7 @@ static void draw_button(const wdef_t *w, uint8_t press)
 	uint8_t c = col, geo = w->flags & WF_GEO, big = w->flags & WF_BIG;
 	if (press > 1) { col = c = press; inv_mid = press + 4; }     // ToggleTextButton::setInvertColor (EVT_QUERY — цвет)
 	else inv_mid = press ? (uint8_t)(c + (geo ? 2 : 3)) : 0;
-	bevel(x, y, w->w, w->h, c, geo);
+	gfx_bevel(x, y, w->w, w->h, c, geo, inv_mid);
 	if (w->type == W_COMBO) {                    // ComboBox::drawArrow: 11x8 в (w-14, 4)
 		int16_t ax = x + w->w - 14 + 1, ay = y + 4 + 2;
 		for (uint8_t k = 0; k < 5; k++) {
@@ -231,18 +210,6 @@ static void draw_button(const wdef_t *w, uint8_t press)
 }
 
 // ArrowButton 13x14 (ARROW_BIG_UP / ARROW_BIG_DOWN)
-static void draw_arrow(int16_t x, int16_t y, uint8_t c, uint8_t down)
-{
-	gfx_fill(x, y, 12, 13, c + 2);
-	gfx_fill(x + 1, y + 1, 12, 13, c + 5);
-	gfx_fill(x + 1, y + 1, 11, 12, c + 4);
-	gfx_pset(x, y, c + 1);
-	gfx_pset(x, y + 13, c + 4);
-	gfx_pset(x + 12, y, c + 4);
-	gfx_fill(x + 5, y + (down ? 3 : 8), 3, 3, c + 1);
-	for (uint8_t i = 0; i < 5; i++)
-		gfx_fill(x + 2 + i, down ? y + 6 + i : y + 7 - i, 9 - 2 * i, 1, c + 1);
-}
 
 // ArrowButton 11x8 — стрелки у строк списка: shape 0 вверх, 1 вниз, 2 влево, 3 вправо
 // (ARROW_SMALL_*; треугольники влево/вправо — прямоугольники ArrowButton::draw).
@@ -367,8 +334,8 @@ static void draw_list(uint8_t i)
 	list_cols_load(w);
 	for (uint8_t r = 0; r < vis && first + r < n; r++) draw_row(i, first + r, r, step);
 	if (n > vis) {
-		draw_arrow(w->x + w->w + 4, w->y, colb, 0);
-		draw_arrow(w->x + w->w + 4, w->y + w->h - 14, colb, 1);
+		gfx_arrow(w->x + w->w + 4, w->y, colb, 0);
+		gfx_arrow(w->x + w->w + 4, w->y + w->h - 14, colb, 1);
 	}
 }
 
@@ -402,7 +369,7 @@ static void draw_widget(uint8_t i)
 	case W_BUTTON: case W_COMBO: draw_button(w, 0); break;
 	case W_TOGGLE: draw_button(w, scr_event(cur, EVT_QUERY, w->arg)); break;
 	case W_LIST: draw_list(i); break;
-	case W_ARROW: draw_arrow(w->x, w->y, col, w->flags & 1); break;
+	case W_ARROW: gfx_arrow(w->x, w->y, col, w->flags & 1); break;
 	case W_CUSTOM: scr_event(cur, EVT_DRAW, i); break;
 	case W_EDIT: {                               // TextEdit: текст и мигающая каретка «|»
 		uint8_t f = list_font(w), al = w->flags & 0x1F;
@@ -464,9 +431,57 @@ static void restore(uint8_t i, int16_t x, int16_t y, int16_t w, int16_t h)
 // восстановленным фоном, тоже отмечаются.
 static uint8_t marked[SDEF_MAXW];
 
+// Подпись нарисованного содержимого DYN-виджета: пока она та же, виджет не трогаем — ни фон под ним,
+// ни вывод. Это и есть «виджет знает, надо ли перерисовываться»: раньше мигал фоном даже когда текст
+// не менялся (перерисовка стека, закрытие окна, такт геоскейпа). 0 — содержимое неизвестно.
+static uint16_t sig[SDEF_MAXW];
+
+static uint16_t sig_bytes(const char *p, uint8_t n)
+{
+	uint16_t h = 0x1505;
+	while (n--) h = (uint16_t)(h * 33u + (uint8_t)*p++);
+	return h ? h : 1;
+}
+
+static uint16_t sig_str(const char *p)
+{
+	uint16_t h = 0x1505;
+	while (*p) h = (uint16_t)(h * 33u + (uint8_t)*p++);
+	return h ? h : 1;
+}
+
+// 1 — на экране уже то же самое (подпись совпала); иначе подпись запоминается
+static uint8_t content_same(uint8_t i)
+{
+	const wdef_t *w = &W[i];
+	uint8_t dyn = w->str != NOSTR && (w->str & 0x8000);
+	uint16_t h;
+	switch (w->type) {
+	case W_TEXT: case W_BUTTON: case W_COMBO:
+		if (!dyn) return 0;
+		get_text(w->str, 0);
+		h = sig_str(buf);
+		break;
+	case W_BAR:
+		if (!dyn) return 0;
+		scr_text(cur, (uint8_t)w->str, 0, buf);
+		h = sig_bytes(buf, 6);
+		break;
+	case W_TOGGLE:
+		h = (uint16_t)(0x100 + scr_event(cur, EVT_QUERY, w->arg));
+		break;
+	default:
+		return 0;                            // списки, W_CUSTOM, картинки — как раньше
+	}
+	if (sig[i] == h) return 1;
+	sig[i] = h;
+	return 0;
+}
+
 static void mark_one(uint8_t i)
 {
 	const wdef_t *w = &W[i];
+	if (content_same(i)) return;                 // то же содержимое — экран не трогаем
 	if (w->type == W_TEXT || w->type == W_LIST) {
 		int16_t x = w->x, y = w->y, x2 = x + w->w, y2 = y + w->h + 1;
 		restore(i, x, y, w->w, w->h + 1);
@@ -575,6 +590,7 @@ static uint8_t load(uint8_t l)
 
 static void draw_all(void)
 {
+	memset(sig, 0, sizeof sig);                  // экран другой — подписи прошлого не годятся
 	for (uint8_t i = 0; i < S.n; i++) draw_widget(i);
 }
 

@@ -360,3 +360,42 @@ void gfx_popup(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c, uint16_t b
 			;
 	}
 }
+
+// Фаска TextButton и тонкой рамки Window::setThinBorder (ui.c, банк 1 переполнен): заливки
+// c+1, c+5, c+2, c+4, c+3; inv — цвет середины для нажатой кнопки (0 — без инверсии).
+static uint8_t gb_inv;
+static uint8_t iv(uint8_t v) { return gb_inv ? (uint8_t)(2 * gb_inv - v) : v; }
+
+void gfx_bevel(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c, uint8_t geo, uint8_t inv) __banked
+{
+	int16_t sx = 0, sy = 0;
+	uint8_t k = c + 1;
+	gb_inv = inv;
+	for (uint8_t i = 0; i < 5; i++) {
+		gfx_fill(x + sx, y + sy, w, h, iv(k));
+		if (!(i & 1)) { sx++; sy++; }
+		w--; h--;
+		switch (i) {
+		case 0: k = c + 5; gfx_pset(x + w, y, iv(k)); break;
+		case 1: k = c + 2; break;
+		case 2: k = c + 4; gfx_pset(x + w + 1, y + 1, iv(k)); break;
+		case 3: k = c + 3; break;
+		default:
+			if (geo) { gfx_pset(x, y, iv(c)); gfx_pset(x + 1, y + 1, iv(c)); }
+		}
+	}
+}
+
+// Кнопка-стрелка 13x14 (ArrowButton ARROW_BIG_UP/DOWN); down — вниз
+void gfx_arrow(int16_t x, int16_t y, uint8_t c, uint8_t down) __banked
+{
+	gfx_fill(x, y, 12, 13, c + 2);
+	gfx_fill(x + 1, y + 1, 12, 13, c + 5);
+	gfx_fill(x + 1, y + 1, 11, 12, c + 4);
+	gfx_pset(x, y, c + 1);
+	gfx_pset(x, y + 13, c + 4);
+	gfx_pset(x + 12, y, c + 4);
+	gfx_fill(x + 5, y + (down ? 3 : 8), 3, 3, c + 1);
+	for (uint8_t i = 0; i < 5; i++)
+		gfx_fill(x + 2 + i, down ? y + 6 + i : y + 7 - i, 9 - 2 * i, 1, c + 1);
+}
