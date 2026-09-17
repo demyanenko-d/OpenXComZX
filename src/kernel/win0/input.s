@@ -46,6 +46,8 @@ KEY_ENTER	= 13
 KEY_SPACE	= 32
 KEY_DEL		= 8
 KEY_LEFT	= 0x1C			; + 1 вниз, + 2 вверх, + 3 вправо (input.h)
+KEY_WHEEL_UP	= 0x10			; колесо: щелчок от себя / на себя (зум глобуса)
+KEY_WHEEL_DOWN	= 0x11
 REP_DELAY	= 12			; автоповтор стрелок и +/-: первый через 12 кадров,
 REP_RATE	= 2			;   дальше каждые 2 (защёлка — одно нажатие до опроса)
 
@@ -66,6 +68,7 @@ _mouse_buttons::	.ds	1	; кнопки сейчас: бит 0 L, 1 R
 _cur_lock::	.ds	1		; 1 — S-file занят основным кодом (input_init): спрайт не трогать
 mo_px:		.ds	1		; показания мыши прошлого кадра
 mo_py:		.ds	1
+wh_prev:	.ds	1		; счётчик колеса прошлого кадра (биты 7:4 порта кнопок)
 cur_pg:		.ds	1		; страница Win3 вызывающего на время записи S-file
 
 	.area	_CODE
@@ -164,6 +167,10 @@ _cursor_sync::
 	ld	bc, #MOUSE_Y
 	in	a, (c)
 	ld	(mo_py), a
+	ld	bc, #0xFADF			; счётчик колеса — тоже, иначе первый кадр даст ложный щелчок
+	in	a, (c)
+	and	#0xF0
+	ld	(wh_prev), a
 	ret
 
 ;; cursor_x += A (знаковое), клип 0..SCREEN_W-1
@@ -273,11 +280,44 @@ cur_isr:
 	call	cur_addy
 	jr	cur_spr
 
+;; A — сырой байт порта кнопок: щелчки колеса (счётчик 7:4, 4 бита со сносом) в защёлку клавиш,
+;; числом шагов — in_key_reps (быстрая прокрутка за один кадр даёт несколько шагов зума)
+wheel:
+	and	#0xF0
+	ld	e, a				; E — счётчик сейчас
+	ld	a, (wh_prev)
+	ld	d, a				; D — он же в прошлом кадре
+	ld	a, e
+	ld	(wh_prev), a
+	sub	a, d				; разница в старших битах
+	ret	z
+	rlca					; -> младшие 4 бита (со сносом)
+	rlca
+	rlca
+	rlca
+	and	#0x0F
+	ld	d, a				; D — щелчков (1..15 со сносом счётчика)
+	cp	a, #8				; 1..7 — от себя (приблизить), 8..15 — на себя
+	jr	nc, 2$
+	ld	a, #KEY_WHEEL_UP
+	jr	1$
+2$:	ld	a, #16				; на себя: щелчков 16 − разница
+	sub	a, d
+	ld	d, a
+	ld	a, #KEY_WHEEL_DOWN
+1$:	ld	(_in_key_latch), a
+	xor	a, a
+	ld	(_in_key_rep), a		; настоящее нажатие (не автоповтор)
+	ld	a, d
+	ld	(_in_key_reps), a
+	ret
+
 ;; Из кадрового прерывания (crt0.s)
 input_isr:
 	call	cur_isr
-	ld	bc, #0xFADF		; кнопки Kempston, активны нулём
+	ld	bc, #0xFADF		; кнопки Kempston, активны нулём; биты 7:4 — счётчик колеса
 	in	a, (c)
+	ld	d, a
 	cpl
 	and	#3
 	ld	e, a
@@ -289,6 +329,8 @@ input_isr:
 	ld	(hl), a
 	ld	a, e
 	ld	(_in_prev_btn), a
+	ld	a, d
+	call	wheel
 	call	read_key
 	ld	hl, #_in_prev_keys
 	cp	(hl)

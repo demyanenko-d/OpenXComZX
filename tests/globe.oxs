@@ -79,5 +79,20 @@ click L
 waitmark 32 3000
 expect 06:0048 0
 shot tmp/shots/globe/z0_back.png
+
+# --- колесо мыши: от себя приближает, на себя отдаляет (счётчик Kempston в битах 7:4 #FADF)
+wheel 1
+waitmark 32 3000
+wait 4
+expect 06:0048 1
+wheel 1
+waitmark 32 3000
+wait 4
+expect 06:0048 2
+shot tmp/shots/globe/wheel_z2.png
+wheel -2
+waitmark 32 3000
+wait 4
+expect 06:0048 0
 echo globe scenario OK
 exit 0

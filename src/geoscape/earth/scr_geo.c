@@ -870,6 +870,11 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		if (ev == EVT_KEY) {                       // стрелки ZX (CS+5..8) — вращение (keyGeoLeft …)
 			static const uint8_t dir[4] = { 0, 3, 2, 1 };   // влево, вниз, вверх, вправо
 			if (arg >= KEY_LEFT && arg <= KEY_RIGHT) rotate(dir[arg - KEY_LEFT]);
+			else if (arg == KEY_WHEEL_UP || arg == KEY_WHEEL_DOWN) {
+				// колесо мыши — зум (щелчков за кадр может быть несколько, но не дальше границ)
+				uint8_t n = in_reps ? in_reps : 1;
+				while (n--) zoom(arg == KEY_WHEEL_UP ? 1 : -1);
+			}
 			break;
 		}
 		if (ev == EVT_TICK) {

@@ -21,6 +21,7 @@ $interactive = -not ($Frames -gt 0 -or $Shot -or $Script -or $Headless)
     'AUTOLOAD.diskA=' `
     "AUTOLOAD.snapshot=$(Join-Path $out 'oxz.spg')" `
     "ZC.SDCARD=$(Join-Path $root 'tmp\sdimg\oxz.img')" `
+    'INPUT.Wheel=KEMPSTON' `
     "MISC.HideConsole=$(if ($interactive) { 1 } else { 0 })"
 if ($LASTEXITCODE -ne 0) { throw 'mkini failed' }
 

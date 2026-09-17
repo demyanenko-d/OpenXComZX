@@ -15,6 +15,8 @@
 #define KEY_ENTER 13
 #define KEY_SPACE 32
 #define KEY_DEL   8     // CS+0 (DELETE)
+#define KEY_WHEEL_UP   0x10  // колесо мыши от себя / на себя (Kempston: счётчик в битах 7:4 #FADF)
+#define KEY_WHEEL_DOWN 0x11
 #define KEY_LEFT  0x1C  // CS+5..8: стрелки ZX
 #define KEY_DOWN  0x1D
 #define KEY_UP    0x1E
