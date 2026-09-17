@@ -26,6 +26,12 @@ static const int16_t sin_q[65] = {
 	15679, 15791, 15893, 15986, 16069, 16143, 16207, 16261, 16305, 16340, 16364, 16379, 16384,
 };
 
+// Умножения 16x16 -> 32 (__mulsint2slong / __muluint2ulong): втрое дешевле 32x32 (__mullong),
+// а приведение одного множителя к int32 заставляло компилятор звать именно его
+static int32_t smul16(int16_t a, int16_t b) { return (int32_t)a * b; }
+static uint32_t mul16(uint16_t a, uint16_t b) { return (uint32_t)a * b; }
+static int32_t mul32x16(int32_t a, uint16_t n);
+
 // sin угла a (65536 = 360°), Q14; линейная интерполяция между точками таблицы
 static int16_t s_sin(uint16_t a)
 {
@@ -34,7 +40,7 @@ static int16_t s_sin(uint16_t a)
 	if (q & 1) r = 0x4000 - r;
 	uint8_t i = (uint8_t)(r >> 8), f = (uint8_t)r;
 	int16_t v = sin_q[i];
-	if (i < 64) v += (int16_t)(((int32_t)(sin_q[i + 1] - v) * f) >> 8);
+	if (i < 64) v += (int16_t)(smul16(sin_q[i + 1] - v, f) >> 8);
 	return (q & 2) ? -v : v;
 }
 
@@ -45,7 +51,10 @@ int16_t icos(uint16_t a) __banked { return s_cos(a); }
 
 static uint16_t isqrt32(uint32_t v)
 {
-	uint32_t r = 0, bit = 1ul << 30;
+	uint32_t r = 0, bit;
+	// стартовый разряд сразу по старшему ненулевому байту (холостых сдвигов было до 16)
+	if (v >> 16) bit = (v >> 24) ? 1ul << 30 : 1ul << 22;
+	else bit = (v >> 8) ? 1ul << 14 : 1ul << 6;
 	while (bit > v) bit >>= 2;
 	while (bit) {
 		if (v >= r + bit) { v -= r + bit; r = (r >> 1) + bit; }
@@ -74,8 +83,8 @@ static void vec(const geo_t *p, int16_t v[3])
 {
 	uint16_t lo = LON16(p), la = LAT16(p);
 	int16_t cl = s_cos(la);
-	v[0] = (int16_t)(((int32_t)cl * s_cos(lo)) >> 14);
-	v[1] = (int16_t)(((int32_t)cl * s_sin(lo)) >> 14);
+	v[0] = (int16_t)(smul16(cl, s_cos(lo)) >> 14);
+	v[1] = (int16_t)(smul16(cl, s_sin(lo)) >> 14);
 	v[2] = s_sin(la);
 }
 
@@ -108,12 +117,12 @@ int16_t geo_cos(const geo_t *a, const geo_t *b) __banked
 	int16_t u[3], v[3];
 	vec(a, u);
 	vec(b, v);
-	return (int16_t)(((int32_t)u[0] * v[0] + (int32_t)u[1] * v[1] + (int32_t)u[2] * v[2]) >> 14);
+	return (int16_t)((smul16(u[0], v[0]) + smul16(u[1], v[1]) + smul16(u[2], v[2])) >> 14);
 }
 
 // Хорда -> угол в двоичных единицах (для малых углов хорда ≈ угол, дальше — занижение,
 // которое только добавляет пересчётов курса)
-#define CHORD_UNITS 41722ul              // 2^32 / (2π · 16384)
+#define CHORD_UNITS 41722u               // 2^32 / (2π · 16384); умножение — 16x16 (mul16)
 #define NEAR_CHORD  400                  // ~1.4°: ближе — плоское приближение по int32
 
 // Плоское расстояние в двоичных единицах (точно для малых углов)
@@ -133,7 +142,7 @@ uint32_t geo_dist(const geo_t *a, const geo_t *b) __banked
 {
 	geo_t pa = *a, pb = *b;
 	uint16_t ch = geo_chord(&pa, &pb);
-	if (ch >= NEAR_CHORD) return (uint32_t)ch * CHORD_UNITS;
+	if (ch >= NEAR_CHORD) return mul16(ch, CHORD_UNITS);
 	int32_t dx, dy;
 	return near_dist(&pa, &pb, &dx, &dy);
 }
@@ -158,7 +167,8 @@ uint32_t geo_angle(const geo_t *a, const geo_t *b) __banked
 
 uint32_t geo_speed(uint16_t knots) __banked
 {
-	return (uint32_t)knots * 70699ul >> 8;      // * 276.17
+	// * 276.17 = (knots << 16) + knots · 5163: два 16x16 вместо 32x32 (шаг каждой цели — каждый такт)
+	return (((uint32_t)knots << 16) + mul16(knots, 5163)) >> 8;
 }
 
 // MovingTarget::calculateSpeed: вектор скорости к цели по большому кругу и число целых
@@ -176,9 +186,9 @@ void geo_aim(const geo_t *pos, const geo_t *dst, uint32_t speed, geo_vel_t *v) _
 		uint16_t la = LAT16(&p), lb = LAT16(&d), dl = LON16(&d) - LON16(&p);
 		int16_t cLb = s_cos(lb);
 		x = ((int32_t)s_sin(dl) * cLb) >> 14;
-		int16_t t = (int16_t)(((int32_t)s_sin(la) * cLb) >> 14);
+		int16_t t = (int16_t)(smul16(s_sin(la), cLb) >> 14);
 		y = (((int32_t)s_cos(la) * s_sin(lb)) >> 14) - (((int32_t)t * s_cos(dl)) >> 14);
-		dist = (uint32_t)ch * CHORD_UNITS;
+		dist = mul16(ch, CHORD_UNITS);
 	} else {
 		dist = near_dist(&p, &d, &x, &y);
 		while (x > 32767 || x < -32767 || y > 32767 || y < -32767) { x >>= 1; y >>= 1; }
@@ -206,8 +216,8 @@ uint8_t geo_heading(const geo_vel_t *v) __banked
 	uint32_t ax = x < 0 ? -x : x, ay = y < 0 ? -y : y;
 	// tan 22.5° ≈ 106/256
 	while (ax > 0xFFFFFF || ay > 0xFFFFFF) { ax >>= 1; ay >>= 1; }
-	if (ay * 256 < ax * 106) return x > 0 ? 3 : 7;
-	if (ax * 256 < ay * 106) return y > 0 ? 1 : 5;
+	if ((ay << 8) < (uint32_t)mul32x16((int32_t)ax, 106)) return x > 0 ? 3 : 7;
+	if ((ax << 8) < (uint32_t)mul32x16((int32_t)ay, 106)) return y > 0 ? 1 : 5;
 	if (y > 0) return x > 0 ? 2 : 8;
 	return x > 0 ? 4 : 6;
 }
