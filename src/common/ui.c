@@ -649,9 +649,20 @@ void ui_relayout(void) __banked
 	if (load(depth - 1)) draw_all();
 }
 
+// Снять подсветку строки под курсором (TextList::mouseOut). Иначе она остаётся на экране навсегда:
+// новый экран забывает, где была подсветка, а всплывающее окно ещё и запоминает её в сохранённом фоне
+static void hover_clear(void)
+{
+	uint8_t ow = hov_w, orow = hov_row;
+	hov_w = 0xFF;
+	hov_x = -1;
+	if (ow != 0xFF) row_redraw(ow, orow);
+}
+
 static void do_push(uint8_t id)
 {
 	if (depth >= STACK_MAX) return;
+	hover_clear();
 	stk[depth] = id;
 	memset(scroll[depth], 0, SDEF_MAXW);
 	depth++;
