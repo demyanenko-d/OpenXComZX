@@ -49,8 +49,10 @@ pokew _cursor_y 156
 click L
 waitmark 32 300
 shot tmp/shots/aliens/04_globe_site.png
-pokew _cursor_x 128
-pokew _cursor_y 100
+# «Centre» ставит вид по сетке предрасчитанных видов (globe_snap), поэтому место миссии не строго
+# в центре окна, а рядом — щёлкаем по его значку
+pokew _cursor_x 130
+pokew _cursor_y 82
 click L
 waitmark 202 300
 shot tmp/shots/aliens/05_target_info.png
