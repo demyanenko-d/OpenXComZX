@@ -260,6 +260,9 @@ static void show_event(void)
 
 static const wdef_t w_geo[] = {
 	IMG(0, 0, 320, 200, RES_GEOBORD_SCR),
+	// глобус — сразу после рамки: при полной перерисовке окно не мигает звёздным фоном без
+	// планеты (копия заднего буфера — кадр); часы и кнопки рисуются следом
+	CUS(0, 0, 256, 200, DYN(10), A_CUSTOM, 10),  // глобус: ui_dirty(10)
 	BTNF(257, 0, 63, 11, UI_EL_BUTTON, STR_INTERCEPT, WF_GEO, A_CUSTOM, 12, 'i'),
 	BTNF(257, 12, 63, 11, UI_EL_BUTTON, STR_BASES, WF_GEO, A_CUSTOM, 11, 'b'),
 	BTNF(257, 24, 63, 11, UI_EL_BUTTON, STR_GRAPHS, WF_GEO, A_PUSH, SCR_GRAPHS, 'g'),
@@ -290,9 +293,6 @@ static const wdef_t w_geo[] = {
 	TXT(259, 94, 29, 8, UI_EL_TEXT, DYN(7), TC),
 	TXT(288, 94, 29, 8, UI_EL_TEXT, DYN(8), TC),
 	TXT(259, 101, 59, 8, UI_EL_TEXT, DYN(9), TC),
-	// глобус — последним: перерисовка идёт по порядку, а рендер длится 5–14 кадров; стоял бы
-	// раньше текстов — на тике со сменой суток панель часов весь рендер висела бы стёртой
-	CUS(0, 0, 256, 200, DYN(10), A_CUSTOM, 10),  // глобус: ui_dirty(10)
 };
 
 // Глобус — src/geoscape/earth/globe.c (банк 24): настоящая проекция OpenXcom, вид — ctx.globe_lon/lat

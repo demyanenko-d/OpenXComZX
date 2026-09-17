@@ -100,11 +100,15 @@ namespace OxzConv
 					if (Y.Str(Y.Get(e, "type")) == "GlobeMarkers")
 						foreach (var kv in Y.Map(Y.Get(e, "files")) ?? new Dictionary<object, object>()) png = Y.Str(kv.Value);
 			if (png == null) throw new InvalidDataException("GLOBEDET: GlobeMarkers not found in extraSprites");
+			// значок города (кадр 8) — красный в обеих играх; по просьбе пользователя перекрашен в цвет
+			// подписи города: контур cityColor + 1, середина + 3 (оттенки той же группы, как у глифов)
 			var img = Png.DecodeIndexed(ox.ReadBytes($"standard/{folder}/{png}"));
-			for (int y = 0; y < 3; y++) for (int x = 0; x < 3; x++) head.Add(img.Px[y * img.W + 24 + x]);
+			int city = Col("cityColor", 138);
+			byte City(byte v, int fr) => fr != 8 || v == 0 ? v : (byte)(city + (v == 11 ? 3 : 1));
+			for (int y = 0; y < 3; y++) for (int x = 0; x < 3; x++) head.Add(City(img.Px[y * img.W + 24 + x], 8));
 			head.Add(0);
 			var frames = new List<byte>();
-			for (int fr = 0; fr < 9; fr++) for (int y = 0; y < 3; y++) for (int x = 0; x < 3; x++) frames.Add(img.Px[y * img.W + fr * 3 + x]);
+			for (int fr = 0; fr < 9; fr++) for (int y = 0; y < 3; y++) for (int x = 0; x < 3; x++) frames.Add(City(img.Px[y * img.W + fr * 3 + x], fr));
 
 			var groups = new List<(List<P> pts, int kind)>();
 			int nLines = 0;
