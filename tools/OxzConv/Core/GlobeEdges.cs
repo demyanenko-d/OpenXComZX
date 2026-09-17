@@ -31,7 +31,7 @@ namespace OxzConv
 	static class GlobeEdges
 	{
 		static readonly int[] ZR = { 90, 120, 180, 280, 450, 720 };
-		const int H = 200, Sector = 512, Bias = 192, MaxView = 0x1C00;
+		const int H = 200, Sector = 512, Bias = 192, MaxView = 0x1C00, EvMax = 64;   // EvMax — EV_MAX движка
 
 		class Piece
 		{
@@ -178,6 +178,7 @@ namespace OxzConv
 						while (k < active.Count && active[k].Xs[y - active[k].R0] <= h.Xs[0]) k++;
 						h.Pos = k;
 						active.Insert(k, h);
+						if (active.Count > EvMax) throw new Exception($"GVE2: active pieces > {EvMax} in row {y}");
 					}
 				for (int k = 0; k < active.Count; k++)
 				{

@@ -40,16 +40,18 @@ namespace OxzConv
 		public const int ZFirst = 0, NZoom = 6;       // все зумы (виды рёбрами — GlobeEdges)
 		static readonly int[] ZR = { 90, 120, 180, 280, 450, 720 };
 		const int H = 200, Sector = 512;
-		// Наклон ограничен ±27° на всех зумах (виды рёбрами GlobeEdges, globe.md §12.11): на зумах 0–2
-		// окно покрывает по широте ±34° и больше (видно до 61° и выше), на 3–5 — только до ~48° / 40° /
-		// 35° (открытый вопрос, 14_todo §4). Шаг наклона — родной, 0.6 от шага поворота, чтобы наклон
-		// не огрубился.
-		const double TiltMax = 27, TiltMin = 0;
+		// Предел наклона (globe.md §12.11): полюс должен попадать в окно так же, как на зуме 0 при 15° —
+		// на R·cos C <= 90·cos 15° (~87 точек) от центра; прямо над полюсом вид не нужен. Предел — первый
+		// шаг сетки, где это выполнено: z0 18°, z1 45°, z2 63°, z3 72°, z4 79.2°, z5 84°. Шаг наклона —
+		// родной, 0.6 от шага поворота, чтобы наклон не огрубился.
+		const double Tilt0 = 15;
 
 		public static (int nLon, int nTilt, int k, double lonStep, double tiltStep) Grid(int z)
 		{
-			double lonStep = 15.0 / (z + 1), tiltStep = Math.Max(lonStep * 0.6, TiltMin);
-			int k = (int)Math.Floor(TiltMax / tiltStep + 1e-9);
+			double lonStep = 15.0 / (z + 1), tiltStep = lonStep * 0.6;
+			double poleY = ZR[0] * Math.Cos(Tilt0 * Math.PI / 180);
+			double tmax = Math.Acos(Math.Min(1, poleY / ZR[z])) * 180 / Math.PI;
+			int k = (int)Math.Ceiling(tmax / tiltStep - 1e-6);
 			return (24 * (z + 1), 2 * k + 1, k, lonStep, tiltStep);
 		}
 
