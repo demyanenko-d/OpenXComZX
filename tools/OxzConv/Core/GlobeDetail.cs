@@ -13,7 +13,7 @@
 // Формат (little-endian; смещения чётные — вершины копирует DMA):
 //   +0  u8 lineColor, countryColor, cityColor, baseColor (globe.rul; без них — Mod.cpp: 162, 239, 138, 133)
 //   +4  u8 marker[9] — значок города 3x3 (0 — прозрачно), u8 0
-//   +14 u16 nGroup, nVert, 0, 0, 0
+//   +14 u16 nGroup, nVert, смещение кадров меток, 0, 0
 //   +24 группы nGroup x 16 байт (как запись ячейки ресурса GLOBE для _gl_cull): u16 первая вершина,
 //       u8 вершин, u8 вид (0 — линия, 1 — подписи стран, 2 — города), u16 1, u16 0, центр (6 байт как
 //       у вершин), i16 sinρ (Q14)
@@ -22,6 +22,7 @@
 //   строки: nVert x u16 (номер строки подписи; у точек линий — #FFFF)
 //   вершины: nVert x 6 байт — X, Y, Z (Q14, X = cosφ·cosλ, Y = cosφ·sinλ, Z = sinφ, широта минус —
 //     север), по 2 байта v & 127, v >> 7 (как ресурс GLOBE)
+//   кадры меток: 9 x 9 байт — набор GlobeMarkers 3x3 по строкам (0 — прозрачно; globe_det.c globe_marks)
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -99,6 +100,8 @@ namespace OxzConv
 			var img = Png.DecodeIndexed(ox.ReadBytes($"standard/{folder}/{png}"));
 			for (int y = 0; y < 3; y++) for (int x = 0; x < 3; x++) head.Add(img.Px[y * img.W + 24 + x]);
 			head.Add(0);
+			var frames = new List<byte>();
+			for (int fr = 0; fr < 9; fr++) for (int y = 0; y < 3; y++) for (int x = 0; x < 3; x++) frames.Add(img.Px[y * img.W + fr * 3 + x]);
 
 			var groups = new List<(List<P> pts, int kind)>();
 			int nLines = 0;
@@ -130,7 +133,8 @@ namespace OxzConv
 			int nVert = groups.Sum(x => x.pts.Count);
 			if (nVert > MaxVert) throw new InvalidDataException($"GLOBEDET: {nVert} vertices > {MaxVert}");
 			if (groups.Count > MaxGroup) throw new InvalidDataException($"GLOBEDET: {groups.Count} groups > {MaxGroup}");
-			U16(head, groups.Count); U16(head, nVert); U16(head, 0); U16(head, 0); U16(head, 0);
+			int fOff = 24 + groups.Count * 28 + nVert * 8;
+			U16(head, groups.Count); U16(head, nVert); U16(head, fOff); U16(head, 0); U16(head, 0);
 			var recs = new List<byte>(); var ms = new List<byte>(); var strs = new List<byte>(); var verts = new List<byte>();
 			var caps = groups.Select(x => Cap(x.pts)).ToList();
 			int first = 0;
@@ -152,6 +156,8 @@ namespace OxzConv
 				}
 			var o = new List<byte>(head);
 			o.AddRange(recs); o.AddRange(ms); o.AddRange(strs); o.AddRange(verts);
+			if (o.Count != fOff) throw new InvalidDataException("GLOBEDET: layout");
+			o.AddRange(frames);
 			return (o.ToArray(), $"{nLines} lines, {countries.Count} country labels, {cities.Count} cities -> {groups.Count} groups, {nVert} points, {o.Count} B");
 		}
 	}

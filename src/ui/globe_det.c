@@ -15,6 +15,8 @@
 #include "memmap.h"
 #include "state.h"
 #include "globe.h"
+#include "rules.h"
+#include <stddef.h>
 
 #define DT_VIS    0x2540          // рабочая страница (globe.s): число взятых групп, их номера
 #define DT_V      0x2C00          //   проекции их вершин подряд: x, y (1/4 точки: 512 / 400 — центр), z
@@ -40,6 +42,15 @@ static uint8_t __at(0xB140) dp[DP_MAX * 6];
 static uint16_t __at(0xBFFA) dp_ptr;            // det_poly: вершины линии
 static uint8_t __at(0xBFFC) dp_cnt;
 static uint16_t __at(0xBFE0) base_sig;          // globe_det_check: подпись баз в заднем буфере
+static uint16_t __at(0xBFE2) dl_yb;             // globe_det_s.s: строка экрана под y = 0 (280 — задний буфер)
+// Метки (globe_marks): кадры GlobeMarkers, фаза мигания, позиции и кадры последнего вывода
+#define MK_MAX    64
+#define MK_OK     0xC3
+static uint8_t __at(0xBD40) mk_spr[81];
+static uint8_t __at(0xBD91) mk_ok;             // MK_OK — кадры и список годны (память банка при старте не обнулена)
+static uint8_t __at(0xBD92) mk_blink;
+static uint8_t __at(0xBD93) mk_n;
+static uint8_t __at(0xBDA0) mk_list[MK_MAX * 3];
 static int16_t __at(0xBFF0) dl_x0;
 static int16_t __at(0xBFF2) dl_y0;
 static int16_t __at(0xBFF4) dl_x1;
@@ -130,6 +141,7 @@ void globe_det(uint8_t fresh, uint8_t z, uint8_t work) __banked
 	if (!dp_ok || !z) return;
 	uint8_t old3 = pg_win3();
 	tx_yb = BACK_Y;
+	dl_yb = BACK_Y;
 	p = dp;
 	for (i = 0; i < gvis[0]; i++) {
 		const uint8_t *g = grec + (gvis[i + 1] & 0x7F) * 16;
@@ -184,4 +196,87 @@ void globe_det_check(void) __banked
 		for (uint8_t i = 0; i < NAME_LEN && b->name[i]; i++) h = (h << 3 | h >> 13) ^ (uint8_t)b->name[i];
 	}
 	if (h != base_sig) { base_sig = h; globe_invalidate(); }
+}
+
+// ---------------------------------------------------------------- метки (Globe::drawMarkers, blink)
+
+static void mk_add(const geo_t *pos, int8_t fr)
+{
+	int16_t x, y;
+	if (fr < 0 || fr > 8 || mk_n >= MK_MAX || !globe_xy(pos, &x, &y)) return;
+	uint8_t *e = mk_list + mk_n * 3;
+	e[0] = (uint8_t)x; e[1] = (uint8_t)y; e[2] = (uint8_t)fr;
+	mk_n++;
+}
+
+// Точки меток на экране (не в заднем буфере): кадр 3x3 по центру, цвет + фаза мигания (кроме города)
+static void mk_draw(void)
+{
+	uint8_t old3 = pg_win3();
+	dl_yb = 0;
+	for (uint8_t i = 0; i < mk_n; i++) {
+		const uint8_t *e = mk_list + i * 3, *sp = mk_spr + e[2] * 9;
+		uint8_t add = e[2] == 8 ? 0 : mk_blink;
+		for (int16_t my = e[1] - 1; my <= e[1] + 1; my++)
+			for (int16_t mx = e[0] - 1; mx <= e[0] + 1; mx++, sp++)
+				if (*sp) { dl_x0 = mx; dl_y0 = my; dl_c = *sp + add; det_pset(); }
+	}
+	pg_map3(old3);
+}
+
+static int8_t rule_i8(uint16_t id, uint16_t i, uint8_t off)
+{
+	rtab_t t;
+	rtab_open(id, &t);
+	return (int8_t)rtab_word(&t, i, off);
+}
+
+// Метки поверх глобуса после копии заднего буфера (scr_geo.c draw_globe; ST — в Win3): базы, путевые
+// точки, места миссий, базы пришельцев, НЛО, корабли в полёте — порядок Globe::drawMarkers
+void globe_marks(void) __banked
+{
+	uint8_t k;
+	res_t r;
+	det_hdr_t h;
+	mk_ok = 0;
+	if (!res_find(RES_GLOBEDET, &r)) return;
+	far_read(r.phys, &h, sizeof h);
+	far_read(r.phys + h.r0, mk_spr, sizeof mk_spr);
+	mk_n = 0;
+	for (k = 0; k < MAX_BASES; k++)
+		if (ST->base[k].name[0]) mk_add(&ST->base[k].pos, 0);
+	for (k = 0; k < MAX_WAYPOINTS; k++)
+		if (ST->waypoint[k].id) mk_add(&ST->waypoint[k].pos, 6);
+	for (k = 0; k < MAX_SITES; k++)
+		if (ST->site[k].id && (ST->site[k].flags & SITE_DETECTED)) {
+			int8_t m = rule_i8(RES_RULE_ALIENDEPLOYMENTS, ST->site[k].deployment, offsetof(r_alienDeployments_t, marker_icon));
+			mk_add(&ST->site[k].pos, m < 0 ? 5 : m);
+		}
+	for (k = 0; k < MAX_ALIEN_BASES; k++)
+		if (ST->abase[k].id && (ST->abase[k].flags & AB_DISCOVERED))
+			mk_add(&ST->abase[k].pos, rule_i8(RES_RULE_ALIENDEPLOYMENTS, ST->abase[k].deployment, offsetof(r_alienDeployments_t, marker_icon)));
+	for (k = 0; k < MAX_UFOS; k++) {
+		const ufo_t *u = &ST->ufo[k];
+		if (u->type == NONE8 || !(u->flags & UF_DETECTED)) continue;
+		uint8_t off = offsetof(r_ufos_t, marker), def = 2;
+		if (u->status == US_LANDED) { off = offsetof(r_ufos_t, marker_land); def = 3; }
+		else if (u->status == US_CRASHED) { off = offsetof(r_ufos_t, marker_crash); def = 4; }
+		int8_t m = rule_i8(RES_RULE_UFOS, u->type, off);
+		mk_add(&u->pos, m < 0 ? def : m);
+	}
+	for (k = 0; k < MAX_CRAFTS; k++)
+		if (ST->craft[k].type != NONE8 && ST->craft[k].status == CS_OUT) {
+			int8_t m = rule_i8(RES_RULE_CRAFTS, ST->craft[k].type, offsetof(r_crafts_t, marker));
+			mk_add(&ST->craft[k].pos, m < 0 ? 1 : m);
+		}
+	mk_ok = MK_OK;
+	mk_draw();
+}
+
+// Globe::blink (раз в 100 мс): фаза мигания и точки меток заново (без копии глобуса)
+void globe_blink(void) __banked
+{
+	if (mk_ok != MK_OK) return;
+	mk_blink ^= 1;
+	mk_draw();
 }

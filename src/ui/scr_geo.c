@@ -286,38 +286,12 @@ static const wdef_t w_geo[] = {
 #define to_screen(p, x, y) globe_xy(p, x, y)
 #define from_screen(x, y, p) globe_lonlat(x, y, p)
 
-// Глобус (рендер при смене вида, иначе копия заднего буфера) и метки поверх: базы,
-// корабли в полёте, НЛО, места миссий, базы пришельцев, путевые точки (пока квадраты).
+// Глобус (рендер при смене вида, иначе копия заднего буфера) и метки GlobeMarkers поверх (globe_det.c).
 static void draw_globe(void)
 {
 	globe_det_check();
 	globe_draw();
-	int16_t x, y;
-	for (uint8_t b = 0; b < MAX_BASES; b++)
-		if (ST->base[b].name[0] && to_screen(&ST->base[b].pos, &x, &y)) {
-			gfx_fill(x - 2, y - 2, 5, 5, 0);
-			gfx_fill(x - 1, y - 1, 3, 3, 1);
-		}
-	for (uint8_t c = 0; c < MAX_CRAFTS; c++)
-		if (ST->craft[c].type != NONE8 && ST->craft[c].status == CS_OUT && to_screen(&ST->craft[c].pos, &x, &y))
-			gfx_fill(x - 1, y - 1, 3, 3, 4);
-	for (uint8_t u = 0; u < MAX_UFOS; u++)
-		if (ST->ufo[u].type != NONE8 && (ST->ufo[u].flags & UF_DETECTED) && to_screen(&ST->ufo[u].pos, &x, &y)) {
-			gfx_fill(x - 2, y - 2, 5, 5, 0);
-			gfx_fill(x - 1, y - 1, 3, 3, ST->ufo[u].status == US_FLYING ? 9 : 10);
-		}
-	for (uint8_t s = 0; s < MAX_SITES; s++)      // места миссий (обнаруженные)
-		if (ST->site[s].id && (ST->site[s].flags & SITE_DETECTED) && to_screen(&ST->site[s].pos, &x, &y)) {
-			gfx_fill(x - 2, y - 2, 5, 5, 0);
-			gfx_fill(x - 1, y - 1, 3, 3, 2);
-		}
-	for (uint8_t b = 0; b < MAX_ALIEN_BASES; b++) // базы пришельцев (найденные)
-		if (ST->abase[b].id && (ST->abase[b].flags & AB_DISCOVERED) && to_screen(&ST->abase[b].pos, &x, &y)) {
-			gfx_fill(x - 2, y - 2, 5, 5, 0);
-			gfx_fill(x - 1, y - 1, 3, 3, 6);
-		}
-	for (uint8_t w = 0; w < MAX_WAYPOINTS; w++)  // путевые точки
-		if (ST->waypoint[w].id && to_screen(&ST->waypoint[w].pos, &x, &y)) gfx_fill(x - 1, y - 1, 3, 3, 5);
+	globe_marks();
 	if (df_count || icons_on) {                  // значки свёрнутых боёв (слева от диска)
 		gfx_bg(RES_GEOBORD_SCR, 4, 4, 34, 86);
 		icons_on = df_count != 0;
@@ -862,6 +836,7 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			break;
 		}
 		if (ev == EVT_TICK) {
+			globe_blink();                           // Globe::blink — раз в 100 мс
 			if (rep_arg) {                           // кнопка поворота / зума держится
 				uint8_t a = rep_arg;
 				const uint8_t *r = rep_box[a - 30];
