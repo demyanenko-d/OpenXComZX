@@ -64,11 +64,11 @@ TX_BOTTOM	= 0x08
 TX_WRAP		= 0x10
 TX_CONTRAST	= 0x20
 TX_INVERT	= 0x40
-TA_K		= 4			; ключей атласа глифов (страниц)
+TA_K		= 6			; ключей атласа глифов (страниц)
 TA_NG		= 97			; глифов в шрифте, у которых есть место в таблице
 TA_PER		= TA_NG * 4		; на ключ: место глифа u16 для чётного и нечётного x
-TA_SLOT		= 0xB600		; таблицы мест — в хвосте страницы шрифтов (Win2), text_init
-ADV_TAB		= 0xBC10		; шаги символов 0..ADV_N−1 по 4 шрифтам (там же)
+TA_SLOT		= 0xB4A0		; таблицы мест — в хвосте страницы шрифтов (Win2), text_init
+ADV_TAB		= TA_SLOT + TA_K * TA_PER	; шаги символов 0..ADV_N−1 по 4 шрифтам (там же, до #BFC0)
 ADV_N		= 130
 DATA_PAGE	= 0x05			; Win1: dma_fill_word (dmabuf.s)
 
