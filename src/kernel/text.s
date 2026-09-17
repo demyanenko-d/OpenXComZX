@@ -37,7 +37,8 @@
 	.globl	_gr_col
 	.globl	_gr_inv
 	.globl	_tx_atlas_ok
-	.globl	copy_s, map_font, glyph_entry, font_field, char_adv, add_line, layout, ly_loop, calc_th, layout_box, set_lut, make_lut, td_line, td_char, dma_idle, zfill, line_fast, ta_key, ta_clear, glyph_out, dg_atlas, ta_render, glyph_entry_i, draw_glyph, dg_fast, dg_slow, lt_s	; для профилировщика (07 §6)
+	.globl	_dma_fill_word
+	.globl	copy_s, map_font, glyph_entry, font_field, char_adv, add_line, layout, ly_loop, calc_th, layout_box, set_lut, make_lut, td_line, td_char, dma_idle, zfill, line_fast, ta_key, ta_clear, glyph_out, dg_atlas, ta_render, tp_lut, tr_done, glyph_entry_i, draw_glyph, dg_fast, dg_slow, lt_s	; для профилировщика (07 §6)
 	.globl	_pg_alloc
 	.globl	_gfx_map
 	.globl	_pg_win3
@@ -67,6 +68,7 @@ TA_K		= 4			; ключей атласа глифов (страниц)
 TA_NG		= 97			; глифов в шрифте, у которых есть место в таблице
 TA_PER		= TA_NG * 4		; на ключ: место глифа u16 для чётного и нечётного x
 TA_SLOT		= 0xB800		; таблицы мест — в хвосте страницы шрифтов (Win2), text_init
+DATA_PAGE	= 0x05			; Win1: dma_fill_word (dmabuf.s)
 
 	.area	_DATA
 _tx_font_page::	.ds	1		; страница со всеми шрифтами (text_init)
@@ -152,6 +154,7 @@ dga_need:	.ds	1
 dga_c:		.ds	1
 tp_rows:	.ds	1		; ta_render: строк и байт на строку
 tp_bpr:		.ds	1
+tp_x0:		.ds	1		; 0 — место с начала полосы (полосу обнулить)
 fn_out:		.ds	2
 sf_a0:		.ds	2		; str_fmt
 sf_a1:		.ds	2
@@ -1258,6 +1261,9 @@ tr_fit:
 	ld	(hl), #0
 	jr	tr_fit
 tr_at:					; DE = x; начало = полоса · h · 512 + x
+	ld	a, d
+	or	e
+	ld	(tp_x0), a
 	ld	hl, #ta_band
 	add	hl, bc
 	ld	a, (hl)
@@ -1293,6 +1299,83 @@ tr_at:					; DE = x; начало = полоса · h · 512 + x
 	ld	(hl), e
 	inc	hl
 	ld	(hl), d
+	ld	a, (tp_x0)		; новая полоса: обнулить её одной DMA FILL (h строк по 512)
+	or	a
+	jr	nz, 7$
+	pop	de
+	push	de
+	call	dma_idle
+	xor	a
+	ld	(_dma_fill_word), a
+	ld	(_dma_fill_word + 1), a
+	ld	hl, #_dma_fill_word
+	ld	b, #0x1A
+	out	(c), l			; SAL
+	inc	b
+	ld	a, h
+	and	#0x3F
+	out	(c), a			; SAH
+	inc	b
+	ld	a, #DATA_PAGE
+	out	(c), a			; SAX
+	inc	b
+	out	(c), e			; DAL
+	inc	b
+	out	(c), d			; DAH
+	inc	b
+	ld	a, (ta_cpg)
+	out	(c), a			; DAX
+	ld	b, #0x26
+	ld	a, #255
+	out	(c), a			; DMALen — 256 слов
+	ld	b, #0x28
+	ld	a, (ln_h)
+	dec	a
+	out	(c), a			; DMANum
+	ld	b, #0x27
+	ld	a, #0x1C		; FILL | D_ALGN | ASZ
+	out	(c), a
+	call	dma_idle
+7$:	ld	a, (tx_mul)		; mul = 1 — glyph_run (только непрозрачные точки, место уже нули)
+	dec	a
+	jr	nz, tp_lut
+	ld	a, (ta_cpg)
+	call	_pg_map3
+	pop	de
+	push	de
+	ld	hl, #0xC000
+	add	hl, de
+	ld	a, (dga_p)
+	ld	e, a
+	ld	d, #0
+	add	hl, de
+	ld	(_gr_dst), hl
+	ld	hl, (tx_fbase)		; src = fbase + 6 + n · 3 + off
+	push	hl
+	inc	hl
+	inc	hl
+	inc	hl
+	inc	hl
+	ld	c, (hl)
+	ld	b, #0
+	pop	hl
+	ld	de, (dga_off)
+	add	hl, de
+	add	hl, bc
+	add	hl, bc
+	add	hl, bc
+	ld	de, #6
+	add	hl, de
+	ld	(_gr_src), hl
+	ld	a, (g_w)
+	inc	a
+	srl	a
+	ld	(_gr_bpr), a
+	ld	a, (ln_h)
+	ld	(_gr_rows), a
+	call	_glyph_run
+	jp	tr_done
+tp_lut:					; контраст: все точки через lut
 	ld	a, (tx_lutok)		; цвета точек: lut[уровень] (контраст, инверсия)
 	or	a
 	call	z, make_lut
@@ -1371,6 +1454,7 @@ tp_byte:
 	ld	hl, #tp_rows
 	dec	(hl)
 	jr	nz, tp_row
+tr_done:
 	pop	de			; место | #8000 -> таблица
 	set	7, d
 	ld	hl, (dga_sp)
