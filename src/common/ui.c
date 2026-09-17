@@ -262,28 +262,12 @@ static void list_cols_load(const wdef_t *w)
 static uint8_t hov_w = 0xFF, hov_row;
 static int16_t hov_x = -1, hov_y;
 
-static void selector(int16_t x, int16_t y, int16_t w, uint8_t h)
-{
-	uint8_t combo = cur == SCR_COMBO, old = pg_win3();
-	for (uint8_t yy = 0; yy < h; yy++) {
-		uint8_t *p = gfx_map(x, y + yy);
-		for (int16_t xx = 0; xx < w; xx++) {
-			uint8_t c = p[xx];
-			if (!c) continue;
-			if (combo) c = c < 223 ? 224 : c + 1;
-			else c = (c & 15) < 10 ? c & 0xF0 : c - 10;
-			p[xx] = c;
-		}
-	}
-	pg_map3(old);
-}
-
 // Строка row списка i на экранной позиции r (колонки — list_cols_load)
 static void draw_row(uint8_t i, uint8_t row, uint8_t r, uint8_t step)
 {
 	const wdef_t *w = &W[i];
 	uint8_t hw = hov_w, hr = hov_row;             // SDCC 4.5: сравнения — копиями
-	if (i == hw && row == hr) selector(w->x, w->y + r * step, w->w, step);
+	if (i == hw && row == hr) gfx_selector(w->x, w->y + r * step, w->w, step, cur == SCR_COMBO);
 	scr_text(cur, (uint8_t)w->str, row, buf);
 	int16_t x = w->x;
 	char *p = buf;
@@ -497,6 +481,28 @@ static void mark_one(uint8_t i)
 #define STAGE_Y   200
 #define STAGE_H   40
 
+// 1 — дальше рисуем в рабочую область (в неё уже перенесено то, что сейчас на экране: края
+// прямоугольника после выравнивания по два пикселя и места, которым фон не восстанавливают).
+// 0 — не помещается, рисуем прямо на экран, как раньше.
+static uint8_t stage_begin(int16_t x, int16_t y, int16_t w, int16_t h)
+{
+	if (x < 0 || y < 0 || x + w > SCREEN_W || y + h > SCREEN_H || h > STAGE_H) return 0;
+	stg_x = x & ~1;
+	stg_w = (x + w - stg_x + 1) & ~1;
+	if (stg_x + stg_w > SCREEN_W) stg_w = SCREEN_W - stg_x;
+	stg_y = y;
+	stg_h = h;
+	gfx_copy(stg_x, stg_y, STAGE_Y, stg_w, stg_h);
+	gfx_yb = tx_yb = (uint16_t)(STAGE_Y - y);
+	return 1;
+}
+
+static void stage_end(void)
+{
+	gfx_yb = tx_yb = 0;
+	gfx_copy(stg_x, STAGE_Y, stg_y, stg_w, stg_h);
+}
+
 static void flush_marked(void)
 {
 	int16_t x0 = SCREEN_W, y0 = SCREEN_H, x1 = 0, y1 = 0;
@@ -510,24 +516,12 @@ static void flush_marked(void)
 		if (w->y + w->h + 1 > y1) y1 = w->y + w->h + 1;
 		n++;
 	}
-	uint8_t stage = 0;
-	if (n && x0 >= 0 && y0 >= 0 && x1 <= SCREEN_W && y1 <= SCREEN_H && y1 - y0 <= STAGE_H) {
-		stg_x = x0 & ~1;
-		stg_w = (x1 - stg_x + 1) & ~1;
-		if (stg_x + stg_w > SCREEN_W) stg_w = SCREEN_W - stg_x;
-		stg_y = y0;
-		stg_h = y1 - y0;
-		gfx_yb = tx_yb = (uint16_t)(STAGE_Y - y0);
-		stage = 1;
-	}
+	uint8_t stage = n ? stage_begin(x0, y0, x1 - x0, y1 - y0) : 0;
 	for (uint8_t i = 0; i < S.n; i++)             // фон под теми, у кого он меняется
 		if (marked[i] == 2) restore(i, W[i].x, W[i].y, W[i].w, W[i].h + 1);
 	for (uint8_t i = 0; i < S.n; i++)
 		if (marked[i] && W[i].type != W_CUSTOM) draw_widget(i);
-	if (stage) {
-		gfx_yb = tx_yb = 0;
-		gfx_copy(stg_x, STAGE_Y, stg_y, stg_w, stg_h);
-	}
+	if (stage) stage_end();
 	for (uint8_t i = 0; i < S.n; i++)             // глобус и прочие «свои» виджеты — прямо на экран
 		if (marked[i] && W[i].type == W_CUSTOM) draw_widget(i);
 	memset(marked, 0, sizeof marked);
@@ -582,8 +576,10 @@ static void row_redraw(uint8_t i, uint8_t row)
 	uint8_t r = row - first;
 	wcolors(w);
 	list_cols_load(w);
+	uint8_t st = stage_begin(w->x, w->y + r * step, w->w, step);
 	restore(i, w->x, w->y + r * step, w->w, step);
 	draw_row(i, row, r, step);
+	if (st) stage_end();
 }
 
 static void redraw_dirty(void)

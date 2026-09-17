@@ -437,3 +437,21 @@ void gfx_window(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c, uint16_t 
 	else gfx_fill(x + 4, y + 4, w - 8, h - 8, c + 3);
 	gfx_rings(x, y, w, h, c);
 }
+
+// Подсветка строки списка под курсором (TextList::mouseOver): цвета точек сдвигаются в своей
+// палитре, нулевые не трогаются; combo — правила списка ComboBox. Вынесено из ui.c (банк 1 полон).
+void gfx_selector(int16_t x, int16_t y, int16_t w, uint8_t h, uint8_t combo) __banked
+{
+	uint8_t old = pg_win3();
+	for (uint8_t yy = 0; yy < h; yy++) {
+		uint8_t *p = gfx_map(x, y + yy);
+		for (int16_t xx = 0; xx < w; xx++) {
+			uint8_t c = p[xx];
+			if (!c) continue;
+			if (combo) c = c < 223 ? 224 : c + 1;
+			else c = (c & 15) < 10 ? c & 0xF0 : c - 10;
+			p[xx] = c;
+		}
+	}
+	pg_map3(old);
+}

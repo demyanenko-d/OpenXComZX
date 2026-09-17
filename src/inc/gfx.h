@@ -13,6 +13,8 @@ void gfx_bevel(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c, uint8_t ge
 void gfx_arrow(int16_t x, int16_t y, uint8_t c, uint8_t down) __banked;
 // Окно: фон bg (0 — заливка c+3) и кольца рамки; thin — фаска тонкой рамки
 void gfx_window(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c, uint16_t bg, uint8_t thin) __banked;
+// Подсветка строки списка под курсором (combo — правила ComboBox)
+void gfx_selector(int16_t x, int16_t y, int16_t w, uint8_t h, uint8_t combo) __banked;
 void gfx_pset(int16_t x, int16_t y, uint8_t c) __banked;
 void gfx_line(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t c) __banked;
 // Прямоугольник полноэкранной картинки IMG8 (320 в ширину) в ту же позицию экрана.
