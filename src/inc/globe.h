@@ -48,9 +48,7 @@ uint8_t gview_open(uint8_t ep) __banked;                                        
 uint8_t gview_pick(uint8_t z, uint16_t *lon, int16_t *lat, uint16_t *iv) __banked;   // вид сетки
 uint8_t gview_load(uint8_t ep, uint8_t z, uint16_t iv) __banked;                // вид -> страница ep
 void globe_det(uint8_t fresh, uint8_t z, uint8_t work) __banked;                  // детали глобуса (globe_det.c)
-void globe_marks(uint8_t radar) __banked;   // радары (radar) и метки GlobeMarkers поверх глобуса (после globe_draw)
-uint8_t globe_project(uint16_t n) __banked; // globe.s: вершины рабочей страницы -> проекции (радары)
-uint8_t globe_workpage(void) __banked;      // globe.s: рабочая страница (0 — нет)
+void globe_marks(void) __banked;       // метки GlobeMarkers поверх глобуса (после globe_draw)
 void globe_blink(void) __banked;       // мигание меток (раз в 100 мс)
 void globe_det_check(void) __banked;   // базы изменились — подписи в заднем буфере устарели: globe_invalidate
 void gview_reset(void) __banked;                                                // рёберный рендер затёр

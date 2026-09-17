@@ -16,7 +16,6 @@
 #include "state.h"
 #include "globe.h"
 #include "rules.h"
-#include "game.h"
 #include <stddef.h>
 
 #define DT_VIS    0x2540          // рабочая страница (globe.s): число взятых групп, их номера
@@ -44,7 +43,6 @@ static uint16_t __at(0xBFFA) dp_ptr;            // det_poly: вершины ли
 static uint8_t __at(0xBFFC) dp_cnt;
 static uint16_t __at(0xBFE0) base_sig;          // globe_det_check: подпись баз в заднем буфере
 static uint16_t __at(0xBFE2) dl_yb;             // globe_det_s.s: строка экрана под y = 0 (280 — задний буфер)
-static uint8_t __at(0xBFE4) dl_ocean;           //   det_xline: первый цвет океана
 // Метки (globe_marks): кадры GlobeMarkers, фаза мигания, позиции и кадры последнего вывода
 #define MK_MAX    64
 #define MK_OK     0xC3
@@ -63,9 +61,6 @@ void det_line(void);              // globe_det_s.s: отрезок (dl_x0, dl_y0
 void det_pset(void);              // точка (dl_x0, dl_y0), если в окне
 void det_poly(void);              // globe_det_s.s: линия dp_cnt вершин с dp_ptr (отсечение — det_clip)
 int16_t det_muldiv(int16_t a, int16_t b, int16_t c);   // globe_det_s.s: a · b / c к нулю
-int16_t det_mq(int16_t a, int16_t b);                 //   (a · b) >> 14
-void det_xline(void);                                 //   Globe::XuLine: затемнение точек отрезка
-void det_ring(void);                                  //   отрезки круга: dp_cnt точек x, y с dp_ptr
 void det_marks(void);                                 //   метки mk_list на экран
 
 // SDL_gfx _clipLine (Коэн — Сазерленд по окну 0..255 x 0..199; Surface::drawLine -> lineColor):
@@ -231,186 +226,9 @@ static int8_t rule_i8(uint16_t id, uint16_t i, uint8_t off)
 	return (int8_t)rtab_word(&t, i, off);
 }
 
-// ---------------------------------------------------------------- радары (Globe::drawRadars)
-
-// Круги радаров: базы — наибольшая дальность готовых построек (48 отрезков), корабли в полёте — дальность
-// корабля (24). Вершины баз запоминаются (меняются только с базой), кораблей — считаются заново при
-// пересчёте; проекции (globe_project, таблицы вида банка 24) пересчитываются, когда изменились вид,
-// базы или корабли. Линия — затемнение точек (det_xline), как XuLine. Вершины баз и точки кругов — в
-// своей странице пула (rd_page: RD_BV — вершины Q14, RD_PT — x, y int16), в памяти банка — только ключи.
-#define RB_MAX    8
-#define RC_MAX    8
-#define RVB       49              // 48 отрезков: az = 0 .. 2π включительно
-#define RVC       25
-#define RP_MAX    (RB_MAX * RVB + RC_MAX * RVC)
-#define RP_BACK   ((int16_t)0x8000)
-#define RD_OK     0x5A
-#define DT_VW     0x2C00          // globe.s DT_V: вершины -> проекции на месте
-#define RD_BV     0x0000          // страница пула радаров: вершины кругов баз (RB_MAX x RVB x 6)
-#define RD_PT     0x1000          //   точки кругов по порядку (x, y; сзади — y = RP_BACK)
-typedef struct { int32_t lon, lat; uint16_t range; uint8_t ok; } rkey_t;
-static rkey_t __at(0xBE60) rb_key[RB_MAX];
-static uint8_t __at(0xBEB8) rc_len[RB_MAX + RC_MAX];
-static uint8_t __at(0xBEC8) rc_src[RB_MAX + RC_MAX];  // база: номер; корабль: #80 | номер
-static uint8_t __at(0xBED8) rc_n;
-#define RS_LEN    (5 + (RB_MAX + RC_MAX) * 11)
-static uint8_t __at(0xBF00) rv_sig[RS_LEN];            // вид и круги прошлого пересчёта (сравнение, не хэш)
-static uint8_t __at(0xBEDC) rv_ok;
-static uint8_t __at(0xBEDD) rd_page;                   // RD_OK_PG + страница (0 — не выделена)
-static uint8_t __at(0xBEDE) rd_pgok;
-static const int16_t rd_cos[48] = { 16384, 16244, 15826, 15137, 14189, 12998, 11585, 9974, 8192, 6270, 4240, 2139, 0, -2139, -4240, -6270, -8192, -9974, -11585, -12998, -14189, -15137, -15826, -16244, -16384, -16244, -15826, -15137, -14189, -12998, -11585, -9974, -8192, -6270, -4240, -2139, 0, 2139, 4240, 6270, 8192, 9974, 11585, 12998, 14189, 15137, 15826, 16244 };
-static const int16_t rd_sin[48] = { 0, 2139, 4240, 6270, 8192, 9974, 11585, 12998, 14189, 15137, 15826, 16244, 16384, 16244, 15826, 15137, 14189, 12998, 11585, 9974, 8192, 6270, 4240, 2139, 0, -2139, -4240, -6270, -8192, -9974, -11585, -12998, -14189, -15137, -15826, -16244, -16384, -16244, -15826, -15137, -14189, -12998, -11585, -9974, -8192, -6270, -4240, -2139 };
-
-static void put_q14(uint8_t *o, int16_t v)
-{
-	if (v > 16383) v = 16383; else if (v < -16383) v = -16383;
-	o[0] = v & 127; o[1] = (uint8_t)(v >> 7);
-}
-
-// Круг дальности range (мили = минуты дуги, Nautical) вокруг p: n + 1 вершин Q14 (az = 0 .. 2π) в out.
-// P = cos r · C + sin r · (cos az · Tφ + sin az · Tλ) — то же, что asin / atan2 drawGlobeCircle.
-static void circle(const geo_t *p, uint16_t range, uint8_t n, uint8_t *out)
-{
-	uint16_t lon = (uint16_t)((uint32_t)p->lon >> 16), lat = (uint16_t)((uint32_t)p->lat >> 16);
-	uint16_t r = (uint16_t)((uint32_t)range * 65536UL / 21600UL);
-	int16_t sl = globe_sin(lon), cl = globe_sin(lon + 0x4000), sp = globe_sin(lat), cp = globe_sin(lat + 0x4000);
-	int16_t sr = globe_sin(r), cr = globe_sin(r + 0x4000);
-	int16_t ax = det_mq(cr, det_mq(cp, cl)), ay = det_mq(cr, det_mq(cp, sl)), az = det_mq(cr, sp);
-	int16_t bx = det_mq(sr, -det_mq(sp, cl)), by = det_mq(sr, -det_mq(sp, sl)), bz = det_mq(sr, cp);
-	int16_t ex = det_mq(sr, -sl), ey = det_mq(sr, cl);
-	uint8_t step = 48 / n;
-	for (uint8_t k = 0; k <= n; k++, out += 6) {
-		uint8_t i = (uint8_t)(k * step) % 48;
-		int16_t ca = rd_cos[i], sa = rd_sin[i];
-		put_q14(out, ax + det_mq(ca, bx) + det_mq(sa, ex));
-		put_q14(out + 2, ay + det_mq(ca, by) + det_mq(sa, ey));
-		put_q14(out + 4, az + det_mq(ca, bz));
-	}
-}
-
-// Подпись: вид (lon, lat, зум), затем на круг — источник, lon, lat (int32), дальность
-static uint8_t *sig_put(uint8_t *o, uint8_t src, const geo_t *p, uint16_t range)
-{
-	*o++ = src;
-	memcpy(o, p, 8);
-	o[8] = (uint8_t)range; o[9] = (uint8_t)(range >> 8);
-	return o + 10;
-}
-
-// Круги (ST — в Win3): список, подпись, при изменении — вершины и проекции
-static void rd_prepare(void)
-{
-	rtab_t tf, tc;
-	uint8_t k, j;
-	uint8_t sig[RS_LEN], *so = sig;
-	memset(sig, 0, sizeof sig);
-	*so++ = (uint8_t)ctx.globe_lon; *so++ = (uint8_t)(ctx.globe_lon >> 8);
-	*so++ = (uint8_t)ctx.globe_lat; *so++ = (uint8_t)(ctx.globe_lat >> 8);
-	*so++ = ST->zoom;
-	rtab_open(RES_RULE_FACILITIES, &tf);
-	rtab_open(RES_RULE_CRAFTS, &tc);
-	uint16_t rr[40];                             // radarRange построек — один раз за вызов
-	uint8_t nf = tf.n < 40 ? (uint8_t)tf.n : 40;
-	for (j = 0; j < nf; j++) rr[j] = rtab_word(&tf, j, offsetof(r_facilities_t, radar_range));
-	rc_n = 0;
-	for (k = 0; k < MAX_BASES; k++) {
-		const base_t *b = &ST->base[k];
-		if (!b->name[0]) continue;
-		uint16_t range = 0;
-		for (j = 0; j < MAX_FACILITIES; j++) {
-			const facility_t *fc = &b->fac[j];
-			if (fc->type >= nf || fc->days) continue;
-			if (rr[fc->type] > range) range = rr[fc->type];
-		}
-		if (!range) continue;
-		if (rd_pgok != RD_OK) {                  // страница пула — один раз
-			rd_page = pg_alloc(1, 1);
-			if (rd_page == PG_NONE) return;
-			rd_pgok = RD_OK;
-			for (j = 0; j < RB_MAX; j++) rb_key[j].ok = 0;
-		}
-		rkey_t *key = &rb_key[k];
-		if (key->ok != RD_OK || key->lon != b->pos.lon || key->lat != b->pos.lat || key->range != range) {
-			uint8_t vb[RVB * 6];
-			circle(&b->pos, range, 48, vb);
-			far_write(FAR(rd_page, RD_BV + k * RVB * 6), vb, RVB * 6);
-			key->lon = b->pos.lon; key->lat = b->pos.lat; key->range = range; key->ok = RD_OK;
-		}
-		rc_src[rc_n] = k; rc_len[rc_n++] = RVB;
-		so = sig_put(so, k, &b->pos, range);
-	}
-	for (k = 0; k < MAX_CRAFTS && rc_n < RB_MAX + RC_MAX; k++) {
-		const craft_t *c = &ST->craft[k];
-		if (c->type == NONE8 || c->status != CS_OUT) continue;
-		uint16_t cr = rtab_word(&tc, c->type, offsetof(r_crafts_t, radar_range));
-		if (!cr) continue;
-		rc_src[rc_n] = 0x80 | k; rc_len[rc_n++] = RVC;
-		so = sig_put(so, 0x80 | k, &c->pos, cr);
-	}
-	if (rv_ok == RD_OK && !memcmp(sig, rv_sig, sizeof sig)) return;
-	rv_ok = 0;
-	if (rd_pgok != RD_OK) return;
-	uint8_t work = globe_workpage();
-	if (!work) return;
-	uint16_t off = 0, n = 0;
-	uint8_t buf[RVC * 6];
-	for (k = 0; k < rc_n; k++) {
-		uint8_t src = rc_src[k];
-		if (src & 0x80) {
-			const craft_t *c = &ST->craft[src & 0x7F];
-			circle(&c->pos, rtab_word(&tc, c->type, offsetof(r_crafts_t, radar_range)), RVC - 1, buf);
-			far_write(FAR(work, DT_VW + off), buf, RVC * 6);
-		} else
-			far_copy(FAR(work, DT_VW + off), FAR(rd_page, RD_BV + src * RVB * 6), RVB * 6);
-		off += rc_len[k] * 6;
-		n += rc_len[k];
-	}
-	if (n && !globe_project(n)) return;
-	pg_map3(STATE_PAGE);
-	uint16_t pt = RD_PT;
-	for (off = 0; n; ) {                         // проекции -> точки (сзади — RP_BACK)
-		uint8_t m = n < RVC ? (uint8_t)n : RVC;
-		int16_t pb[RVC * 2], *o = pb;
-		far_read(FAR(work, DT_VW + off), buf, m * 6);
-		off += m * 6;
-		n -= m;
-		const uint8_t *q = buf;
-		for (j = 0; j < m; j++, q += 6) {
-			int16_t v = q[0] | q[1] << 8;
-			*o++ = v >> 2;
-			v = q[2] | q[3] << 8;
-			*o++ = (q[5] & 0x80) ? RP_BACK : v >> 2;
-		}
-		far_write(FAR(rd_page, pt), pb, m * 4);
-		pt += m * 4;
-	}
-	memcpy(rv_sig, sig, sizeof sig);
-	rv_ok = RD_OK;
-}
-
-// Отрезки кругов на экран (drawGlobeCircle: отрезок к прошлой вершине, если текущая спереди)
-static void rd_draw(void)
-{
-	if (rv_ok != RD_OK) return;
-	uint8_t old3 = pg_win3();
-	dl_yb = 0;
-	dl_c = res_game() == 2 ? 123 : 11;          // жёлтый контур (252, 252, 0) палитры геоскейпа TFTD / UFO
-	uint16_t pt = RD_PT;
-	for (uint8_t k = 0; k < rc_n; k++) {
-		int16_t pb[RVB * 2];
-		uint8_t m = rc_len[k];
-		far_read(FAR(rd_page, pt), pb, m * 4);
-		pt += m * 4;
-		dp_ptr = (uint16_t)pb; dp_cnt = m;
-		det_ring();
-	}
-	pg_map3(old3);
-}
-
-// Метки поверх глобуса после копии заднего буфера (scr_geo.c draw_globe; ST — в Win3): круги радаров
-// (radar — OpenXcom globeRadarLines), затем базы, путевые точки, места миссий, базы пришельцев, НЛО,
-// корабли в полёте — порядок Globe::drawMarkers
-void globe_marks(uint8_t radar) __banked
+// Метки поверх глобуса после копии заднего буфера (scr_geo.c draw_globe; ST — в Win3): базы, путевые
+// точки, места миссий, базы пришельцев, НЛО, корабли в полёте — порядок Globe::drawMarkers
+void globe_marks(void) __banked
 {
 	uint8_t k;
 	res_t r;
@@ -447,7 +265,6 @@ void globe_marks(uint8_t radar) __banked
 			mk_add(&ST->craft[k].pos, m < 0 ? 1 : m);
 		}
 	mk_ok = MK_OK;
-	if (radar) { rd_prepare(); rd_draw(); }
 	mk_draw();
 }
 
