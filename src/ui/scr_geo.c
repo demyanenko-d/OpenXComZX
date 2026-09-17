@@ -23,6 +23,13 @@ static char big_tmp[256];                // промежуточные str_fmt (
 static uint16_t tick_at;                 // кадр последнего такта времени (такт — раз в 5 кадров)
 static uint8_t geo_sun;                  // эпоха солнца (globe_sunlon >> 7) последней перерисовки тени
 static uint8_t icons_on;                 // нарисованы значки свёрнутых боёв
+// Наезд перед перехватом (GeoscapeState::startDogfight / zoomInEffect / zoomOutEffect): 0 — нет,
+// DZ_IN — приближение до DOGFIGHT_ZOOM, DZ_FIGHT — бои, DZ_OUT — отдаление к dz_old; время стоит
+static uint8_t dz_state, dz_old;
+#define DZ_IN          1
+#define DZ_FIGHT       2
+#define DZ_OUT         3
+#define DOGFIGHT_ZOOM  3
 uint8_t geo_dbg_attack;                  // сценарии: poke _geo_dbg_attack <база + 1> — штурм подставным НЛО
 extern uint8_t df_dbg_type;              // dogfight.c: тип подставного НЛО
 extern volatile uint16_t frames;         // crt0.s
@@ -212,11 +219,18 @@ static void show_event(void)
 		geo_base_attack();
 		break;
 	case GE_DOGFIGHT:                            // корабль догнал НЛО (df_start); base: 1/2 — ошибка TFTD
+		if (dz_state != DZ_IN && dz_state != DZ_FIGHT) {   // первый бой: центр на корабль, наезд (startDogfight)
+			geo_t p = ST->craft[(uint8_t)ev_cur.what].pos;
+			center_on(&p);
+			if (dz_state != DZ_OUT) dz_old = ST->zoom;
+			dz_state = DZ_IN;
+			ui_dirty(10);
+		}
 		if (ev_cur.base && ev_cur.base != NONE8) {
 			ctx.craft = (uint8_t)ev_cur.what;
 			ctx.item = ev_cur.base - 1;
 			UI_GO(A_PUSH, SCR_DOGFIGHT_ERROR);
-		} else if (df_nmax)
+		} else if (df_nmax && dz_state != DZ_IN)   // окно боя — после наезда (такт геоскейпа)
 			UI_GO(A_PUSH, SCR_DOGFIGHT);
 		break;
 	case GE_LANDING:
@@ -292,8 +306,7 @@ static void draw_globe(void)
 	globe_det_check();
 	globe_draw();
 	globe_marks();
-	if (df_count || icons_on) {                  // значки свёрнутых боёв (слева от диска)
-		gfx_bg(RES_GEOBORD_SCR, 4, 4, 34, 86);
+	if (df_count || icons_on) {                  // значки свёрнутых боёв (поверх глобуса; старые стёрла копия заднего буфера)
 		icons_on = df_count != 0;
 		if (icons_on) df_draw_icons();
 	}
@@ -847,6 +860,15 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 					if (a <= 33) rotate(a - 30);
 					else zoom(a == 34 ? 1 : -1);
 				}
+			}
+			if (dz_state == DZ_IN) {                 // наезд: зум за такт (перерисовка между ними), время стоит
+				if (ST->zoom < DOGFIGHT_ZOOM) { zoom(1); return 0; }
+				dz_state = DZ_FIGHT;
+			}
+			if (dz_state == DZ_FIGHT && !df_count) dz_state = DZ_OUT;
+			if (dz_state == DZ_OUT) {                // бои кончились — отдаление к прежнему зуму
+				if (ST->zoom > dz_old) { zoom(-1); return 0; }
+				dz_state = 0;
 			}
 			if (geo_dbg_attack) { dbg_attack(geo_dbg_attack - 1); geo_dbg_attack = 0; }
 			if (gev_n) { show_event(); break; }     // сначала — непоказанные события
