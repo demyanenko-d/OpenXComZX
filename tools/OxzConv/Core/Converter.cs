@@ -449,6 +449,9 @@ namespace OxzConv
 				pak.Add(RulesSchema.ResBase + i, ResType.Table, t.data, t.count, t.recSize);
 				parts.Add($"{schema[i].Name} {t.count}x{t.recSize}");
 			}
+			var det = GlobeDetail.Build(rs, sections, ox, RuleFolder);   // детали глобуса: линии, подписи, города
+			pak.Add(ids.Id("GLOBEDET"), ResType.Blob, det.data);
+			parts.Add("GLOBEDET: " + det.info);
 			var vars = RulesSchema.Vars(sections, rs);
 			pak.Add(RulesSchema.ResBase - 1, ResType.Table, vars, vars.Length);
 			if (cutTable != null)                         // заставки: таблица и палитры слайдов (Cutscenes)

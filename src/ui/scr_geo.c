@@ -290,6 +290,7 @@ static const wdef_t w_geo[] = {
 // корабли в полёте, НЛО, места миссий, базы пришельцев, путевые точки (пока квадраты).
 static void draw_globe(void)
 {
+	globe_det_check();
 	globe_draw();
 	int16_t x, y;
 	for (uint8_t b = 0; b < MAX_BASES; b++)

@@ -48,6 +48,7 @@ $banks = @(
     @{ n = 23; page = 0x46; files = @('ui\scr_dogf') }     # воздушный бой: окна
     @{ n = 24; page = 0x47; files = @('ui\globe', 'ui\globe_s', 'ui\globe_tab', 'ui\globe_sq'); tab = 0xBC00 }   # глобус (globe.md): globe_s.s — асм, globe_sq.s — таблица _GTAB с #BC00
     @{ n = 25; page = 0x48; files = @('ui\globe_sh', 'ui\globe_sh_s', 'ui\globe_view', 'ui\globe_sh_tab'); ram = 0xB800 }   # глобус, банк 25 — ассемблер: тень (globe_sh.s — кадр, globe_sh_s.s — блоки и строки, globe_sh_tab.s — таблицы), предрасчитанные виды (globe_view.s); с #B800 — рабочие таблицы тени
+    @{ n = 26; page = 0x49; files = @('ui\globe_det', 'ui\globe_det_s'); ram = 0xA800 }   # детали глобуса: линии, подписи, города (globe_det.c; точки и отрезки — globe_det_s.s); с #A800 — рабочая память
 )
 
 # Пакеты данных игры: выход конвертера OxzConv (tmp\sd\OXZ\<игра>), вшиваются в SPG.

@@ -47,6 +47,8 @@ int16_t globe_sin(uint16_t a) __banked;
 uint8_t gview_open(uint8_t ep) __banked;                                        // 1 — предрасчёт есть
 uint8_t gview_pick(uint8_t z, uint16_t *lon, int16_t *lat, uint16_t *iv) __banked;   // вид сетки
 uint8_t gview_load(uint8_t ep, uint8_t z, uint16_t iv) __banked;                // вид -> страница ep
+void globe_det(uint8_t fresh, uint8_t z, uint8_t work) __banked;                  // детали глобуса (globe_det.c)
+void globe_det_check(void) __banked;   // базы изменились — подписи в заднем буфере устарели: globe_invalidate
 void gview_reset(void) __banked;                                                // рёберный рендер затёр
 // Привязка углов вида к сетке предрасчёта (scr_geo.c): 1 — углы поправлены
 uint8_t globe_snap(uint8_t zoom, uint16_t *lon, int16_t *lat) __banked;

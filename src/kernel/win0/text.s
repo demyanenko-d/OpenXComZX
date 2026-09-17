@@ -29,6 +29,7 @@
 	.globl	_tx_str_base
 	.globl	_tx_str_n
 	.globl	_tx_skip
+	.globl	_tx_yb
 	.globl	_glyph_run
 	.globl	_gr_dst
 	.globl	_gr_src
@@ -74,6 +75,7 @@ DATA_PAGE	= 0x05			; Win1: dma_fill_word (dmabuf.s)
 
 	.area	_DATA
 _tx_font_page::	.ds	1		; страница со всеми шрифтами (text_init)
+_tx_yb::	.ds	2		; строка экрана под y = 0 (0; задний буфер глобуса — 280, globe_det.s); отсечение — по y
 _tx_font_off::	.ds	8		; u16 x 4 — смещение шрифта в странице
 _tx_font_cw::	.ds	4
 _tx_font_ch::	.ds	4
@@ -121,6 +123,8 @@ g_w:		.ds	1
 g_h:		.ds	1
 g_bpr:		.ds	1
 g_left:		.ds	1
+dc_top:		.ds	2		; быстрый путь: видимые строки глифа [top, bot)
+dc_bot:		.ds	2
 g_src:		.ds	2
 g_px:		.ds	2
 g_dst:		.ds	2
@@ -1043,16 +1047,17 @@ line_fast:
 1$:	ld	(ln_xmax), hl
 	ld	a, #1
 	ld	(ln_fast), a
-	ld	a, (ln_top)		; первая видимая строка экрана: DAH = (y & 31) · 2, DAX = #10 + y >> 5
-	ld	b, a
+	ld	hl, (ln_top)		; первая видимая строка экрана Y = y + tx_yb: DAH = (Y & 31) · 2, DAX = #10 + Y >> 5
+	ld	de, (_tx_yb)
+	add	hl, de
+	ld	a, l
 	and	a, #31
 	add	a, a
 	ld	(ln_dah), a
-	ld	a, b
-	rlca
-	rlca
-	rlca
-	and	a, #7
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
+	ld	a, h
 	add	a, #0x10
 	ld	(ln_dax), a
 	jp	ta_key
@@ -1650,6 +1655,29 @@ draw_glyph:
 	ld	a, (tx_mul)
 	dec	a
 	jp	nz, dg_slow
+	;; глиф целиком левее max(box_x, 0) или правее min(box_r, 320) — не виден (подписи глобуса у края)
+	ld	hl, (g_x)
+	ld	a, (g_w)
+	ld	e, a
+	ld	d, #0
+	add	hl, de			; HL = x + w
+	bit	7, h
+	ret	nz
+	ld	a, h
+	or	l
+	ret	z
+	ld	de, (box_x)
+	inc	de
+	call	lt_s			; x + w < box_x + 1
+	ret	c
+	ld	hl, (g_x)
+	ld	de, (box_r)
+	call	lt_s
+	ret	nc			; x >= box_r
+	ld	hl, (g_x)
+	ld	de, #SCREEN_W
+	call	lt_s
+	ret	nc
 	;; быстрый путь: x >= box_x, x >= 0, x + w <= box_r, x + w <= 320, то же по y
 	ld	hl, (g_x)
 	bit	7, h
@@ -1671,37 +1699,67 @@ draw_glyph:
 	ld	hl, #SCREEN_W
 	call	lt_s
 	jp	c, dg_slow
+	;; по y — строками: top = max(y, box_y, 0), bot = min(y + h, box_b, 200) (подписи глобуса у края окна)
 	ld	hl, (g_y)
-	bit	7, h
-	jp	nz, dg_slow
+	ld	(dc_top), hl
 	ld	de, (box_y)
 	call	lt_s
-	jp	c, dg_slow
-	ld	hl, (g_y)
+	jr	nc, dgc_1
+	ld	(dc_top), de
+dgc_1:	ld	hl, (dc_top)
+	bit	7, h
+	jr	z, dgc_2
+	ld	hl, #0
+	ld	(dc_top), hl
+dgc_2:	ld	hl, (g_y)
 	ld	a, (g_h)
 	ld	e, a
 	ld	d, #0
 	add	hl, de
-	ex	de, hl			; DE = y + h
-	push	de
-	ld	hl, (box_b)
+	ld	(dc_bot), hl
+	ld	de, (box_b)
 	call	lt_s
-	pop	de
-	jr	c, dg_slow
-	ld	hl, #SCREEN_H
+	jr	c, dgc_3
+	ld	(dc_bot), de
+dgc_3:	ld	hl, (dc_bot)
+	ld	de, #SCREEN_H
 	call	lt_s
-	jr	c, dg_slow
+	jr	c, dgc_4
+	ld	(dc_bot), de
+dgc_4:	ld	hl, (dc_bot)		; строк = bot − top (не больше 0 — не видна)
+	ld	de, (dc_top)
+	or	a
+	sbc	hl, de
+	ret	z
+	bit	7, h
+	ret	nz
+	ld	a, l
+	ld	(g_left), a
+	ex	de, hl			; пропуск = top − y строк
+	ld	de, (g_y)
+	or	a
+	sbc	hl, de
+	ld	b, l
+	ld	hl, (dc_top)
+	ld	(g_y), hl
 	ld	hl, (g_src)
-	ld	(_gr_src), hl
 	ld	a, (g_bpr)
 	ld	(_gr_bpr), a
-	ld	a, (g_h)
-	ld	(g_left), a
+	ld	e, a
+	ld	d, #0
+	inc	b
+	jr	dgc_6
+dgc_5:	add	hl, de
+dgc_6:	djnz	dgc_5
+	ld	(_gr_src), hl
 dg_fast:
 	ld	a, (g_left)
 	or	a
 	ret	z
-	ld	a, (g_y)		; строк до конца страницы экрана: 32 - (y & 31)
+	ld	hl, (g_y)		; строк до конца страницы экрана: 32 - (Y & 31)
+	ld	de, (_tx_yb)
+	add	hl, de
+	ld	a, l
 	and	#31
 	ld	b, a
 	ld	a, #32
@@ -1716,7 +1774,7 @@ dg_fast:
 	push	bc
 	ld	hl, (g_x)
 	ld	de, (g_y)
-	call	_gfx_map
+	call	tx_map
 	ld	(_gr_dst), de
 	call	_glyph_run
 	pop	bc
@@ -1729,6 +1787,15 @@ dg_fast:
 	add	hl, de
 	ld	(g_y), hl
 	jr	dg_fast
+
+;; _gfx_map(HL — x, DE — y + tx_yb)
+tx_map:
+	push	hl
+	ld	hl, (_tx_yb)
+	add	hl, de
+	ex	de, hl
+	pop	hl
+	jp	_gfx_map
 
 dg_slow:				; по точкам с отсечением (контраст, край рамки/экрана)
 	ld	a, (tx_lutok)
@@ -1763,7 +1830,7 @@ ds_row:
 	jp	z, ds_nextrow
 	ld	hl, (g_x)
 	ld	de, (g_y)
-	call	_gfx_map
+	call	tx_map
 	ld	(g_dst), de
 	ld	hl, (g_x)
 	ld	(g_px), hl

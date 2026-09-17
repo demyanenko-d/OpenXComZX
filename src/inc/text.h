@@ -33,6 +33,8 @@ void text_draw(const tbox_t *b, const char *s);
 // Прокрутка (Text::setScrollable): следующий text_draw пропускает столько первых строк
 // раскладки (до 24); после вызова — снова 0.
 extern uint8_t tx_skip;
+// Строка экрана под y = 0 (обычно 0; задний буфер глобуса — 280, globe_det.s). Отсечение — по y (0..199).
+extern uint16_t tx_yb;
 int16_t text_height(const tbox_t *b, const char *s);  // высота в рамке b (перенос, мелкий вместо крупного)
 int16_t text_width(uint8_t font, const char *s);     // до конца строки/перевода строки
 uint8_t font_height(uint8_t font);                   // высота строки (высота + spacing)

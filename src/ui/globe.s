@@ -40,6 +40,7 @@
 	.globl	_globe_sin, b_globe_sin, _globe_shadow, b_globe_shadow, _globe_rows_pl, b_globe_rows_pl
 	.globl	_globe_sunlon, b_globe_sunlon, _gview_open, b_gview_open, _gview_pick, b_gview_pick
 	.globl	_gview_load, b_gview_load, _gview_reset, b_gview_reset
+	.globl	_globe_det, b_globe_det, detail
 
 b_globe_draw		= 24
 b_globe_invalidate	= 24
@@ -83,6 +84,15 @@ DMA_S_ALGN	= 0x20
 RES_GEOBORD_SCR	= 0x0120
 RES_TEXTURE_DAT	= 0x0142
 RES_GLOBE	= 0x0145
+RES_GLOBEDET	= 0x0032
+DT_CV		= 0x2000		; рабочая страница после кадра: центры групп деталей (6 байт)
+DT_CP		= 0x2240		;   их проекции
+DT_M		= 0x2480		;   пределы окна зума (u16)
+DT_VIS		= 0x2540		;   число взятых групп, их номера (globe_det.c)
+DT_REC		= 0x2600		;   записи групп (16 байт)
+DT_V		= 0x2C00		;   вершины взятых групп -> их проекции x, y, z на месте (до #3800)
+DT_VMAX		= 512
+DT_GMAX		= 96
 ST_ZOOM		= 72			; state_t.zoom
 CTX_LON		= 6			; ctx.globe_lon, globe_lat
 CTX_LAT		= 8
@@ -158,6 +168,22 @@ r_set:		.ds	1
 r_bz:		.ds	1
 r_rz:		.ds	1
 r_ncell:	.ds	1
+; детали (detail): вид последней проекции
+dt_res:		.ds	15		; res_t GLOBEDET
+dt_hdr:		.ds	24
+dt_ng:		.ds	1
+dt_nv:		.ds	2
+dt_nk:		.ds	1
+dt_g:		.ds	1
+dt_vi:		.ds	2
+dt_vo:		.ds	2
+dt_voff:	.ds	2
+dt_ok:		.ds	1
+dt_z:		.ds	1
+dt_lon:		.ds	2
+dt_lat:		.ds	2
+dt_t0:		.ds	2
+dt_fr:		.ds	1
 r_ct:		.ds	4		; far_t: записи ячеек, блоки ячеек, сетка 5°
 r_bt:		.ds	4
 r_gt:		.ds	4
@@ -259,6 +285,8 @@ s_pre:	.asciz	", pre\n"
 s_shp:	.asciz	", shp "
 s_nl:	.asciz	"\n"
 s_sonly: .asciz	"globe: sun only, zoom "
+s_det:	.asciz	"globe: detail, zoom "
+s_fresh: .asciz	", fresh "
 
 ;; ================================================================ мелочи
 
@@ -2308,11 +2336,364 @@ blit:
 	out	(c), a
 	jp	dma_wait
 
+;; ================================================================ детали
+
+;; Детали глобуса (зумы 1–5, globe_det.c в банке 26) — после кадра, в задний буфер. Вид сменился —
+;; группы GLOBEDET (записи и пределы окна зума) копией DMA в рабочую страницу, центры групп —
+;; проекция таблицами вида и отсев _gl_cull (как ячейки карты); вершины видимых групп нужного зума
+;; (линии — с 1, подписи стран — с 2, города — с 3) копией DMA подряд в DT_V и проекция на месте.
+;; Банк 26 забирает список групп и проекции и рисует. Тот же вид (другое солнце) — рисует по прошлым.
+detail:
+	ld	a, (r_z)
+	or	a, a
+	ret	z
+	ld	hl, (_frames)
+	ld	(dt_t0), hl
+	ld	a, (dt_ok)
+	or	a, a
+	jr	z, 1$
+	ld	a, (dt_z)
+	ld	b, a
+	ld	a, (r_z)
+	cp	a, b
+	jr	nz, 1$
+	ld	hl, (dt_lon)
+	ld	de, (r_lon)
+	or	a, a
+	sbc	hl, de
+	jr	nz, 1$
+	ld	hl, (dt_lat)
+	ld	de, (r_lat)
+	or	a, a
+	sbc	hl, de
+	ld	a, #0
+	jp	z, dt_draw
+1$:	xor	a, a
+	ld	(dt_ok), a
+	ld	hl, #RES_GLOBEDET
+	ld	de, #dt_res
+	call	_res_find
+	or	a, a
+	ret	z
+	ld	hl, #24				; far_read(phys, dt_hdr, 24)
+	push	hl
+	ld	hl, #dt_hdr
+	push	hl
+	ld	hl, #dt_res
+	call	far_load
+	call	_far_read
+	ld	hl, (dt_hdr + 14)		; групп: 1..DT_GMAX
+	ld	a, h
+	or	a, a
+	ret	nz
+	ld	a, l
+	or	a, a
+	ret	z
+	cp	a, #DT_GMAX + 1
+	ret	nc
+	ld	(dt_ng), a
+	ld	e, a				; смещения: записи 24, пределы зума 24 + 16·ng + 2·ng·z,
+	ld	d, #0				; вершины 24 + 28·ng + 2·nVert
+	ld	hl, #0
+	ld	b, #28
+2$:	add	hl, de
+	djnz	2$
+	ld	bc, #24
+	add	hl, bc
+	ld	bc, (dt_hdr + 16)
+	add	hl, bc
+	add	hl, bc
+	ld	(dt_voff), hl
+	ld	a, (work)
+	call	_pg_map3
+	call	tables
+	ld	hl, #24				; записи -> DT_REC
+	call	dt_src
+	ld	hl, #DT_REC
+	ld	(fd_do), hl
+	ld	a, (dt_ng)
+	ld	l, a
+	ld	h, #0
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
+	ld	(fd_n), hl
+	push	hl
+	call	far_dma
+	pop	hl				; пределы зума -> DT_M
+	ld	a, (dt_ng)
+	ld	e, a
+	ld	d, #0
+	ld	a, (r_z)
+	or	a, a
+	jr	z, 4$
+	ld	b, a
+3$:	add	hl, de
+	add	hl, de
+	djnz	3$
+4$:	ld	bc, #24
+	add	hl, bc
+	call	dt_src
+	ld	hl, #DT_M
+	ld	(fd_do), hl
+	ld	a, (dt_ng)
+	ld	l, a
+	ld	h, #0
+	add	hl, hl
+	ld	(fd_n), hl
+	call	far_dma
+	call	dma_wait
+	ld	a, (work)
+	call	_pg_map3
+	ld	hl, #0xC000 + DT_REC + 8	; центры (6 байт с +8 записи) -> DT_CV
+	ld	de, #0xC000 + DT_CV
+	ld	a, (dt_ng)
+	ld	b, a
+5$:	push	bc
+	ld	bc, #6
+	ldir
+	ld	bc, #10
+	add	hl, bc
+	pop	bc
+	djnz	5$
+	ld	hl, #0xC000 + DT_CV
+	ld	(_gl_pv), hl
+	ld	hl, #0xC000 + DT_CP
+	ld	(_gl_pd), hl
+	ld	a, (dt_ng)
+	ld	(_gl_pn), a
+	xor	a, a
+	ld	(_gl_noz), a
+	call	_gl_project
+	ld	hl, #0xC000 + DT_REC
+	ld	(_gl_crp), hl
+	ld	hl, #0xC000 + DT_CP
+	ld	(_gl_cpp), hl
+	ld	hl, #0xC000 + DT_M
+	ld	(_gl_cmp), hl
+	ld	hl, #0xC000 + DT_VIS + 1
+	ld	(_gl_vsp), hl
+	ld	a, (dt_ng)
+	ld	(_gl_cn), a
+	call	_gl_cull
+	;; вершины видимых групп нужного зума подряд в DT_V; список DT_VIS — только взятые группы
+	ld	hl, #0
+	ld	(dt_nv), hl
+	ld	hl, #0xC000 + DT_VIS + 1
+	ld	(dt_vi), hl
+	ld	(dt_vo), hl
+	xor	a, a
+	ld	(dt_nk), a
+	ld	a, (_gl_nvis)
+	or	a, a
+	jp	z, dt_proj
+	ld	b, a
+dt_grp:
+	push	bc
+	ld	a, (work)
+	call	_pg_map3
+	ld	hl, (dt_vi)
+	ld	a, (hl)
+	inc	hl
+	ld	(dt_vi), hl
+	and	a, #0x7F
+	ld	(dt_g), a
+	ld	l, a				; запись группы
+	ld	h, #0
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
+	ld	de, #0xC000 + DT_REC
+	add	hl, de
+	ld	e, (hl)				; DE — первая вершина
+	inc	hl
+	ld	d, (hl)
+	inc	hl
+	ld	c, (hl)				; C — вершин
+	inc	hl
+	ld	a, (r_z)			; вид группы (0 — линия, 1 — страны, 2 — города) <= зум − 1
+	dec	a
+	cp	a, (hl)
+	jr	c, dt_gnext
+	ld	hl, (dt_nv)			; места хватает
+	ld	b, #0
+	add	hl, bc
+	push	hl
+	push	de
+	ld	de, #DT_VMAX + 1
+	or	a, a
+	sbc	hl, de
+	pop	de
+	pop	hl
+	jr	nc, dt_gnext
+	push	bc
+	ld	c, l				; dst = DT_V + nv · 6, nv += n
+	ld	b, h
+	ld	hl, (dt_nv)
+	ld	(dt_nv), bc
+	ld	c, l
+	ld	b, h
+	add	hl, hl
+	add	hl, bc
+	add	hl, hl
+	ld	bc, #DT_V
+	add	hl, bc
+	push	hl
+	ex	de, hl				; src = voff + first · 6
+	ld	e, l
+	ld	d, h
+	add	hl, hl
+	add	hl, de
+	add	hl, hl
+	ld	de, (dt_voff)
+	add	hl, de
+	call	dt_src
+	pop	hl
+	ld	(fd_do), hl
+	pop	bc
+	ld	l, c
+	ld	h, #0
+	ld	e, l
+	ld	d, h
+	add	hl, hl
+	add	hl, de
+	add	hl, hl
+	ld	(fd_n), hl
+	call	far_dma
+	ld	a, (work)
+	call	_pg_map3
+	ld	hl, (dt_vo)			; группа — в список
+	ld	a, (dt_g)
+	ld	(hl), a
+	inc	hl
+	ld	(dt_vo), hl
+	ld	hl, #dt_nk
+	inc	(hl)
+dt_gnext:
+	pop	bc
+	dec	b
+	jp	nz, dt_grp
+dt_proj:
+	call	dma_wait
+	ld	a, (work)
+	call	_pg_map3
+	ld	a, (dt_nk)
+	ld	(0xC000 + DT_VIS), a
+	ld	hl, #0xC000 + DT_V		; проекция на месте пачками до 200 вершин (_gl_pn — байт)
+	ld	(_gl_pv), hl
+	ld	(_gl_pd), hl
+	xor	a, a
+	ld	(_gl_noz), a
+	ld	hl, (dt_nv)
+6$:	ld	a, h
+	or	a, a
+	jr	nz, 7$
+	ld	a, l
+	or	a, a
+	jr	z, 9$
+	cp	a, #200
+	jr	c, 8$
+7$:	ld	a, #200
+8$:	ld	(_gl_pn), a
+	ld	e, a
+	ld	d, #0
+	or	a, a
+	sbc	hl, de
+	push	hl
+	ld	l, e				; DE = пачка · 6
+	ld	h, d
+	add	hl, hl
+	add	hl, de
+	add	hl, hl
+	push	hl
+	call	_gl_project
+	pop	de
+	ld	hl, (_gl_pv)
+	add	hl, de
+	ld	(_gl_pv), hl
+	ld	(_gl_pd), hl
+	pop	hl
+	jr	6$
+9$:	ld	a, (r_z)
+	ld	(dt_z), a
+	ld	hl, (r_lon)
+	ld	(dt_lon), hl
+	ld	hl, (r_lat)
+	ld	(dt_lat), hl
+	ld	a, #1
+	ld	(dt_ok), a
+dt_draw:					; globe_det(fresh = A, z, work)
+	ld	(dt_fr), a
+	ld	c, a
+	ld	a, (work)
+	push	af
+	inc	sp
+	ld	a, (r_z)
+	push	af
+	inc	sp
+	ld	a, c
+	push	af
+	inc	sp
+	ld	e, #b_globe_det
+	ld	hl, #_globe_det
+	call	___sdcc_bcall_ehl
+	ld	hl, #3
+	add	hl, sp
+	ld	sp, hl
+	ld	a, (_gl_dbg)			; "globe: detail, zoom Z, frames F, fresh X"
+	or	a, a
+	ret	z
+	ld	hl, #s_det
+	call	_dbg_puts
+	ld	a, (r_z)
+	call	dec8
+	ld	hl, #s_fr
+	call	_dbg_puts
+	ld	hl, (_frames)
+	ld	de, (dt_t0)
+	or	a, a
+	sbc	hl, de
+	call	dec16
+	ld	hl, #s_fresh
+	call	_dbg_puts
+	ld	a, (dt_fr)
+	call	dec8
+	ld	hl, #s_nl
+	jp	_dbg_puts
+
+;; HL — смещение в ресурсе GLOBEDET -> fd_sp, fd_so (источник far_dma), fd_dp = рабочая
+dt_src:
+	push	hl
+	ld	hl, #dt_res
+	call	far_load			; HL:DE — страница << 14 | смещение
+	ld	a, d
+	rlca
+	rlca
+	and	a, #3
+	ld	b, a
+	ld	a, l
+	add	a, a
+	add	a, a
+	or	a, b
+	ld	(fd_sp), a
+	ld	a, d
+	and	a, #0x3F
+	ld	d, a
+	pop	hl
+	add	hl, de
+	ld	(fd_so), hl
+	ld	a, (work)
+	ld	(fd_dp), a
+	ret
+
 ;; ================================================================ входы
 
 ;; void globe_invalidate(void) __banked — задний буфер и кэши недействительны
 _globe_invalidate::
 	xor	a, a
+	ld	(dt_ok), a
 	ld	(valid), a
 	ld	(geom), a
 	ld	(kc_ok), a
@@ -2427,6 +2808,7 @@ _globe_draw::
 	cp	a, b
 	jr	z, 9$
 8$:	call	render
+	call	detail
 	ld	a, (d_se)
 	ld	(v_sun), a
 9$:	call	blit
