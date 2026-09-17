@@ -49,7 +49,7 @@ uint8_t gview_pick(uint8_t z, uint16_t *lon, int16_t *lat, uint16_t *iv) __banke
 uint8_t gview_load(uint8_t ep, uint8_t z, uint16_t iv) __banked;                // вид -> страница ep
 void globe_det(uint8_t fresh, uint8_t z, uint8_t work) __banked;                  // детали глобуса (globe_det.c)
 void globe_marks(void) __banked;       // метки GlobeMarkers поверх глобуса (после globe_draw)
-void globe_blink(void) __banked;       // мигание меток (раз в 100 мс)
+void globe_marks_tick(void) __banked;  // метки заново по текущим местам и мигание (раз в тик, 100 мс)
 void globe_det_check(void) __banked;   // базы изменились — подписи в заднем буфере устарели: globe_invalidate
 void gview_reset(void) __banked;                                                // рёберный рендер затёр
 // Привязка углов вида к сетке предрасчёта (scr_geo.c): 1 — углы поправлены

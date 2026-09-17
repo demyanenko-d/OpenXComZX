@@ -22,7 +22,7 @@
 #define DT_V      0x2C00          //   проекции их вершин подряд: x, y (1/4 точки: 512 / 400 — центр), z
 #define G_MAX     96              // GlobeDetail.MaxGroup, MaxVert
 #define V_MAX     340
-#define DP_MAX    512             // globe.s DT_VMAX
+#define DP_MAX    V_MAX           // вершин деталей не больше V_MAX (globe.s DT_VMAX — с запасом)
 #define BACK_Y    280
 
 typedef struct {
@@ -46,11 +46,13 @@ static uint16_t __at(0xBFE2) dl_yb;             // globe_det_s.s: строка �
 // Метки (globe_marks): кадры GlobeMarkers, фаза мигания, позиции и кадры последнего вывода
 #define MK_MAX    64
 #define MK_OK     0xC3
-static uint8_t __at(0xBD40) mk_spr[81];
-static uint8_t __at(0xBD91) mk_ok;             // MK_OK — кадры и список годны (память банка при старте не обнулена)
-static uint8_t __at(0xBD92) mk_blink;
-static uint8_t __at(0xBD93) mk_n;
-static uint8_t __at(0xBDA0) mk_list[MK_MAX * 3];
+static uint8_t __at(0xB940) mk_spr[81];
+static uint8_t __at(0xB991) mk_ok;             // MK_OK — кадры и список годны (память банка при старте не обнулена)
+static uint8_t __at(0xB992) mk_blink;
+static uint8_t __at(0xB993) mk_n;
+static uint8_t __at(0xB994) mk_still;          // сколько в списке неподвижных (в хвосте — подвижные)
+static uint8_t __at(0xB9A0) mk_list[MK_MAX * 3];
+static uint8_t __at(0xBA60) mk_save[MK_MAX * 9];   // точки под метками (det_marks / det_unmark)
 static int16_t __at(0xBFF0) dl_x0;
 static int16_t __at(0xBFF2) dl_y0;
 static int16_t __at(0xBFF4) dl_x1;
@@ -61,7 +63,8 @@ void det_line(void);              // globe_det_s.s: отрезок (dl_x0, dl_y0
 void det_pset(void);              // точка (dl_x0, dl_y0), если в окне
 void det_poly(void);              // globe_det_s.s: линия dp_cnt вершин с dp_ptr (отсечение — det_clip)
 int16_t det_muldiv(int16_t a, int16_t b, int16_t c);   // globe_det_s.s: a · b / c к нулю
-void det_marks(void);                                 //   метки mk_list на экран
+void det_marks(void);                                 //   метки mk_list на экран (точки под ними — в mk_save)
+void det_unmark(void);                                //   вернуть точки под метками прошлого вывода
 
 // SDL_gfx _clipLine (Коэн — Сазерленд по окну 0..255 x 0..199; Surface::drawLine -> lineColor):
 // 1 — есть что рисовать, концы в dl_*. Наклон SDL_gfx — float, здесь то же целочисленным делением
@@ -228,15 +231,11 @@ static int8_t rule_i8(uint16_t id, uint16_t i, uint8_t off)
 
 // Метки поверх глобуса после копии заднего буфера (scr_geo.c draw_globe; ST — в Win3): базы, путевые
 // точки, места миссий, базы пришельцев, НЛО, корабли в полёте — порядок Globe::drawMarkers
-void globe_marks(void) __banked
+// Места и кадры неподвижных меток по состоянию (ST — в Win3): базы, путевые точки, места миссий, базы
+// пришельцев, севшие и разбитые НЛО — их место меняется только с новым кадром глобуса
+static void mk_collect_still(void)
 {
 	uint8_t k;
-	res_t r;
-	det_hdr_t h;
-	mk_ok = 0;
-	if (!res_find(RES_GLOBEDET, &r)) return;
-	far_read(r.phys, &h, sizeof h);
-	far_read(r.phys + h.r0, mk_spr, sizeof mk_spr);
 	mk_n = 0;
 	for (k = 0; k < MAX_BASES; k++)
 		if (ST->base[k].name[0]) mk_add(&ST->base[k].pos, 0);
@@ -252,26 +251,59 @@ void globe_marks(void) __banked
 			mk_add(&ST->abase[k].pos, rule_i8(RES_RULE_ALIENDEPLOYMENTS, ST->abase[k].deployment, offsetof(r_alienDeployments_t, marker_icon)));
 	for (k = 0; k < MAX_UFOS; k++) {
 		const ufo_t *u = &ST->ufo[k];
-		if (u->type == NONE8 || !(u->flags & UF_DETECTED)) continue;
-		uint8_t off = offsetof(r_ufos_t, marker), def = 2;
-		if (u->status == US_LANDED) { off = offsetof(r_ufos_t, marker_land); def = 3; }
-		else if (u->status == US_CRASHED) { off = offsetof(r_ufos_t, marker_crash); def = 4; }
+		if (u->type == NONE8 || !(u->flags & UF_DETECTED) || u->status == US_FLYING) continue;
+		uint8_t off = u->status == US_LANDED ? offsetof(r_ufos_t, marker_land) : offsetof(r_ufos_t, marker_crash);
 		int8_t m = rule_i8(RES_RULE_UFOS, u->type, off);
-		mk_add(&u->pos, m < 0 ? def : m);
+		mk_add(&u->pos, m < 0 ? (u->status == US_LANDED ? 3 : 4) : m);
+	}
+	mk_still = mk_n;
+}
+
+// Подвижные метки (порядок Globe::drawMarkers — последними): летящие НЛО и корабли в полёте.
+// Пересчитываются каждый тик, поэтому идут в хвосте списка
+static void mk_collect_moving(void)
+{
+	uint8_t k;
+	mk_n = mk_still;
+	for (k = 0; k < MAX_UFOS; k++) {
+		const ufo_t *u = &ST->ufo[k];
+		if (u->type == NONE8 || !(u->flags & UF_DETECTED) || u->status != US_FLYING) continue;
+		int8_t m = rule_i8(RES_RULE_UFOS, u->type, offsetof(r_ufos_t, marker));
+		mk_add(&u->pos, m < 0 ? 2 : m);
 	}
 	for (k = 0; k < MAX_CRAFTS; k++)
 		if (ST->craft[k].type != NONE8 && ST->craft[k].status == CS_OUT) {
 			int8_t m = rule_i8(RES_RULE_CRAFTS, ST->craft[k].type, offsetof(r_crafts_t, marker));
 			mk_add(&ST->craft[k].pos, m < 0 ? 1 : m);
 		}
+}
+
+void globe_marks(void) __banked
+{
+	res_t r;
+	det_hdr_t h;
+	mk_ok = 0;
+	if (!res_find(RES_GLOBEDET, &r)) return;
+	far_read(r.phys, &h, sizeof h);
+	far_read(r.phys + h.r0, mk_spr, sizeof mk_spr);
+	mk_collect_still();
+	mk_collect_moving();
 	mk_ok = MK_OK;
 	mk_draw();
 }
 
-// Globe::blink (раз в 100 мс): фаза мигания и точки меток заново (без копии глобуса)
-void globe_blink(void) __banked
+// Раз в тик геоскейпа (100 мс): метки едут вместе с кораблями и НЛО, не дожидаясь нового кадра глобуса
+// (тень и картинка пересчитываются гораздо реже), и мигают (Globe::blink). Точки под прошлыми метками
+// возвращаются из mk_save — копия глобуса не нужна.
+void globe_marks_tick(void) __banked
 {
 	if (mk_ok != MK_OK) return;
+	uint8_t old3 = pg_win3();
+	dl_yb = 0;
+	det_unmark();
+	pg_map3(STATE_PAGE);
+	mk_collect_moving();                         // неподвижные — из прошлого сбора
 	mk_blink = (mk_blink ^ 1) & 1;               // память банка при старте не обнулена
 	mk_draw();
+	pg_map3(old3);
 }

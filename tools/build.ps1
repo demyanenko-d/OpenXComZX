@@ -55,8 +55,18 @@ $banks = @(
 $packs = @('PAL', 'LANG', 'RULES', 'GEO')
 
 function Invoke-Tool([string]$exe, [string[]]$argv) {
-    & $exe @argv
+    # Вывод перехватывается ради предупреждения SDCC 112 (неявное объявление функции): в банке
+    # оно даёт прямой call по младшему слову адреса — внутрь своей же страницы вместо
+    # трамплина ___sdcc_bcall_ehl, и игра молча уходит в перезапуск (нашлось на scr_dogf.c
+    # без globe.h, findings_log 2026-09-17). Такое предупреждение валит сборку.
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $log = (& $exe @argv 2>&1 | Out-String)
+    $ErrorActionPreference = $prev
+    if ($log.Length) { Write-Host $log -NoNewline }
     if ($LASTEXITCODE -ne 0) { throw "$exe failed with code $LASTEXITCODE" }
+    # сообщение — латиницей: файл в UTF-8 без BOM, PS 5.1 читает строки как ANSI
+    if ($log -match 'warning 112') { throw "implicit function declaration (sdcc warning 112) - include the header" }
 }
 
 # Конвертер OxzConv (C#, tools\OxzConv) пересобирается, если его исходники новее exe.

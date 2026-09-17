@@ -6,7 +6,7 @@
 	.module globe_det_s
 	.optsdcc -mz80 sdcccall(1)
 
-	.globl	_det_line, _det_pset, _det_poly, _det_clip, _det_muldiv, _det_marks, _pg_map3
+	.globl	_det_line, _det_pset, _det_poly, _det_clip, _det_muldiv, _det_marks, _det_unmark, _pg_map3
 	.globl	___muluint2ulong
 
 DL_X0	= 0xBFF0
@@ -19,10 +19,11 @@ DP_CNT	= 0xBFFC
 MD_SG	= 0xBFFD			; det_muldiv: знак
 MD_HI	= 0xBFFE			;   старшее слово произведения
 DL_YB	= 0xBFE2			; строка экрана под y = 0: 280 — задний буфер, 0 — экран
-MK_SPR	= 0xBD40			; globe_det.c: кадры меток 9 x 9, фаза мигания, число и список (x, y, кадр)
-MK_BLINK = 0xBD92
-MK_N	= 0xBD93
-MK_LIST	= 0xBDA0
+MK_SPR	= 0xB940			; globe_det.c (адреса — там же): кадры меток 9 x 9, фаза мигания, число,
+MK_BLINK = 0xB992			;   список (x, y, кадр) и точки под метками (9 на метку — вернёт det_unmark)
+MK_N	= 0xB993
+MK_LIST	= 0xB9A0
+MK_SAVE	= 0xBA60
 LN_PG	= 0xBFF9			; подключённая страница экрана
 BACK_Y	= 280
 SCREEN_PAGE = 0x10
@@ -157,10 +158,56 @@ addr:
 	ld	l, a
 	ret
 
+;; void det_unmark(void) — вернуть точки под метками прошлого вывода (MK_SAVE) на экран
+_det_unmark::
+	push	ix
+	push	iy
+	ld	a, (MK_N)
+	or	a, a
+	jr	z, 8$
+	ld	b, a
+	ld	ix, #MK_LIST
+	ld	iy, #MK_SAVE
+1$:	push	bc
+	xor	a, a
+	ld	(ln_sy), a
+	ld	a, 1 (ix)			; первая точка (x − 1, y − 1)
+	dec	a
+	ld	e, a
+	ld	a, 0 (ix)
+	dec	a
+	call	addr				; HL — адрес
+	ld	b, #3
+2$:	push	bc
+	ld	b, #3
+3$:	ld	a, 0 (iy)
+	inc	iy
+	ld	(hl), a
+	inc	l
+	djnz	3$
+	dec	l
+	dec	l
+	dec	l
+	pop	bc
+	push	bc
+	call	ystep
+	pop	bc
+	djnz	2$
+	ld	de, #3
+	add	ix, de
+	pop	bc
+	djnz	1$
+8$:	pop	iy
+	pop	ix
+	ret
+
 ;; void det_marks(void) — метки из списка MK_LIST (MK_N штук: x, y — центр в окне 1..254 x 1..198, кадр) на
-;; экран (DL_YB = 0): кадр 3x3, точка 0 — прозрачна, цвет + фаза мигания (кадр 8 — город — не мигает)
+;; экран (DL_YB = 0): кадр 3x3, точка 0 — прозрачна, цвет + фаза мигания (кадр 8 — город — не мигает);
+;; точки под меткой сохраняются в MK_SAVE (вернёт det_unmark перед следующим выводом)
 _det_marks::
 	push	ix
+	push	iy
+	ld	iy, #MK_SAVE
 	ld	a, (MK_N)
 	or	a, a
 	jr	z, 9$
@@ -199,7 +246,10 @@ _det_marks::
 	ld	b, #3
 3$:	push	bc
 	ld	b, #3
-4$:	ld	a, (de)
+4$:	ld	a, (hl)				; точка под меткой — в MK_SAVE
+	ld	0 (iy), a
+	inc	iy
+	ld	a, (de)
 	inc	de
 	or	a, a
 	jr	z, 5$
@@ -219,7 +269,8 @@ _det_marks::
 	add	ix, de
 	pop	bc
 	djnz	1$
-9$:	pop	ix
+9$:	pop	iy
+	pop	ix
 	ret
 
 ;; void det_line(void) — SDL_gfx lineColor после _clipLine (концы уже в окне): dx = |Δx| + 1, dy = |Δy| + 1,

@@ -597,6 +597,16 @@ static void redraw(void)
 	dirty = 0;
 }
 
+// Набор виджетов верхнего экрана изменился (окна воздушного боя разворачиваются и сворачиваются):
+// перерисовать DYN-виджеты экрана под ним (у геоскейпа это глобус с метками и значками — фон под
+// окнами) и заново разложить верхний экран. Дешевле полной перерисовки стека (не мигает панель).
+void ui_relayout(void) __banked
+{
+	if (depth < 2) return;
+	if (load(depth - 2)) redraw_dyn();
+	if (load(depth - 1)) draw_all();
+}
+
 static void do_push(uint8_t id)
 {
 	if (depth >= STACK_MAX) return;

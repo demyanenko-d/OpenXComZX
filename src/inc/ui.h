@@ -138,5 +138,7 @@ uint8_t scr_event(uint8_t id, uint8_t ev, uint8_t arg);            // 1 — об
                         // если в строке за ней есть ещё колонка; только для выравнивания влево
 extern int8_t ui_arrow_dir;
 extern uint8_t ui_arrow_max;
+// Набор виджетов верхнего экрана изменился: перерисовать DYN нижнего экрана (фон) и верхний заново
+void ui_relayout(void) __banked;
 
 #endif

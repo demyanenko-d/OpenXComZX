@@ -510,18 +510,20 @@ uint8_t dogf_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				break;
 			}
 		break;
+	// Набор окон изменился (значок развернули, бой свернули или кончился): ui_relayout — глобус с метками
+	// и значками (фон под окнами) и раскладка окон заново, вместо A_REDRAW всем стеком (мигал весь экран)
 	case EVT_BUTTON:
 		if (arg == 0x80) {                           // значок свёрнутого боя
-			if (df_icon_click() == 1) UI_GO(A_REDRAW, 0);
+			if (df_icon_click() == 1) ui_relayout();
 			break;
 		}
 		if (arg >= DF_MAX || df[arg].craft == NONE8) break;
-		if (window_click(arg)) UI_GO(df_nmax ? A_REDRAW : A_POP, 0);
+		if (window_click(arg)) { if (df_nmax) ui_relayout(); else UI_GO(A_POP, 0); }
 		else draw_dirty(&df[arg]);
 		break;
 	case EVT_TICK: {
 		if (!df_nmax) { UI_GO(A_POP, 0); break; }
-		if (df_run()) { UI_GO(df_nmax ? A_REDRAW : A_POP, 0); break; }
+		if (df_run()) { if (df_nmax) ui_relayout(); else UI_GO(A_POP, 0); break; }
 		for (uint8_t i = 0; i < df_ticks; i++) {     // animate: радар — цикл палитры
 			gfx_pal_cycle(c_radar0, c_radar1 - c_radar0);
 			if (++pal_phase >= c_radar1 - c_radar0) pal_phase = 0;
