@@ -26,6 +26,7 @@ static uint8_t icons_on;                 // нарисованы значки с
 // Наезд перед перехватом (GeoscapeState::startDogfight / zoomInEffect / zoomOutEffect): 0 — нет,
 // DZ_IN — приближение до DOGFIGHT_ZOOM, DZ_FIGHT — бои, DZ_OUT — отдаление к dz_old; время стоит
 static uint8_t dz_state, dz_old;
+static uint8_t radar_off;                // 1 — круги радаров скрыты (OpenXcom globeRadarLines, клавиша R)
 #define DZ_IN          1
 #define DZ_FIGHT       2
 #define DZ_OUT         3
@@ -305,7 +306,7 @@ static void draw_globe(void)
 {
 	globe_det_check();
 	globe_draw();
-	globe_marks();
+	globe_marks(!radar_off);
 	if (df_count || icons_on) {                  // значки свёрнутых боёв (поверх глобуса; старые стёрла копия заднего буфера)
 		icons_on = df_count != 0;
 		if (icons_on) df_draw_icons();
@@ -842,6 +843,11 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				rep_arg = arg;                       // удержание мышью — повтор через 12 кадров
 				rep_at = frames + 12;
 			}
+		}
+		if (ev == EVT_KEY && (arg == 0x72 || arg == 0x52)) {   // R — радары (keyGeoToggleRadar)
+			radar_off ^= 1;
+			ui_dirty(10);
+			break;
 		}
 		if (ev == EVT_KEY) {                       // стрелки ZX (CS+5..8) — вращение (keyGeoLeft …)
 			static const uint8_t dir[4] = { 0, 3, 2, 1 };   // влево, вниз, вверх, вправо

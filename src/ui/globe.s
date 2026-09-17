@@ -40,9 +40,11 @@
 	.globl	_globe_sin, b_globe_sin, _globe_shadow, b_globe_shadow, _globe_rows_pl, b_globe_rows_pl
 	.globl	_globe_sunlon, b_globe_sunlon, _gview_open, b_gview_open, _gview_pick, b_gview_pick
 	.globl	_gview_load, b_gview_load, _gview_reset, b_gview_reset
-	.globl	_globe_det, b_globe_det, detail
+	.globl	_globe_det, b_globe_det, detail, _globe_project, b_globe_project, _globe_workpage, b_globe_workpage
 
 b_globe_draw		= 24
+b_globe_project		= 24
+b_globe_workpage	= 24
 b_globe_invalidate	= 24
 
 RES_OFF		= 0x2000		; рабочая страница: проекции вершин ячейки
@@ -2581,42 +2583,9 @@ dt_proj:
 	call	_pg_map3
 	ld	a, (dt_nk)
 	ld	(0xC000 + DT_VIS), a
-	ld	hl, #0xC000 + DT_V		; проекция на месте пачками до 200 вершин (_gl_pn — байт)
-	ld	(_gl_pv), hl
-	ld	(_gl_pd), hl
-	xor	a, a
-	ld	(_gl_noz), a
 	ld	hl, (dt_nv)
-6$:	ld	a, h
-	or	a, a
-	jr	nz, 7$
-	ld	a, l
-	or	a, a
-	jr	z, 9$
-	cp	a, #200
-	jr	c, 8$
-7$:	ld	a, #200
-8$:	ld	(_gl_pn), a
-	ld	e, a
-	ld	d, #0
-	or	a, a
-	sbc	hl, de
-	push	hl
-	ld	l, e				; DE = пачка · 6
-	ld	h, d
-	add	hl, hl
-	add	hl, de
-	add	hl, hl
-	push	hl
-	call	_gl_project
-	pop	de
-	ld	hl, (_gl_pv)
-	add	hl, de
-	ld	(_gl_pv), hl
-	ld	(_gl_pd), hl
-	pop	hl
-	jr	6$
-9$:	ld	a, (r_z)
+	call	proj_v
+	ld	a, (r_z)
 	ld	(dt_z), a
 	ld	hl, (r_lon)
 	ld	(dt_lon), hl
@@ -2662,6 +2631,84 @@ dt_draw:					; globe_det(fresh = A, z, work)
 	call	dec8
 	ld	hl, #s_nl
 	jp	_dbg_puts
+
+;; HL вершин с DT_V рабочей страницы (Win3 = рабочая, таблицы вида готовы) -> проекции x, y, z на месте,
+;; пачками до 200 (_gl_pn — байт)
+proj_v:
+	push	hl
+	ld	hl, #0xC000 + DT_V
+	ld	(_gl_pv), hl
+	ld	(_gl_pd), hl
+	xor	a, a
+	ld	(_gl_noz), a
+	pop	hl
+1$:	ld	a, h
+	or	a, a
+	jr	nz, 2$
+	ld	a, l
+	or	a, a
+	ret	z
+	cp	a, #200
+	jr	c, 3$
+2$:	ld	a, #200
+3$:	ld	(_gl_pn), a
+	ld	e, a
+	ld	d, #0
+	or	a, a
+	sbc	hl, de
+	push	hl
+	ld	l, e				; DE = пачка · 6
+	ld	h, d
+	add	hl, hl
+	add	hl, de
+	add	hl, hl
+	push	hl
+	call	_gl_project
+	pop	de
+	ld	hl, (_gl_pv)
+	add	hl, de
+	ld	(_gl_pv), hl
+	ld	(_gl_pd), hl
+	pop	hl
+	jr	1$
+
+;; uint8_t globe_workpage(void) __banked — рабочая страница глобуса (0 — не выделена)
+_globe_workpage::
+	ld	a, (work)
+	ret
+
+;; uint8_t globe_project(uint16_t n) __banked — n (до DT_VMAX) вершин Q14 с DT_V рабочей страницы -> их
+;; проекции x, y (1/4 точки), z на месте, по виду последнего globe_draw (globe_det.c: круги радаров).
+;; 0 — рабочей страницы нет. Win3 — рабочая страница (вызывающий восстанавливает)
+_globe_project::
+	ld	a, (valid)
+	or	a, a
+	ret	z
+	ld	a, (work)
+	or	a, a
+	ret	z
+	ld	hl, #5
+	add	hl, sp
+	ld	e, (hl)
+	inc	hl
+	ld	d, (hl)
+	push	de
+	push	ix				; tables портит IX (указатель кадра C)
+	call	_pg_map3
+	call	tables
+	pop	ix
+	pop	hl
+	ld	de, #DT_VMAX + 1
+	or	a, a
+	sbc	hl, de
+	ld	a, #0
+	ret	nc
+	add	hl, de
+	push	ix
+	call	proj_v
+	pop	ix
+	ld	a, #1
+	ret
 
 ;; HL — смещение в ресурсе GLOBEDET -> fd_sp, fd_so (источник far_dma), fd_dp = рабочая
 dt_src:

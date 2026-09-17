@@ -6,7 +6,8 @@
 	.module globe_det_s
 	.optsdcc -mz80 sdcccall(1)
 
-	.globl	_det_line, _det_pset, _det_poly, _det_clip, _det_muldiv, _pg_map3, ___muluint2ulong
+	.globl	_det_line, _det_pset, _det_poly, _det_clip, _det_muldiv, _det_mq, _det_xline, _det_ring, _det_marks, _pg_map3
+	.globl	___muluint2ulong, ___mulsint2slong
 
 DL_X0	= 0xBFF0
 DL_Y0	= 0xBFF2
@@ -18,6 +19,14 @@ DP_CNT	= 0xBFFC
 MD_SG	= 0xBFFD			; det_muldiv: знак
 MD_HI	= 0xBFFE			;   старшее слово произведения
 DL_YB	= 0xBFE2			; строка экрана под y = 0: 280 — задний буфер, 0 — экран
+MK_SPR	= 0xBD40			; globe_det.c: кадры меток 9 x 9, фаза мигания, число и список (x, y, кадр)
+MK_BLINK = 0xBD92
+MK_N	= 0xBD93
+MK_LIST	= 0xBDA0
+DL_OCEAN = 0xBFE4			; det_xline: первый цвет океана (globe.rul oceanPalette · 16)
+XL_DX	= 0xBFE6			;   Δx, Δy отрезка
+XL_DY	= 0xBFE8
+XL_LEN	= 0xBFEA
 LN_PG	= 0xBFF9			; подключённая страница экрана
 BACK_Y	= 280
 SCREEN_PAGE = 0x10
@@ -150,6 +159,71 @@ addr:
 	pop	af
 	ld	h, e
 	ld	l, a
+	ret
+
+;; void det_marks(void) — метки из списка MK_LIST (MK_N штук: x, y — центр в окне 1..254 x 1..198, кадр) на
+;; экран (DL_YB = 0): кадр 3x3, точка 0 — прозрачна, цвет + фаза мигания (кадр 8 — город — не мигает)
+_det_marks::
+	push	ix
+	ld	a, (MK_N)
+	or	a, a
+	jr	z, 9$
+	ld	b, a
+	ld	ix, #MK_LIST
+1$:	push	bc
+	xor	a, a
+	ld	(ln_sy), a
+	ld	a, 2 (ix)			; C — прибавка цвета, DE — кадр
+	ld	c, #0
+	cp	a, #8
+	jr	z, 2$
+	ld	a, (MK_BLINK)
+	ld	c, a
+	ld	a, 2 (ix)
+2$:	ld	l, a
+	ld	h, #0
+	ld	e, l
+	ld	d, h
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
+	add	hl, de
+	ld	de, #MK_SPR
+	add	hl, de
+	push	hl
+	ld	a, 1 (ix)			; первая точка (x − 1, y − 1)
+	dec	a
+	ld	e, a
+	ld	a, 0 (ix)
+	dec	a
+	push	bc
+	call	addr				; HL — адрес (портит BC)
+	pop	bc
+	pop	de				; DE — кадр
+	ld	b, #3
+3$:	push	bc
+	ld	b, #3
+4$:	ld	a, (de)
+	inc	de
+	or	a, a
+	jr	z, 5$
+	add	a, c
+	ld	(hl), a
+5$:	inc	l
+	djnz	4$
+	dec	l
+	dec	l
+	dec	l
+	pop	bc
+	push	bc
+	call	ystep				; следующая строка (страница — при переходе)
+	pop	bc
+	djnz	3$
+	ld	de, #3
+	add	ix, de
+	pop	bc
+	djnz	1$
+9$:	pop	ix
 	ret
 
 ;; void det_line(void) — SDL_gfx lineColor после _clipLine (концы уже в окне): dx = |Δx| + 1, dy = |Δy| + 1,
@@ -344,6 +418,266 @@ _det_muldiv::
 6$:	pop	hl				; возврат, аргумент c — со стека
 	pop	bc
 	jp	(hl)
+
+;; int16_t det_mq(int16_t a /*HL*/, int16_t b /*DE*/) — (a · b) >> 14 со знаком (Q14)
+_det_mq::
+	call	___mulsint2slong		; HL:DE
+	sla	e
+	rl	d
+	rl	l
+	rl	h
+	sla	e
+	rl	d
+	rl	l
+	rl	h
+	ex	de, hl
+	ret
+
+;; void det_xline(void) — Globe::XuLine после отсечения (концы в окне): len = большая из |Δx|, |Δy|, по
+;; большей оси — шаг ±1, по меньшей — Δ/len (8.8, отбрасывание дроби), len точек с первого конца (второй
+;; не рисуется); точка — затемнение цвета под ней: океан (OCEAN..OCEAN+31) -> OCEAN + 14, суша — +6 в
+;; пределах группы из 16 цветов (CreateShadow::getOceanShadow / getLandShadow, shade 6)
+_det_xline::
+	push	ix
+	ld	hl, (DL_X1)
+	ld	de, (DL_X0)
+	or	a, a
+	sbc	hl, de
+	ld	(XL_DX), hl
+	ld	hl, (DL_Y1)
+	ld	de, (DL_Y0)
+	or	a, a
+	sbc	hl, de
+	ld	(XL_DY), hl
+	call	absl
+	ld	b, c				; B = |Δy|
+	ld	hl, (XL_DX)
+	call	absl				; C = |Δx|
+	ld	a, c
+	cp	a, b
+	jp	c, xl_ymaj			; |Δx| < |Δy| — ось y
+	or	a, a
+	jp	z, xl_done
+	;; ось x: x ± 1 (inc l / dec l), y += Δy / len (8.8) — при смене строки указатель на строку
+	ld	(XL_LEN), a
+	ld	hl, (XL_DY)
+	call	xl_step				; DE — шаг y
+	push	de
+	exx					; второй набор: DE — шаг, HL — y (8.8)
+	pop	de
+	ld	a, (DL_Y0)
+	ld	h, a
+	ld	l, #0
+	exx
+	ld	hl, (XL_DX)
+	ld	a, #OP_INC_L
+	bit	7, h
+	jr	z, 1$
+	ld	a, #OP_DEC_L
+1$:	ld	(xx_sx), a
+	ld	a, (DL_X0)
+	ld	de, (DL_Y0)
+	call	addr				; HL — первая точка
+	ld	a, (DL_OCEAN)
+	ld	c, a
+	ld	a, (XL_LEN)
+	ld	b, a
+xx_l:	call	xl_shade
+xx_sx:	inc	l				; inc l / dec l
+	exx
+	ld	a, h
+	add	hl, de
+	sub	a, h				; прежняя строка − новая: 0, −1 (вниз), 1 (вверх)
+	exx
+	jr	z, 3$
+	jp	m, 2$
+	ld	a, #1
+	ld	(ln_sy), a
+	call	ystep
+	jr	3$
+2$:	xor	a, a
+	ld	(ln_sy), a
+	call	ystep
+3$:	djnz	xx_l
+	jp	xl_done
+xl_ymaj:				; ось y: строка ± 1, x += Δx / len — при смене столбца inc l / dec l
+	ld	a, b
+	ld	(XL_LEN), a
+	ld	hl, (XL_DX)
+	call	xl_step
+	push	de
+	exx					; второй набор: DE — шаг, HL — x (8.8)
+	pop	de
+	ld	a, (DL_X0)
+	ld	h, a
+	ld	l, #0
+	exx
+	ld	hl, (XL_DY)
+	xor	a, a
+	bit	7, h
+	jr	z, 4$
+	inc	a
+4$:	ld	(ln_sy), a
+	ld	a, (DL_X0)
+	ld	de, (DL_Y0)
+	call	addr
+	ld	a, (DL_OCEAN)
+	ld	c, a
+	ld	a, (XL_LEN)
+	ld	b, a
+yy_l:	call	xl_shade
+	call	ystep
+	exx
+	ld	a, h
+	add	hl, de
+	sub	a, h
+	exx
+	jr	z, 6$
+	jp	m, 5$
+	dec	l
+	jr	6$
+5$:	inc	l
+6$:	djnz	yy_l
+xl_done:
+	pop	ix
+	ret
+
+;; (HL) — точка цветом тени; C — первый цвет океана. Портит A, E
+xl_shade:
+	ld	a, (hl)
+	or	a, a
+	ret	z
+	ld	e, a
+	sub	a, c
+	cp	a, #32
+	jr	nc, 1$
+	ld	a, c				; океан
+	add	a, #14
+	ld	(hl), a
+	ret
+1$:	ld	a, e				; суша: +6, не дальше конца группы
+	and	a, #0x0F
+	cp	a, #10
+	ld	a, e
+	jr	c, 2$
+	or	a, #0x0F
+	ld	(hl), a
+	ret
+2$:	add	a, #6
+	ld	(hl), a
+	ret
+
+;; HL — Δ (|Δ| <= len), A — len (1..255) -> DE = Δ · 256 / len с отбрасыванием дроби (деление 16 / 8)
+xl_step:
+	ld	c, a
+	ld	b, h				; B — знак
+	ld	a, l
+	bit	7, h
+	jr	z, 1$
+	neg
+1$:	ld	d, a				; DE = |Δ| · 256
+	ld	e, #0
+	xor	a, a				; A — остаток
+	ld	h, #16
+2$:	sla	e
+	rl	d
+	rla
+	jr	c, 3$
+	cp	a, c
+	jr	c, 4$
+3$:	sub	a, c
+	inc	e
+4$:	dec	h
+	jr	nz, 2$
+	bit	7, b
+	ret	z
+	xor	a, a
+	sub	a, e
+	ld	e, a
+	sbc	a, a
+	sub	a, d
+	ld	d, a
+	ret
+
+;; void det_ring(void) — отрезки круга радара: DP_CNT точек (x, y int16; y = #8000 — сзади) с DP_PTR,
+;; отрезок от точки к прошлой, если обе спереди (drawGlobeCircle); целиком в окне — сразу det_xline,
+;; иначе det_clip
+_det_ring::
+	push	ix
+	push	iy
+	ld	ix, (DP_PTR)
+	ld	a, (DP_CNT)
+	ld	b, a
+	dec	b
+	jp	z, dr_done
+	jp	m, dr_done
+dr_seg:
+	push	bc
+	ld	a, 7 (ix)			; текущая (ix + 4) и прошлая (ix) спереди
+	cp	a, #0x80
+	jr	nz, 1$
+	ld	a, 6 (ix)
+	or	a, a
+	jp	z, dr_next
+1$:	ld	a, 3 (ix)
+	cp	a, #0x80
+	jr	nz, 2$
+	ld	a, 2 (ix)
+	or	a, a
+	jp	z, dr_next
+2$:	ld	l, 4 (ix)			; DL_X0, DL_Y0 — текущая, DL_X1, DL_Y1 — прошлая
+	ld	h, 5 (ix)
+	ld	(DL_X0), hl
+	ld	l, 6 (ix)
+	ld	h, 7 (ix)
+	ld	(DL_Y0), hl
+	ld	l, 0 (ix)
+	ld	h, 1 (ix)
+	ld	(DL_X1), hl
+	ld	l, 2 (ix)
+	ld	h, 3 (ix)
+	ld	(DL_Y1), hl
+	ld	a, 5 (ix)			; целиком в окне: старшие байты — 0, y < 200
+	or	a, 7 (ix)
+	or	a, 1 (ix)
+	or	a, 3 (ix)
+	jr	nz, dr_clip
+	ld	a, 6 (ix)
+	cp	a, #GLOBE_H
+	jr	nc, dr_clip
+	ld	a, 2 (ix)
+	cp	a, #GLOBE_H
+	jr	c, dr_draw
+dr_clip:
+	push	ix
+	call	_det_clip			; C: IX, IY — сохранить
+	pop	ix
+	or	a, a
+	jr	z, dr_next
+dr_draw:
+	push	ix
+	call	_det_xline
+	pop	ix
+dr_next:
+	ld	de, #4
+	add	ix, de
+	pop	bc
+	dec	b
+	jp	nz, dr_seg
+dr_done:
+	pop	iy
+	pop	ix
+	ret
+
+;; HL (|HL| < 256) -> C = |HL|
+absl:
+	ld	c, l
+	bit	7, h
+	ret	z
+	xor	a, a
+	sub	a, l
+	ld	c, a
+	ret
 
 ;; HL = −HL (DE не трогает; портит A)
 negh:
