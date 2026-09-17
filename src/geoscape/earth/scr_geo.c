@@ -22,6 +22,7 @@ static char t1[80], t2[80];
 static char big_tmp[256];                // промежуточные str_fmt (список стран отчёта, сообщения с {2})
 static uint16_t tick_at;                 // кадр последнего такта времени (такт — раз в 5 кадров)
 static uint8_t geo_sun;                  // эпоха солнца (globe_sunlon >> 7) последней перерисовки тени
+static uint16_t sun_at;                  // кадр той перерисовки: тень двигаем не чаще 2 раз в секунду
 static uint8_t icons_on;                 // нарисованы значки свёрнутых боёв
 // Наезд перед перехватом (GeoscapeState::startDogfight / zoomInEffect / zoomOutEffect): 0 — нет,
 // DZ_IN — приближение до DOGFIGHT_ZOOM, DZ_FIGHT — бои, DZ_OUT — отдаление к dz_old; время стоит
@@ -917,9 +918,12 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			if (ST->minute != mi) ui_dirty(4);
 			if (ST->hour != h) ui_dirty(2);
 			if (ST->day != d) { ui_dirty(6); ui_dirty(7); ui_dirty(8); ui_dirty(9); }
-			// тень: солнце сдвинулось на эпоху (0.7°) — глобус перерисовать
+			// тень: солнце сдвинулось на эпоху (0.7°) — глобус перерисовать, но не чаще чем раз в
+			// полсекунды: кадр глобуса стоит около четырёх кадров, а на быстром времени эпоха
+			// меняется каждые два-три такта — от этого весь геоскейп становился вязким (метки при
+			// этом едут своим тактом, 100 мс)
 			uint8_t se = (uint8_t)(globe_sunlon() >> 7), gs = geo_sun;
-			if (se != gs) { geo_sun = se; ui_dirty(10); }
+			if (se != gs && (uint16_t)(now - sun_at) >= 25) { geo_sun = se; sun_at = now; ui_dirty(10); }
 			return 0;
 		}
 		break;
