@@ -243,6 +243,8 @@ static void build_list(void)
 	dl_ok = 1;
 }
 
+// Сначала собирается список (старая картинка ещё на экране), и только потом экран гасится и
+// рисуется заново — иначе чёрный экран висит всё время сборки, а она втрое дольше отрисовки.
 static void draw_map(void)
 {
 	res_t r;
@@ -251,6 +253,7 @@ static void draw_map(void)
 	if (!load_tiles()) return;
 	if (r.phys != map_phys) { map_phys = r.phys; cells = r.phys + 8 + (uint32_t)m_nt * 4; dl_ok = 0; }
 	if (!dl_ok) build_list();
+	gfx_fill(0, 0, SCREEN_W, VIEW_H, 0);
 	dl_run();
 	dma_wait();
 }
@@ -298,8 +301,7 @@ static void bench_tile(void)
 
 static void draw_all(void)
 {
-	gfx_fill(0, 0, 320, VIEW_H, 0);
-	draw_map();
+	draw_map();                          // гасит экран сам — прямо перед отрисовкой
 	gfx_blit(RES_ICONS_PCK, 0, VIEW_H, 0, VIEW_H, 320, 200 - VIEW_H);
 }
 
