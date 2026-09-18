@@ -5,7 +5,7 @@
     .NET Framework 4.8 (есть на любой Windows 10/11, ставится на 7/8.1) — ОДИН
     консольный exe: YamlDotNet и файлы OpenXcom вшиты ресурсами.
     Без аргументов спрашивает каталоги в консоли; каталог игры можно перетащить на exe.
-    Сборка: powershell -File tools\dotnet.ps1 build tools\OxzConv\OxzConv.csproj -c Release
+    Сборка: powershell -File tools\dotnet.ps1 build OxzConv\OxzConv.csproj -c Release
     Описание — project_docs/09_converter.md.
   -->
 
@@ -19,7 +19,7 @@
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Version>0.1.0</Version>
     <Product>OpenXComZX data converter</Product>
-    <BaseOutputPath>..\..\tmp\oxzconv\bin\</BaseOutputPath>
+    <BaseOutputPath>..\tmp\oxzconv\bin\</BaseOutputPath>
     <RestoreConfigFile>$(MSBuildThisFileDirectory)nuget.config</RestoreConfigFile>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>
@@ -41,13 +41,13 @@
 
   <!-- Файлы OpenXcom (GPL): правила, строки, шрифты -->
   <ItemGroup>
-    <EmbeddedResource Include="..\..\REF\OpenXcom\bin\common\Language\Font.dat;..\..\REF\OpenXcom\bin\common\Language\FontBig.png;..\..\REF\OpenXcom\bin\common\Language\FontSmall.png;..\..\REF\OpenXcom\bin\common\Language\FontGeoBig.png;..\..\REF\OpenXcom\bin\common\Language\FontGeoSmall.png;..\..\REF\OpenXcom\bin\common\Language\en-US.yml" LogicalName="openxcom/common/Language/%(Filename)%(Extension)" />
-    <EmbeddedResource Include="..\..\REF\OpenXcom\bin\common\SoldierName\*.nam" LogicalName="openxcom/common/SoldierName/%(Filename)%(Extension)" />
-    <EmbeddedResource Include="..\..\REF\OpenXcom\bin\standard\xcom1\*.rul" LogicalName="openxcom/standard/xcom1/%(Filename)%(Extension)" />
-    <EmbeddedResource Include="..\..\REF\OpenXcom\bin\standard\xcom1\Language\en-US.yml" LogicalName="openxcom/standard/xcom1/Language/en-US.yml" />
-    <EmbeddedResource Include="..\..\REF\OpenXcom\bin\standard\xcom2\*.rul" LogicalName="openxcom/standard/xcom2/%(Filename)%(Extension)" />
-    <EmbeddedResource Include="..\..\REF\OpenXcom\bin\standard\xcom1\Resources\UI\globe_ufo.png" LogicalName="openxcom/standard/xcom1/Resources/UI/globe_ufo.png" />
-    <EmbeddedResource Include="..\..\REF\OpenXcom\bin\standard\xcom2\Resources\UI\globe_tftd.png" LogicalName="openxcom/standard/xcom2/Resources/UI/globe_tftd.png" />    <EmbeddedResource Include="..\..\REF\OpenXcom\bin\standard\xcom2\Language\en-US.yml" LogicalName="openxcom/standard/xcom2/Language/en-US.yml" />
+    <EmbeddedResource Include="..\REF\OpenXcom\bin\common\Language\Font.dat;..\REF\OpenXcom\bin\common\Language\FontBig.png;..\REF\OpenXcom\bin\common\Language\FontSmall.png;..\REF\OpenXcom\bin\common\Language\FontGeoBig.png;..\REF\OpenXcom\bin\common\Language\FontGeoSmall.png;..\REF\OpenXcom\bin\common\Language\en-US.yml" LogicalName="openxcom/common/Language/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\REF\OpenXcom\bin\common\SoldierName\*.nam" LogicalName="openxcom/common/SoldierName/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\REF\OpenXcom\bin\standard\xcom1\*.rul" LogicalName="openxcom/standard/xcom1/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\REF\OpenXcom\bin\standard\xcom1\Language\en-US.yml" LogicalName="openxcom/standard/xcom1/Language/en-US.yml" />
+    <EmbeddedResource Include="..\REF\OpenXcom\bin\standard\xcom2\*.rul" LogicalName="openxcom/standard/xcom2/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\REF\OpenXcom\bin\standard\xcom1\Resources\UI\globe_ufo.png" LogicalName="openxcom/standard/xcom1/Resources/UI/globe_ufo.png" />
+    <EmbeddedResource Include="..\REF\OpenXcom\bin\standard\xcom2\Resources\UI\globe_tftd.png" LogicalName="openxcom/standard/xcom2/Resources/UI/globe_tftd.png" />    <EmbeddedResource Include="..\REF\OpenXcom\bin\standard\xcom2\Language\en-US.yml" LogicalName="openxcom/standard/xcom2/Language/en-US.yml" />
   </ItemGroup>
 
 </Project>

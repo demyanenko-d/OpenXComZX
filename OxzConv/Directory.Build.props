@@ -1,6 +1,6 @@
 <Project>
   <!-- Промежуточные файлы сборки и NuGet — в tmp/ (правило проекта: артефакты только в tmp/) -->
   <PropertyGroup>
-    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)..\..\tmp\oxzconv\obj\</BaseIntermediateOutputPath>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)..\tmp\oxzconv\obj\</BaseIntermediateOutputPath>
   </PropertyGroup>
 </Project>

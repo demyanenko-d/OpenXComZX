@@ -43,6 +43,7 @@ namespace OxzConv
 			bgScreen = BackgroundScreens();
 			GeoImages();
 			BattleUi();
+			BattleMaps();
 			MusicStep();
 			Lang();
 			Cutscenes();
@@ -261,6 +262,16 @@ namespace OxzConv
 			var ri = items.Write(Path.Combine(OutDir, "ITEMS.PAK"));
 			report.Add($"BATUI.PAK: {nBat} resources, {Kb(rb.bytes)} KB");
 			report.Add($"ITEMS.PAK: {nItems} resources, {Kb(ri.bytes)} KB");
+		}
+
+		// ------------------------------------------------------------ карты боя (BATTLE.PAK)
+		// Готовые поля из блоков террейна и их тайлсеты: генератора карт ещё нет, движку нужны
+		// данные для отрисовки (Core/Battle.cs, 16_battlescape_plan.md §2.5).
+		void BattleMaps()
+		{
+			var pal = pal6.TryGetValue("PAL_BATTLESCAPE", out var p) ? p : pal6["PAL_GEOSCAPE"];
+			var (n, info) = new Battle(gfs, ox, RuleFolder, Game, ids, report).Build(OutDir, prevDir, pal);
+			report.Add("BATTLE.PAK: " + info);
 		}
 
 		// ------------------------------------------------------------ музыка (MUSIC.PAK)

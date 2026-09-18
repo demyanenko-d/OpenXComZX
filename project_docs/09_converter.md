@@ -36,11 +36,11 @@ OxzConv.exe headers <каталог>                # заголовки C дл�
 Результат — каталог `OXZ/<игра>/`, его копируют в корень SD-карты.
 
 Сборка (все кэши dotnet/NuGet — в `tmp/dotnet`, правило проекта):
-`powershell -File tools\dotnet.ps1 build tools\OxzConv\OxzConv.csproj -c Release`
+`powershell -File tools\dotnet.ps1 build OxzConv\OxzConv.csproj -c Release`
 → `tmp/oxzconv/bin/Release/OxzConv.exe`. Для разработки:
 `--out tmp/sd --preview tmp/preview`.
 
-Код `tools/OxzConv/`: `Program.cs` (загрузка вшитой YamlDotNet),
+Код `OxzConv/`: `Program.cs` (загрузка вшитой YamlDotNet),
 `Cli.cs`, `Core/Converter.cs` (шаги), `Core/GameFs.cs` (каталог игры без
 учёта регистра, UFO/TFTD), `Core/Formats.cs` (SCR, SPK, BDY, PCK/TAB 16/32,
 DAT, LBM, палитры), `Core/Png.cs` (zlib вручную — в 4.8 нет ZLibStream),
@@ -144,7 +144,32 @@ offset — от начала данных кадров, в словах, т.е. 
 | `UFOP.PAK` | картинки Уфопедии, `UP_BORD*` | SD-карта |
 | `ITEMS.PAK` | предметы (`BIGOBS`…), куклы брони | SD-карта |
 | `CUTS.PAK` | слайды заставок (`cutscenes.rul`, IMG8 320×200, id `CUT:<путь>`; палитры и таблица `CUTSCENES` — в RULES.PAK), с 2026-09-15 | SD-карта |
-| `BATUI.PAK`, `MUSIC.PAK` | интерфейс боя; музыка | пока не используются движком |
+| `BATUI.PAK` | интерфейс боя (`TAC00/01`, `ICONS`, курсоры, дым, панели) | SD-карта |
+| `BATTLE.PAK` | карты боя: `BATMAP0..2` (готовые поля) и их тайлсеты `BATTILE0..2` (с 2026-09-18) | SD-карта |
+| `MUSIC.PAK` | музыка | пока не используется движком |
+
+**`BATTLE.PAK` (`Core/Battle.cs`)** — временное решение до генератора карт
+(16 §3): конвертер сам замащивает поле 4×4 блоками 10×10 первых доступных
+террейнов (TFTD — SEABED, CORAL, VOLC; UFO — CULTA, DESERT, FOREST) и
+складывает результат в готовый ресурс, движок только рисует. Ресурс
+`BATMAP<i>` (`BLOB`, A = sx, B = sy, C = sz):
+
+| Смещение | Поле |
+|---|---|
+| 0..2 | `sx, sy, sz` (клеток) |
+| 3 | число тайлов (≤ 255) |
+| 4..5 | номер ресурса тайлсета (`SPRSET`) |
+| 6..7 | резерв |
+| 8.. | по 4 байта на тайл: `yofs` (MCD `P_Level`), флаги (1 `noFloor`, 2 `stopLOS`, 4 `ufoDoor`, 8 `door`, 16 `gravLift`), `bigWall`, `tileType` |
+| … | клетки по 4 байта: номера тайлов + 1 (пол, западная стена, северная стена, объект), 0 — пусто |
+
+Порядок клеток: X быстрее всего, затем Y, затем **Z снизу вверх** (в
+оригинале Z идёт сверху вниз — переворачивает конвертер). Номер тайла — он
+же номер кадра в тайлсете карты: в тайлсет попадают только использованные
+записи MCD (TFTD: 65–78 тайлов на карту, тайлсет 38–49 КБ, карта 12–25 КБ).
+Эталон вида (алгоритм художника, камера в центре) пишется в
+`tmp/preview/<игра>/BATMAP<i>_<террейн>.png` — с ним сверяется картинка
+движка.
 
 Пакеты с SD читает `src/kernel/sdres.c` (13_sd_card.md).
 

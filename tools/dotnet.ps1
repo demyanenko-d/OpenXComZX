@@ -1,6 +1,6 @@
 # Запуск dotnet с каталогами кэша/настроек внутри проекта (правило: писать
 # только в рабочее дерево). Все аргументы передаются dotnet как есть:
-#   powershell -File tools\dotnet.ps1 build tools\OxzConv\OxzConv.csproj
+#   powershell -File tools\dotnet.ps1 build OxzConv\OxzConv.csproj
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $t = Join-Path $root 'tmp\dotnet'

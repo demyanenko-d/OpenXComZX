@@ -29,7 +29,7 @@
   `powershell -File tools\run.ps1 -Script tests\campaign.oxs -Headless`,
   также `tests\lab.oxs`, `transfer.oxs`, `craft.oxs`, `ufopaedia.oxs`, `month.oxs`,
   `aliens.oxs`, `dogfight.oxs`, `dogfight2.oxs`, `basedefense.oxs`, `ironman.oxs`,
-  `globe.oxs` (скорость глобуса по зумам — `tools\globeprof.ps1`)
+  `globe.oxs` (скорость глобуса по зумам — `tools\globeprof.ps1`), `bat_render.oxs`
   (`ufopaedia_ufo.oxs` — после сборки `-Game UFO`;
   все разом — `powershell -File tools\runtests.ps1`), `month.oxs`, `aliens.oxs`;
   все разом — `powershell -File tools\runtests.ps1` (итог «имя=код(кадров)»;
@@ -52,8 +52,8 @@
   через смену Win3, не делать `ST` приёмником `far_read`/`str_copy`.
 - Приоритет — X-COM: Terror from the Deep, но всё универсально для UFO и
   TFTD (как OpenXcom). Конвертер данных — C#, .NET Framework 4.8, один exe
-  (`tools/OxzConv`, сборка `powershell -File tools\dotnet.ps1 build
-  tools\OxzConv\OxzConv.csproj -c Release`, запуск
+  (`OxzConv`, сборка `powershell -File tools\dotnet.ps1 build
+  OxzConv\OxzConv.csproj -c Release`, запуск
   `tmp\oxzconv\bin\Release\OxzConv.exe --game <каталог игры> --out tmp\sd
   --preview tmp\preview`; `project_docs/09_converter.md`). Проверять на обеих
   играх из `Steam/`. dotnet — только через `tools/dotnet.ps1` (кэши в tmp/).

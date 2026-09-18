@@ -118,6 +118,9 @@
 // --- графики (банк 4, scr_graph.c); группа 7 делится с Уфопедией: 240.. — сюда
 #define SCR_GRAPHS           240
 
+// --- наземный бой (банк 28, battlescape/scr_battle.c); 248.. — сюда
+#define SCR_BATTLE           248
+
 #define SCR_LAST             255
 
 uint8_t menu_get(uint8_t id, sdef_t *s, wdef_t *w) __banked;
@@ -188,6 +191,11 @@ uint8_t graph_get(uint8_t id, sdef_t *s, wdef_t *w) __banked;
 void graph_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked;
 uint8_t graph_rows(uint8_t id, uint8_t slot) __banked;
 uint8_t graph_event(uint8_t id, uint8_t ev, uint8_t arg) __banked;
+
+uint8_t bat_get(uint8_t id, sdef_t *s, wdef_t *w) __banked;
+void bat_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked;
+uint8_t bat_rows(uint8_t id, uint8_t slot) __banked;
+uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked;
 
 // Общие помощники экранов (screens.c, банк 1): имя корабля «TRITON-1», имя НЛО
 // «ALIEN SUB-12». buf — в Win1 или на стеке (не константы/переменные банка).

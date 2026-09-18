@@ -42,6 +42,8 @@ combo_t combo;
 	case 6: if (id >= SCR_DOGFIGHT) r dogf_##fn(__VA_ARGS__); \
 		else if (id >= SCR_INTERCEPT) r fly_##fn(__VA_ARGS__); else r ship_##fn(__VA_ARGS__); break; \
 	default: if (id >= SCR_GRAPHS) r graph_##fn(__VA_ARGS__); else r ufop_##fn(__VA_ARGS__); break; }
+// Экраны боя (SCR_BATTLE..) — в конце той же группы: их раздаёт scr_graph.c (банк 4),
+// чтобы не растить резидентный банк 1 ещё одной веткой на каждую точку входа.
 
 uint8_t scr_get(uint8_t id, sdef_t *s, wdef_t *w)
 {

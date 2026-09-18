@@ -44,6 +44,9 @@ namespace OxzConv
 			S("MEDIBITS.DAT", 0x01A4); S("DETBLOB.DAT", 0x01A5); S("SPICONS.DAT", 0x01A6);
 			S("BIGOBS.PCK", 0x01A7); S("FLOOROB.PCK", 0x01A8); S("HANDOB.PCK", 0x01A9); S("HANDOB2.PCK", 0x01AA);
 			S("BREATH-1.PCK", 0x01AB);
+			// карты боя (BATTLE.PAK): готовые поля и их тайлсеты — пока нет генератора карт (Core/Battle.cs)
+			S("BATMAP0", 0x01C0); S("BATMAP1", 0x01C1); S("BATMAP2", 0x01C2);
+			S("BATTILE0", 0x01C8); S("BATTILE1", 0x01C9); S("BATTILE2", 0x01CA);
 			// строить после заполнения: инициализаторы полей выполняются раньше тела конструктора
 			staticMap = Static.ToDictionary(kv => kv.Key.ToUpperInvariant(), kv => kv.Value);
 		}

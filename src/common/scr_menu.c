@@ -237,6 +237,7 @@ static const struct { uint8_t id; const char *name; } dbg_list[] = {
 	{ SCR_MONTHLY_COSTS, "Monthly costs" }, { SCR_BUILD_FACILITIES, "Build facilities" },
 	{ SCR_CRAFTS, "Crafts" }, { SCR_SOLDIERS, "Soldiers" }, { SCR_PURCHASE, "Purchase" }, { SCR_SELL, "Sell" },
 	{ SCR_STATISTICS, "Statistics" }, { SCR_SLIDESHOW, "Lose/win slideshow" },
+	{ SCR_BATTLE, "Battlescape" },
 };
 static uint8_t dbg_cut;                 // «Lose/win slideshow»: по очереди поражение и победа
 #define NDBG (sizeof dbg_list / sizeof dbg_list[0])

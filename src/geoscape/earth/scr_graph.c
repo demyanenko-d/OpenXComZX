@@ -159,6 +159,7 @@ static void set_mode(uint8_t m)
 
 uint8_t graph_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
 {
+	if (id >= SCR_BATTLE) return bat_get(id, s, w);   // экраны боя — в конце той же группы (screens.c)
 	if (!scr_find(tab, sizeof tab / sizeof tab[0], id, s, w)) return 0;
 	for (uint8_t i = 0; i < 10 && s->n < SDEF_MAXW; i++) {
 		wdef_t *b = &w[s->n++];
@@ -178,7 +179,7 @@ uint8_t graph_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
 
 void graph_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked
 {
-	(void)id;
+	if (id >= SCR_BATTLE) { bat_text(id, slot, row, buf); return; }
 	if (slot == 0) { str_copy(graph_title[mode], buf, 256); return; }
 	if (slot == 3) { if (mode >= 4) str_copy(STR_FINANCE_THOUSANDS, buf, 64); return; }
 	if (slot == 1) {                       // месяцы: последний справа
@@ -225,12 +226,13 @@ void graph_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked
 
 uint8_t graph_rows(uint8_t id, uint8_t slot) __banked
 {
-	(void)id;
+	if (id >= SCR_BATTLE) return bat_rows(id, slot);
 	return slot == 0 ? 0 : 1;
 }
 
 uint8_t graph_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 {
+	if (id >= SCR_BATTLE) return bat_event(id, ev, arg);
 	(void)id;
 	switch (ev) {
 	case EVT_OPEN: {                       // конструктор: btnUfoRegionClick
