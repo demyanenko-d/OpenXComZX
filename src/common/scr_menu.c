@@ -298,7 +298,10 @@ uint8_t menu_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
 		uint8_t items = combo_rows();
 		int16_t py = combo.y + combo.h;
 		s->ui = combo.ui;
-		s->bg = combo.bg;
+		// без картинки фона: у оригинала ComboBox::setBackground никто не зовёт, окно заливается
+		// цветом элемента — иначе подсветка строки (offset +1, не ниже backPos 224) превращает
+		// пиксели картинки в однотонную заливку 224 и выглядит как инверсия
+		s->bg = 0;
 		wdef_t *b = &w[s->n++];
 		b->type = W_WINDOW; b->x = combo.x; b->y = py; b->w = combo.w; b->h = items * 8 + 6;
 		b->el = combo.el; b->str = NOSTR; b->flags = WF_THIN; b->act = b->arg = b->key = 0;
