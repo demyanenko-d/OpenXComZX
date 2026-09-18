@@ -910,9 +910,13 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			// Догон: пока шла перерисовка глобуса (до 28 кадров), такты пропущены — сделать
 			// их за один проход, иначе на быстрых скоростях время идёт в разы медленнее
 			uint16_t now = frames, last = tick_at;
+			uint8_t cap = ST->speed >= 4 ? 1 : 4;     // «1 час» и «1 день» — по такту за проход
+			// долг больше нескольких тактов — это была пауза (открытое окно, развёрнутый бой,
+			// наезд): лишнее отбрасываем, иначе после закрытия окна часы бегут, нагоняя долг,
+			// и показывают время быстрее выбранной скорости
+			if ((uint16_t)(now - last) > (uint16_t)cap * 5) last = now - (uint16_t)cap * 5;
 			uint8_t due = (uint8_t)(((uint16_t)(now - last)) / 5);
 			if (!due) break;
-			uint8_t cap = ST->speed >= 4 ? 1 : 4;     // «1 час» и «1 день» — по такту за проход
 			if (due > cap) due = cap;
 			tick_at = last + (uint16_t)due * 5;
 			uint8_t mi = ST->minute, s = ST->second, h = ST->hour, d = ST->day;
