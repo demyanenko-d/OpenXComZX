@@ -285,8 +285,10 @@ static void hover_tick(uint8_t b)
 }
 
 static const wdef_t w_base[] = {
-	CUS(0, 8, 192, 192, NOSTR, A_CUSTOM, 1),   // не DYN: подсказка перерисовывает только тексты
-	CUS(192, 41, 128, 16, NOSTR, A_CUSTOM, 2),
+	// DYN только ради адресной перерисовки (ui_dirty): подсказка обновляет свой слот и плана
+	// не трогает, а постройка и снос помечают план и мини-вид
+	CUS(0, 8, 192, 192, DYN(0), A_CUSTOM, 1),
+	CUS(192, 41, 128, 16, DYN(5), A_CUSTOM, 2),
 	TXT(0, 0, 192, 9, UI_EL_TEXTTOOLTIP, DYN(1), 0),
 	TXT(193, 0, 127, 17, UI_EL_TEXT1, DYN(2), BIG),
 	TXT(194, 16, 126, 9, UI_EL_TEXT2, DYN(3), 0),
@@ -921,11 +923,11 @@ uint8_t base_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			rtab_get(&t, ctx.facility, &f);
 			if (!fac_can_place(b, ctx.facility, cx, cy)) msg(STR_CANNOT_BUILD_HERE);
 			else if (ST->funds < (int32_t)f.build_cost) { str_copy(STR_NOT_ENOUGH_MONEY, ui_msg, sizeof ui_msg); UI_GO(A_POP_PUSH, SCR_ERROR); }
-			else { fac_build(b, ctx.facility, cx, cy); UI_GO(A_POP, 0); }
+			else { fac_build(b, ctx.facility, cx, cy); ui_dirty(0); ui_dirty(5); UI_GO(A_POP, 0); }
 		}
 		break;
 	case SCR_DISMANTLE:
-		if (ev == EVT_BUTTON && arg == 1) { fac_dismantle(b, ctx.facility); UI_GO(A_POP, 0); }
+		if (ev == EVT_BUTTON && arg == 1) { fac_dismantle(b, ctx.facility); ui_dirty(0); ui_dirty(5); UI_GO(A_POP, 0); }
 		break;
 	case SCR_CRAFTS:
 		if (ev == EVT_LIST) {
