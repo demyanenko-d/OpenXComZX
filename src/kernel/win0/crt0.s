@@ -41,7 +41,7 @@ STACK_TOP	= 0x3E00
 	;; Векторы IM2: I = #3E, на шине #FB (DMA), #FD (LINE), #FF (FRAME).
 	.org	0x3EFB
 	.dw	isr_nop		; #3EFB DMA (не включено: INTMask = только кадр; очередь dmaq убрана)
-	.dw	isr_nop		; #3EFD LINE
+	.dw	isr_nop		; #3EFD LINE (в TSConf приходит на каждой строке — не используем)
 	.dw	isr_frame	; #3EFF FRAME (байты #3EFF-#3F00)
 
 	;; Заглушка входа SPG — в конце страницы данных (Win1, стр. #05):
@@ -162,17 +162,58 @@ panic_msg:
 
 ;; Кадровое прерывание: счётчик кадров, защёлка ввода (input.s). Win2 и Win3 не
 ;; трогаются; C не вызывается — IX/IY не портятся.
+;;
+;; Сплит-экран боя (17_battle_render.md §3): в TSConf INT_LINE приходит на КАЖДОЙ строке, а
+;; прерывание на заданной строке — это кадровое (VSInt). Поэтому сплит делает одно прерывание,
+;; дважды за кадр переставляющее себя: на строке разреза ставит смещения панели, в гашении —
+;; смещения карты (и там же обычная работа кадра).
 isr_frame:
 	push	af
 	push	bc
 	push	de
 	push	hl
+	ld	a, (_split_on)
+	or	a
+	jr	z, frame_work
+	ld	a, (_split_phase)
+	or	a
+	jr	nz, frame_work		; фаза 1: гашение — смещения карты и работа кадра
+	ld	a, (_split_gx)		; фаза 0: строка разреза — смещения панели
+	ld	bc, #0x02AF
+	out	(c), a
+	ld	a, (_split_gy)
+	ld	bc, #0x04AF
+	out	(c), a
+	xor	a, a
+	ld	bc, #0x03AF
+	out	(c), a
+	ld	bc, #0x05AF
+	out	(c), a
+	inc	a
+	ld	(_split_phase), a
+	ld	hl, (_vblank_line)	; следующее прерывание — до начала картинки
+	call	set_vsint
+	ld	b, #20			; переждать сигнал INT: иначе он застанет нас сразу после
+split_wait:				; reti и обработчик отработает второй раз, вернув карту
+	nop
+	djnz	split_wait
+	jr	frame_done
+frame_work:
 	ld	hl, (_frames)
 	inc	hl
 	ld	(_frames), hl
 	ld	a, (_input_on)
 	or	a
 	call	nz, input_isr
+	ld	a, (_split_on)
+	or	a
+	jr	z, frame_done
+	call	set_map_offs		; бой: вернуть смещения карты до начала картинки
+	xor	a, a
+	ld	(_split_phase), a
+	ld	hl, (_split_line)	; следующее прерывание — на строке разреза
+	call	set_vsint
+frame_done:
 	pop	hl
 	pop	de
 	pop	bc
@@ -180,12 +221,41 @@ isr_frame:
 	ei
 	reti
 
+;; HL = строка прерывания (0..319)
+set_vsint:
+	ld	bc, #0x23AF		; VSIntL
+	out	(c), l
+	ld	bc, #0x24AF		; VSIntH
+	out	(c), h
+	ret
+
 	.area	_DATA
 _frames::	.ds	2		; кадров с запуска (ui.c, newgame.c)
 _input_on::	.ds	1		; 1 — защёлка ввода включена (ставит boot после input_init)
+_split_gx::	.ds	1		; сплит боя: смещения панели
+_split_gy::	.ds	1
+_map_gx::	.ds	2		; смещения карты
+_map_gy::	.ds	2
+_split_line::	.ds	2		; строка разреза
+_vblank_line::	.ds	2		; строка возврата смещений карты (до картинки)
+_split_phase::	.ds	1		; 0 — следующее прерывание на строке разреза, 1 — в гашении
+_split_on::	.ds	1		; 1 — сплит включён (бой)
 	.area	_CODE
 
-;; Строчное прерывание пока не используется.
+;; Смещения карты боя в начале кадра (9 бит на регистр)
+set_map_offs:
+	ld	hl, (_map_gx)
+	ld	bc, #0x02AF		; GXOffsL
+	out	(c), l
+	ld	bc, #0x03AF		; GXOffsH
+	out	(c), h
+	ld	hl, (_map_gy)
+	ld	bc, #0x04AF		; GYOffsL
+	out	(c), l
+	ld	bc, #0x05AF		; GYOffsH
+	out	(c), h
+	ret
+
 isr_nop:
 	ei
 	reti

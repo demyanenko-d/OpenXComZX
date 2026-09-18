@@ -56,6 +56,58 @@ static uint8_t __at(0xA000) dl[DL_MAX * DL_SIZE];
 static uint16_t dl_n;                // записей в списке
 static uint8_t dl_ok;                // список отвечает текущему виду
 
+// Сплит-экран (17_battle_render.md §3): карта живёт в строках холста BUF_Y.. и показывается
+// смещением GYOffs, а панель ICONS остаётся на своём месте — на строке VIEW_H-1 строчное
+// прерывание (crt0.s) переключает смещения на панельные. Так камеру можно двигать регистрами,
+// не перерисовывая ни карту, ни панель.
+// GYOffs — не постоянное смещение, а значение, которым перезагружается счётчик строки
+// видеопамяти; дальше он растёт сам. Поэтому на разрезе ставится номер строки панели, а
+// смещения карты возвращаются за SPLIT_LEAD строк до картинки (запас на длинный обработчик
+// кадра со счётчиком и вводом) — с поправкой на эти строки.
+#define SPLIT_TOP  73                // строк верхнего бордюра: VSInt считает их с картинкой
+#define SPLIT_LEAD 0                 // за сколько строк до картинки вернуть смещения карты
+#define BUF_Y 200                    // первая строка холста под карту (видимое — 0..199)
+extern uint8_t split_gx, split_gy, split_on, split_phase;
+extern uint16_t map_gx, map_gy, split_line, vblank_line;
+
+// Адрес начала строки карты в холсте: смещение в странице и сама страница. Считать это в сборке
+// списка (сдвиги 16-битных величин) дороже, чем прочитать из таблицы.
+static uint16_t __at(0xB800) row_ofs[VIEW_H];
+static uint8_t __at(0xBB20) row_page[VIEW_H];
+
+static void rows_init(void)
+{
+	for (uint16_t y = 0; y < VIEW_H; y++) {
+		uint16_t b = y + BUF_Y;
+		row_ofs[y] = (uint16_t)(b & 31) << 9;
+		row_page[y] = SCREEN_PAGE + (uint8_t)(b >> 5);
+	}
+}
+
+// Включить сплит: карта видна со строки BUF_Y холста, панель — со своей строки 144
+static void split_start(void)
+{
+	map_gx = 0;
+	map_gy = BUF_Y - SPLIT_LEAD;         // счётчик дорастёт до BUF_Y к первой строке картинки
+	split_gx = 0;
+	split_gy = VIEW_H;                   // после разреза показываются строки панели (144..199)
+	split_line = SPLIT_TOP + VIEW_H - 1;
+	vblank_line = SPLIT_TOP - 1 - SPLIT_LEAD;
+	split_phase = 0;
+	split_on = 1;
+	TS_VSINTL = (uint8_t)split_line;
+	TS_VSINTH = (uint8_t)(split_line >> 8);
+}
+
+static void split_stop(void)
+{
+	split_on = 0;
+	TS_VSINTL = 0;                       // кадровое прерывание — снова в начале кадра
+	TS_VSINTH = 0;
+	TS_GXOFFSL = 0; TS_GXOFFSH = 0;
+	TS_GYOFFSL = 0; TS_GYOFFSH = 0;
+}
+
 static void dma_wait(void)
 {
 	while (TS_DMASTATUS & DMASTATUS_ACT)
@@ -83,21 +135,32 @@ static uint8_t *dl_put(void)
 }
 
 // Кадр тайлсета -> команды дисплей-листа: источник лежит подряд (строка = w байт), приёмник
-// шагает на 512 (BLT1 | D_ALGN | ASZ, 02 §6). Кадр целиком — одна команда; обрезанный по краю
-// окна — по команде на строку (источник перестаёт быть линейным).
+// шагает на 512 (BLT1 | D_ALGN | ASZ, 02 §6). Кадр — всегда одна команда; по краям окна он не
+// обрезается (см. ниже), сверху и снизу обрезается строками.
 static void dl_tile(uint8_t t, int16_t x, int16_t y)
 {
 	const uint8_t *e = tile_tab + (uint16_t)t * TE_SIZE;
-	int16_t w = e[7], h = e[4];
-	if (!w) return;
+	int16_t h = e[4];
+	if (!e[7]) return;
 	int16_t bx = x + e[5], by = y + e[6];
-	int16_t step = w;                    // строка источника целиком
 	uint8_t sp = e[0];
 	uint16_t so = (uint16_t)e[1] | ((uint16_t)e[2] << 8);
 	uint8_t len = e[3];
-	(void)w; (void)step;
 	if (bx & 1) return;                  // DMA адресует словами; cam_x и dx кадра всегда чётные
 	if (bx <= -TILE_W || bx >= SCREEN_W) return;
+	// Быстрый путь: кадр целиком внутри окна по вертикали — обрезать нечего
+	if (by >= 0 && by + h <= VIEW_H && !(bx < 0 && by == 0)) {
+		uint8_t *q = dl_put();
+		if (!q) return;
+		uint16_t o = row_ofs[by] + (uint16_t)bx;
+		uint8_t pg = row_page[by];
+		if (bx < 0 && o >= 0xC000) { o += 0x4000; pg--; }   // ушли в хвост предыдущей строки
+		q[0] = (uint8_t)so; q[1] = (uint8_t)(so >> 8); q[2] = sp;
+		q[3] = (uint8_t)o; q[4] = (uint8_t)(o >> 8); q[5] = pg;
+		q[6] = len;
+		q[7] = (uint8_t)(h - 1);
+		return;
+	}
 	if (by < 0) {                        // верх кадра выше окна — пропустить строки
 		so += (uint16_t)(-by) * (uint16_t)e[7];
 		h += by;
@@ -115,13 +178,13 @@ static void dl_tile(uint8_t t, int16_t x, int16_t y)
 		if (--h <= 0) return;
 	}
 	while (so >= 0x4000) { so -= 0x4000; sp++; }
-	int16_t offs = (int16_t)(((uint16_t)by & 31) << 9) + bx;
-	uint8_t dpage = SCREEN_PAGE + (uint8_t)(by >> 5);
-	if (offs < 0) { offs += 0x4000; dpage--; }
+	uint16_t offs = row_ofs[by] + (uint16_t)bx;
+	uint8_t dpage = row_page[by];
+	if (bx < 0 && offs >= 0xC000) { offs += 0x4000; dpage--; }
 	uint8_t *d = dl_put();
 	if (!d) return;
 	d[0] = (uint8_t)so; d[1] = (uint8_t)(so >> 8); d[2] = sp;
-	d[3] = (uint8_t)offs; d[4] = (uint8_t)((uint16_t)offs >> 8); d[5] = dpage;
+	d[3] = (uint8_t)offs; d[4] = (uint8_t)(offs >> 8); d[5] = dpage;
 	d[6] = len;
 	d[7] = (uint8_t)(h - 1);
 }
@@ -174,6 +237,7 @@ static uint8_t load_map(void)
 		far_read(r.phys + 8 + (uint32_t)i * 4, t, 4);
 		tile_y[i] = t[0];
 	}
+	rows_init();
 	map_phys = r.phys;
 	cells = r.phys + 8 + (uint32_t)m_nt * 4;
 	level = m_sz > 1 ? 1 : 0;
@@ -253,7 +317,9 @@ static void draw_map(void)
 	if (!load_tiles()) return;
 	if (r.phys != map_phys) { map_phys = r.phys; cells = r.phys + 8 + (uint32_t)m_nt * 4; dl_ok = 0; }
 	if (!dl_ok) build_list();
+	gfx_yb = BUF_Y;
 	gfx_fill(0, 0, SCREEN_W, VIEW_H, 0);
+	gfx_yb = 0;
 	dl_run();
 	dma_wait();
 }
@@ -328,11 +394,13 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	switch (ev) {
 	case EVT_OPEN:
 		if (!load_map() && cur_map) { cur_map = 0; load_map(); }
+		split_start();
 		break;
 	case EVT_DRAW:
 		draw_all();
 		break;
 	case EVT_CLOSE:                      // следующий бой — на следующей карте (генератора ещё нет)
+		split_stop();
 		cur_map = cur_map + 1 < NMAPS ? cur_map + 1 : 0;
 		break;
 	case EVT_KEY: {
