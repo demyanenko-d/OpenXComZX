@@ -25,7 +25,7 @@
 	.module globe
 	.optsdcc -mz80 sdcccall(1)
 
-	.globl	_globe_draw, _globe_invalidate, b_globe_draw, b_globe_invalidate
+	.globl	_globe_draw, _globe_invalidate, b_globe_draw, b_globe_invalidate, _globe_prepare, b_globe_prepare
 	.globl	render, r_sunonly, r_edges, rc_loop, rc_done, r_rows, r_bg, r_shadow, blit, dma_wait, dma_go, dma_blk
 	.globl	far_dma, build_strips, rows_meta, bg_restore, tables, cell_of, dot3, bands, bd_loop, bd_fill, cm_fill, fill
 	.globl	_gl_dbg, _gv_off
@@ -43,6 +43,7 @@
 	.globl	_globe_det, b_globe_det, detail
 
 b_globe_draw		= 24
+b_globe_prepare		= 24
 b_globe_invalidate	= 24
 
 RES_OFF		= 0x2000		; рабочая страница: проекции вершин ячейки
@@ -133,6 +134,7 @@ epage:		.ds	1
 strip:		.ds	1
 strip_set:	.ds	1		; набор узоров в страницах (#FF — нет)
 valid:		.ds	1
+pre_only:	.ds	1		; 1 — globe_prepare: кадр только в задний буфер (без копии на экран)
 v_zoom:		.ds	1		; вид в заднем буфере
 v_lon:		.ds	2
 v_lat:		.ds	2
@@ -2715,7 +2717,15 @@ _globe_invalidate::
 
 ;; void globe_draw(void) __banked — окно глобуса (перерисовка при смене вида или эпохи солнца,
 ;; иначе копия заднего буфера). ST — в Win3.
+_globe_prepare::
+	ld	a, #1				; только рендер в задний буфер, без копии на экран
+	ld	(pre_only), a
+	jr	gd_entry
+
 _globe_draw::
+	xor	a, a
+	ld	(pre_only), a
+gd_entry:
 	push	ix
 	ld	a, (g_init)
 	or	a, a
@@ -2818,7 +2828,9 @@ _globe_draw::
 	call	detail
 	ld	a, (d_se)
 	ld	(v_sun), a
-9$:	call	blit
+9$:	ld	a, (pre_only)
+	or	a, a
+	call	z, blit
 	pop	af
 	call	_pg_map3
 	pop	ix

@@ -856,6 +856,9 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	switch (id) {
 	case SCR_GEOSCAPE:
 		if (ev == EVT_QUERY) return arg == ST->speed;
+		// глобус готовится в задний буфер до первой отрисовки экрана: иначе пока идёт кадр
+		// (несколько кадров), на экране виден фон панели без планеты
+		if (ev == EVT_OPEN) { globe_det_check(); globe_prepare(); break; }
 		if (ev == EVT_DRAW) { draw_globe(); break; }
 		if (ev == EVT_BUTTON) {
 			if (arg < 6) ST->speed = arg;          // переключатели скорости

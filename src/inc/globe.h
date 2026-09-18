@@ -24,6 +24,9 @@ void globe_draw(void) __banked;
 uint8_t globe_xy(const geo_t *p, int16_t *x, int16_t *y) __banked;
 // Пиксель окна -> точка (за краем диска — ближайшая точка края). Win3 не трогает.
 void globe_lonlat(int16_t x, int16_t y, geo_t *p) __banked;
+// Приготовить кадр в заднем буфере, не копируя на экран: геоскейп зовёт при открытии, чтобы
+// первый globe_draw был одной копией и на экране не мелькал фон без планеты.
+void globe_prepare(void) __banked;
 // Забыть нарисованное (палитра, фон окна): следующий globe_draw рисует заново.
 void globe_invalidate(void) __banked;
 // Долгота подсолнечной точки (16-битный угол) по времени ST: OpenXcom GameTime::getDaylight,
