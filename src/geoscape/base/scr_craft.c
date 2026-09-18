@@ -196,10 +196,14 @@ static void info_draw(uint8_t i)
 		gfx_sprite(RES_BASEBITS_PCK, (int16_t)craft_rule(offsetof(r_crafts_t, sprite)) + 33, 144, 52);
 	} else if (i < crew0) {
 		uint8_t k = i >= 10;
-		if (cr->weap[k].type == NONE8) return;
+		int16_t wx = k ? 184 : 121;
+		if (cr->weap[k].type == NONE8) {         // оружия нет — под иконкой чистый фон окна,
+			gfx_bg(RES_BACK14_SCR, wx, 63, 16, 17);   // иначе оставалась иконка снятого оружия
+			return;
+		}
 		rtab_t t;
 		rtab_open(RES_RULE_CRAFTWEAPONS, &t);
-		gfx_sprite(RES_BASEBITS_PCK, (int16_t)rtab_word(&t, cr->weap[k].type, offsetof(r_craftWeapons_t, sprite)) + 48, k ? 184 : 121, 63);
+		gfx_sprite(RES_BASEBITS_PCK, (int16_t)rtab_word(&t, cr->weap[k].type, offsetof(r_craftWeapons_t, sprite)) + 48, wx, 63);
 	} else if (i == crew0 + 3) {
 		uint8_t n = ncrew();
 		for (uint8_t k = 0; k < n && k < 22; k++) gfx_sprite(RES_BASEBITS_PCK, 38, 85 + k * 10, 96);
