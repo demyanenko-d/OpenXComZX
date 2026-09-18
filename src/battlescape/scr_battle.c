@@ -110,12 +110,27 @@ static const scr_t tab[] = {
 	SCR(SCR_BATTLE, UI_SCR_SAVEMENUS, RES_PAL_BATTLESCAPE, 0, SF_RAWPAL, w_battle),
 };
 
+// Камера не должна уводить карту из окна (иначе вид пустой, а перерисовка всё равно идёт):
+// крайние клетки дают X от -(sy-1)*16 до (sx-1)*16 и Y от -level*24 до (sx+sy-2)*8.
+static void clamp_cam(void)
+{
+	int16_t lo = TILE_W - (int16_t)(m_sx - 1) * 16, hi = SCREEN_W - TILE_W + (int16_t)(m_sy - 1) * 16;
+	if (cam_x < lo) cam_x = lo;
+	if (cam_x > hi) cam_x = hi;
+	lo = TILE_H - (int16_t)(m_sx + m_sy - 2) * 8;
+	hi = VIEW_H - TILE_H + (int16_t)level * 24;
+	if (cam_y < lo) cam_y = lo;
+	if (cam_y > hi) cam_y = hi;
+	cam_x &= ~1;                         // блит DMA адресует словами
+}
+
 // Камера в центр карты: середина поля попадает в середину окна
 static void center(void)
 {
 	int16_t cx = m_sx / 2, cy = m_sy / 2;
 	cam_x = 160 - (cx - cy) * 16;
 	cam_y = VIEW_H / 2 - ((cx + cy) * 8 - (int16_t)level * 24);
+	clamp_cam();
 }
 
 static uint8_t load_map(void)
@@ -225,12 +240,16 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	case EVT_CLOSE:                      // следующий бой — на следующей карте (генератора ещё нет)
 		cur_map = cur_map + 1 < NMAPS ? cur_map + 1 : 0;
 		break;
-	case EVT_KEY:
+	case EVT_KEY: {
+		// Автоповтор за время долгой перерисовки копится (in_reps) — сдвигать сразу на все
+		// шаги, иначе после отпускания клавиши вид ещё несколько раз перерисовывается.
+		int16_t n = in_reps ? in_reps : 1;
+		int16_t ox = cam_x, oy = cam_y;
 		switch (arg) {
-		case KEY_LEFT:  cam_x += 16; break;
-		case KEY_RIGHT: cam_x -= 16; break;
-		case KEY_UP:    cam_y += 8; break;
-		case KEY_DOWN:  cam_y -= 8; break;
+		case KEY_LEFT:  cam_x += 16 * n; clamp_cam(); break;
+		case KEY_RIGHT: cam_x -= 16 * n; clamp_cam(); break;
+		case KEY_UP:    cam_y += 8 * n; clamp_cam(); break;
+		case KEY_DOWN:  cam_y -= 8 * n; clamp_cam(); break;
 		case 'q': case 'Q': if (level + 1 < m_sz) { level++; center(); } break;
 		case 'a': case 'A': if (level) { level--; center(); } break;
 		case 'm': case 'M':
@@ -239,8 +258,11 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			break;
 		default: return 0;
 		}
+		if (cam_x == ox && cam_y == oy && (arg == KEY_LEFT || arg == KEY_RIGHT || arg == KEY_UP || arg == KEY_DOWN))
+			break;                       // камера упёрлась в край карты — перерисовывать нечего
 		ui_dirty(0);
 		break;
+	}
 	}
 	return 0;
 }
