@@ -923,11 +923,11 @@ uint8_t base_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			rtab_get(&t, ctx.facility, &f);
 			if (!fac_can_place(b, ctx.facility, cx, cy)) msg(STR_CANNOT_BUILD_HERE);
 			else if (ST->funds < (int32_t)f.build_cost) { str_copy(STR_NOT_ENOUGH_MONEY, ui_msg, sizeof ui_msg); UI_GO(A_POP_PUSH, SCR_ERROR); }
-			else { fac_build(b, ctx.facility, cx, cy); ui_dirty(0); ui_dirty(5); UI_GO(A_POP, 0); }
+			else { fac_build(b, ctx.facility, cx, cy); ui_bg_stale(); UI_GO(A_POP, 0); }
 		}
 		break;
 	case SCR_DISMANTLE:
-		if (ev == EVT_BUTTON && arg == 1) { fac_dismantle(b, ctx.facility); ui_dirty(0); ui_dirty(5); UI_GO(A_POP, 0); }
+		if (ev == EVT_BUTTON && arg == 1) { fac_dismantle(b, ctx.facility); ui_bg_stale(); UI_GO(A_POP, 0); }
 		break;
 	case SCR_CRAFTS:
 		if (ev == EVT_LIST) {
@@ -950,6 +950,7 @@ uint8_t base_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			if (!n) break;
 			ctx.soldier = arg == 2 ? (ctx.soldier ? ctx.soldier - 1 : n - 1) : (ctx.soldier + 1 < n ? ctx.soldier + 1 : 0);
 			sol_load(soldier_nth(b, ctx.soldier));
+			ui_edit_end();                         // каретка — в конец нового имени
 			UI_GO(A_REDRAW, 0);
 		}
 		break;
