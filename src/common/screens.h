@@ -96,6 +96,7 @@
 #define SCR_CRAFT_EQUIP      195
 #define SCR_CRAFT_ARMOR      196
 #define SCR_SOLDIER_ARMOR    197
+#define SCR_INVENTORY        198
 
 // --- полёты кораблей (банк 21, scr_fly.c); группа 6 делится с кораблём: 200.. — сюда
 #define SCR_INTERCEPT        200

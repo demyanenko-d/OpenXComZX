@@ -1,0 +1,53 @@
+# Автотест Уфопедии (TFTD): статьи с SD-карты (UFOP.PAK с образа tmp\sdimg\oxz.img,
+# драйвер src/kernel/sd.s + fat.c), листание «>>» по всем видимым статьям
+# (корабли, оружие, техника, снаряжение, броня, постройки, USO, тексты).
+# Все исследования открыты записью в discovered (#006E, 20 байт).
+# Снимки — tmp/shots/ufopaedia/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\ufopaedia.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 600
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 300
+type deep
+key ENTER
+waitmark 32 300
+pokew 06:006E 0xFFFF
+pokew 06:0070 0xFFFF
+pokew 06:0072 0xFFFF
+pokew 06:0074 0xFFFF
+pokew 06:0076 0xFFFF
+pokew 06:0078 0xFFFF
+pokew 06:007A 0xFFFF
+pokew 06:007C 0xFFFF
+pokew 06:007E 0xFFFF
+# Инвентарь бойца (InventoryState): экран из снаряжения корабля — кукла, сетка секций,
+# груз корабля на «земле»; взять предмет с земли и положить в правую руку.
+# Снимки — tmp/shots/inv/. Запуск: powershell -File toolsun.ps1 -Script testsinventory.oxs -Headless
+poke _ctx+1 0
+poke _ui_request 198
+waitmark 198 600
+wait 10
+shot tmp/shots/inv/01.png
+# взять предмет с земли и положить в правую руку
+pokew _cursor_x 8
+pokew _cursor_y 160
+click L
+wait 6
+pokew _cursor_x 16
+pokew _cursor_y 70
+click L
+wait 8
+shot tmp/shots/inv/02_hand.png
+echo inventory scenario OK
+exit 0

@@ -14,6 +14,11 @@
 #include "game.h"
 #include "scrdef.h"
 
+// Экран инвентаря — в этом же банке (scr_inv.c), диспетчер группы зовёт его отсюда
+uint8_t inv_scr_get(uint8_t id, sdef_t *s, wdef_t *w) __banked;
+void inv_scr_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked;
+uint8_t inv_scr_event(uint8_t id, uint8_t ev, uint8_t arg) __banked;
+
 static char t1[48], t2[48];
 static uint8_t lst[160], nlst;          // строки открытого списка
 static uint8_t sol_rec;                 // SoldierArmor: запись солдата
@@ -487,6 +492,7 @@ static void add(sdef_t *s, wdef_t *w, const wdef_t *src, uint8_t n)
 
 uint8_t ship_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
 {
+	if (id == SCR_INVENTORY) return inv_scr_get(id, s, w);
 	if (!scr_find(tab, sizeof tab / sizeof tab[0], id, s, w)) return 0;
 	if (id == SCR_CRAFT_INFO) {
 		uint8_t nw = (uint8_t)craft_rule(offsetof(r_crafts_t, weapons));
@@ -503,6 +509,7 @@ uint8_t ship_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
 void ship_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked
 {
 	rtab_t t;
+	if (id == SCR_INVENTORY) { inv_scr_text(id, slot, row, buf); return; }
 	base_t *bs = &ST->base[ctx.base];
 	switch (id) {
 	case SCR_CRAFT_INFO:
@@ -612,6 +619,7 @@ uint8_t ship_rows(uint8_t id, uint8_t slot) __banked
 
 uint8_t ship_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 {
+	if (id == SCR_INVENTORY) return inv_scr_event(id, ev, arg);
 	craft_t *cr = &ST->craft[ctx.craft];
 	switch (id) {
 	case SCR_CRAFT_INFO:
@@ -651,10 +659,8 @@ uint8_t ship_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		break;
 	case SCR_CRAFT_EQUIP:
 		if (ev == EVT_OPEN) equip_fill();
-		else if (ev == EVT_BUTTON && arg == 1) {
-			strcpy(ui_msg, "INVENTORY\x02\nnot ported yet");
-			UI_GO(A_PUSH, SCR_ERROR);
-		} else if (ev == EVT_ARROW && arg < nlst) {
+		else if (ev == EVT_BUTTON && arg == 1) UI_GO(A_PUSH, SCR_INVENTORY);
+		else if (ev == EVT_ARROW && arg < nlst) {
 			uint16_t ch = ui_arrow_max ? 0x7FFF : 1;
 			if (ui_arrow_dir > 0) equip_left(lst[arg], ch); else equip_right(lst[arg], ch);
 			// строка и счётчики места; техника тянет за собой строку боеприпасов — весь список

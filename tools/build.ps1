@@ -32,7 +32,7 @@ $banks = @(
     @{ n = 7; page = 0x36; files = @('geoscape\save', 'geoscape\newgame', 'geoscape\base\econ', 'kernel\bios') }   # bios — только для save.c
     @{ n = 8; page = 0x37; files = @('geoscape\gtime', 'geoscape\base\lab') }
     @{ n = 9; page = 0x38; files = @('geoscape\base\scr_lab') }
-    @{ n = 10; page = 0x39; files = @('geoscape\base\scr_craft') }
+    @{ n = 10; page = 0x39; files = @('geoscape\base\scr_craft', 'geoscape\base\scr_inv') }   # корабли базы: снаряжение и инвентарь бойца
     @{ n = 11; page = 0x3A; files = @('kernel\gfx', 'kernel\cursor', 'kernel\boot'); ram = 0xBF00 }   # графика, опрос ввода, запуск; с #BF00 — фон под всплывающими окнами (gfx.c)
     @{ n = 12; page = 0x3B; files = @('kernel\fat', 'kernel\sdres') }
     @{ n = 13; page = 0x3C; files = @('common\scr_ufop') }

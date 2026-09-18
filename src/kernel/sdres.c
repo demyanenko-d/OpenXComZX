@@ -1,6 +1,6 @@
 // Ресурсы с SD (банк 12): пакеты, не вшитые в SPG, — BACK.PAK (фоны окон BACKnn.SCR),
 // UFOP.PAK (картинки Уфопедии: TFTD 7 МБ), ITEMS.PAK (BIGOBS, куклы брони) и CUTS.PAK
-// (слайды заставок). При
+// (слайды заставок), BATUI.PAK (фон и кнопки боя — экран инвентаря). При
 // первом запросе: том FAT, файлы OXZ/<игра>/*.PAK, каталоги пакетов — в страницу
 // пула. Ресурс читается целиком в один из слотов пула (4 страницы = 64 КБ, картинка
 // 320x200) и остаётся там, пока слот не понадобится другому: вытесняется давно не
@@ -16,11 +16,11 @@
 
 #define SLOT_PAGES 4
 #define NSLOTS     6
-#define NPACKS     4
+#define NPACKS     5
 
 static const char *const pack_name[2][NPACKS] = {
-	{ "OXZ/UFO/BACK.PAK", "OXZ/UFO/UFOP.PAK", "OXZ/UFO/ITEMS.PAK", "OXZ/UFO/CUTS.PAK" },
-	{ "OXZ/TFTD/BACK.PAK", "OXZ/TFTD/UFOP.PAK", "OXZ/TFTD/ITEMS.PAK", "OXZ/TFTD/CUTS.PAK" },
+	{ "OXZ/UFO/BACK.PAK", "OXZ/UFO/UFOP.PAK", "OXZ/UFO/ITEMS.PAK", "OXZ/UFO/CUTS.PAK", "OXZ/UFO/BATUI.PAK" },
+	{ "OXZ/TFTD/BACK.PAK", "OXZ/TFTD/UFOP.PAK", "OXZ/TFTD/ITEMS.PAK", "OXZ/TFTD/CUTS.PAK", "OXZ/TFTD/BATUI.PAK" },
 };
 
 static fat_file_t pk[NPACKS];
@@ -34,9 +34,11 @@ static res_t slot_res[NSLOTS];
 static uint16_t use_clock;
 uint8_t sd_state;                      // 0 — не открывали, 1 — есть, 2 — нет (карты/файлов)
 
-// Каталоги пакетов — подряд в странице пула: пакет p с смещения p * 4 КБ (до 255 ресурсов)
-#define IDX_STEP 4096
-#define IDX_MAX  255
+// Каталоги пакетов — подряд в странице пула: пакет p с смещения p * 2 КБ (до 127 ресурсов).
+// Шаг 2 КБ, а не 4: пять пакетов по 4 КБ уже не помещались в страницу, и каталог последнего
+// читался за её пределами — ресурс находился не тот (фон инвентаря отдавал картинку TAC00).
+#define IDX_STEP 2048
+#define IDX_MAX  127
 
 static uint8_t packs_open(void)
 {

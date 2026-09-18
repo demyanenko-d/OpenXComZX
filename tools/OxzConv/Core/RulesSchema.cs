@@ -160,6 +160,7 @@ namespace OxzConv
 					F("drawingRoutine", "u8", "0"), F("movementType", "u8", "0"), F("size", "u8", "1"), F("weight", "u8", "0"),
 					F("deathFrames", "u8", "3"), F("forcedTorso", "u8", "0"),
 					F("damageModifier", "nums100", comment: "10 x i16 * 100; нет элемента — 100"),
+					Fn("invImage", "res", (e, k, rs) => ArmorImage(rs, k, 5), "кукла инвентаря: spriteInv + M0.SPK / .SPK"),
 					F("stats", "stats"),
 					F("spriteInv", "str", comment: "имя куклы инвентаря (MAN_*), пока через таблицу строк"),
 				},
