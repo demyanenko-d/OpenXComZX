@@ -15,7 +15,7 @@ const zlib = require('zlib');
 
 const GAMES = {
 	TFTD: 'Steam/X-COM Terror from the Deep/TFD',
-	UFO: 'Steam/X-COM UFO Defense/XCOM',
+	UFO: 'Steam/XCom UFO Defense/XCOM',
 };
 
 const TILE_W = 32, TILE_H = 40, HALF_W = 16, QUART = 8, LEVEL_H = 24;

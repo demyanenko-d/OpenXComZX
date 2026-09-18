@@ -1,0 +1,24 @@
+# Микробенчмарк DMA в бою (16_battlescape_plan.md §8.3f): сколько тактов стоит один запуск BLT1
+# и какова настоящая пропускная способность. Все оценки прототипов (§8.3a, §8.3d, §8.3e) стоят
+# на модели «300 T на запуск, 74 КБ за кадр» (02 §6) — этот тест её проверяет.
+# Клавиша B в экране боя гоняет три серии по 512 запусков: 32 байта, 256 байт, 1024 байта.
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_bench.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+poke _ui_request 248
+waitmark 248 900
+
+profile on
+key B
+wait 120
+profile off 6
+profile on
+key N
+wait 120
+profile off 6
+profile on
+key V
+wait 200
+profile off 6
+exit 0

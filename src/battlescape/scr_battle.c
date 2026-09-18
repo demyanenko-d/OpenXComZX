@@ -203,6 +203,47 @@ static void draw_map(void)
 		}
 }
 
+// Микробенчмарк DMA (клавиша B, тест bat_bench.oxs): сколько стоит запуск BLT1 и какова
+// настоящая пропускная способность. Модель прототипов считает 300 T на запуск и 74 КБ за кадр
+// (02 §6) — на этих числах стоят все оценки в §8.3. Пишем в невидимые строки экрана (y >= 256).
+#define BENCH_N 512
+static void bench_setup(uint16_t so, uint8_t sp, uint8_t len, uint8_t num)
+{
+	dma_wait();
+	TS_DMASAL = (uint8_t)so; TS_DMASAH = (uint8_t)(so >> 8); TS_DMASAX = sp;
+	TS_DMADAL = 0; TS_DMADAH = 0; TS_DMADAX = SCREEN_PAGE + 8;   // y = 256, вне видимой области
+	TS_DMALEN = len;
+	TS_DMANUM = num;
+	TS_DMACTRL = DMA_BLT1 | DMA_D_ALGN | DMA_ASZ;
+}
+
+// 512 запусков по одной строке 32 байта: почти чистые накладные расходы
+static void bench_small(void)
+{
+	uint8_t sp = FAR_PAGE(tile_data);
+	uint16_t so = FAR_OFFS(tile_data);
+	for (uint16_t i = 0; i < BENCH_N; i++) bench_setup(so, sp, 15, 0);
+	dma_wait();
+}
+
+// 512 запусков по 32 строки (1024 байта каждый): 512 КБ переноса
+static void bench_big(void)
+{
+	uint8_t sp = FAR_PAGE(tile_data);
+	uint16_t so = FAR_OFFS(tile_data);
+	for (uint16_t i = 0; i < BENCH_N; i++) bench_setup(so, sp, 15, 31);
+	dma_wait();
+}
+
+// 512 запусков по 8 строк (256 байт) — размер, близкий к настоящей части клетки
+static void bench_tile(void)
+{
+	uint8_t sp = FAR_PAGE(tile_data);
+	uint16_t so = FAR_OFFS(tile_data);
+	for (uint16_t i = 0; i < BENCH_N; i++) bench_setup(so, sp, 15, 7);
+	dma_wait();
+}
+
 static void draw_all(void)
 {
 	gfx_fill(0, 0, 320, VIEW_H, 0);
@@ -252,6 +293,9 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		case KEY_DOWN:  cam_y -= 8 * n; clamp_cam(); break;
 		case 'q': case 'Q': if (level + 1 < m_sz) { level++; center(); } break;
 		case 'a': case 'A': if (level) { level--; center(); } break;
+		case 'b': case 'B': bench_small(); return 0;   // микробенчмарк DMA: 512 запусков по 32 байта
+		case 'n': case 'N': bench_tile(); return 0;    // ... по 256 байт (размер части клетки)
+		case 'v': case 'V': bench_big(); return 0;     // ... по 1024 байта
 		case 'm': case 'M':
 			cur_map = cur_map + 1 < NMAPS ? cur_map + 1 : 0;
 			if (!load_map()) { cur_map = 0; load_map(); }
