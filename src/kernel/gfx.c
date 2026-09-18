@@ -455,3 +455,30 @@ void gfx_selector(int16_t x, int16_t y, int16_t w, uint8_t h, uint8_t combo) __b
 	}
 	pg_map3(old);
 }
+
+// Маленькая стрелка списка 11x8 (ArrowButton ARROW_SMALL_UP/DOWN/LEFT/RIGHT): shape 0 — вверх,
+// 1 — вниз, 2/3 — влево/вправо. Вынесено из ui.c (банк 1 полон).
+static const uint8_t harrow[2][6][4] = {
+	{ { 2, 4, 2, 1 }, { 4, 3, 2, 3 }, { 6, 2, 1, 5 }, { 3, 4, 2, 1 }, { 5, 3, 2, 3 }, { 7, 2, 1, 5 } },
+	{ { 7, 4, 2, 1 }, { 5, 3, 2, 3 }, { 4, 2, 1, 5 }, { 6, 4, 2, 1 }, { 4, 3, 2, 3 }, { 3, 2, 1, 5 } },
+};
+
+void gfx_arrow_small(int16_t x, int16_t y, uint8_t c, uint8_t shape) __banked
+{
+	gfx_fill(x, y, 10, 7, c + 2);
+	gfx_fill(x + 1, y + 1, 10, 7, c + 5);
+	gfx_fill(x + 1, y + 1, 9, 6, c + 4);
+	gfx_pset(x, y, c + 1);
+	gfx_pset(x, y + 7, c + 4);
+	gfx_pset(x + 10, y, c + 4);
+	if (shape >= 2) {
+		const uint8_t (*r)[4] = harrow[shape - 2];
+		for (uint8_t i = 0; i < 6; i++) gfx_fill(x + r[i][0], y + r[i][1], r[i][2], r[i][3], i < 3 ? c + 3 : c + 1);
+		return;
+	}
+	for (uint8_t i = 0; i < 5; i++) {
+		int16_t ry = shape ? y + 6 - i : y + 1 + i;
+		gfx_fill(x + 5 - i, ry, 2 * i + 1, 1, c + 3);
+		if (i) gfx_fill(x + 6 - i, ry, 2 * i - 1, 1, c + 1);
+	}
+}

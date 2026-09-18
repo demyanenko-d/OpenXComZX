@@ -11,6 +11,8 @@ void gfx_fill(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c) __banked;
 // Фаска кнопки/тонкой рамки (inv — цвет середины нажатой кнопки, 0 — без инверсии) и кнопка-стрелка
 void gfx_bevel(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c, uint8_t geo, uint8_t inv) __banked;
 void gfx_arrow(int16_t x, int16_t y, uint8_t c, uint8_t down) __banked;
+// Маленькая стрелка списка: shape 0 вверх, 1 вниз, 2 влево, 3 вправо
+void gfx_arrow_small(int16_t x, int16_t y, uint8_t c, uint8_t shape) __banked;
 // Окно: фон bg (0 — заливка c+3) и кольца рамки; thin — фаска тонкой рамки
 void gfx_window(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c, uint16_t bg, uint8_t thin) __banked;
 // Подсветка строки списка под курсором (combo — правила ComboBox)
