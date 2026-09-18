@@ -575,9 +575,10 @@ static void row_redraw(uint8_t i, uint8_t row)
 	if (row < first || row >= first + vis || row >= n) return;
 	uint8_t r = row - first;
 	wcolors(w);
-	list_cols_load(w);
+	list_cols_load(w);          // цвета элемента списка — до restore: он ставит свои (окно, заливка)
 	uint8_t st = stage_begin(w->x, w->y + r * step, w->w, step);
 	restore(i, w->x, w->y + r * step, w->w, step);
+	wcolors(w);                 // restore мог сменить цвета на цвета фонового виджета
 	draw_row(i, row, r, step);
 	if (st) stage_end();
 }
