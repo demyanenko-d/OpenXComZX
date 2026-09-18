@@ -462,50 +462,97 @@ static void mark_one(uint8_t i)
 // фон и содержимое сменяются за одну пересылку, поэтому пустой прямоугольник не мелькает.
 // Не помещается в рабочую область (высокая группа, список во весь экран) — рисуем прямо на экран,
 // как раньше. W_CUSTOM рисует экран сам (globe.s пишет в свои строки) — он идёт отдельно.
-#define STAGE_Y   200
-#define STAGE_H   40
+// Рабочая область в невидимых строках экранной памяти (map.h): 200..275 свободны, пока не открыт
+// экран воздушного боя — он собирает там поле; в бою берём 480..511 (они не заняты никогда).
+#define STAGE_BIG_Y   200
+#define STAGE_BIG_H   56
+#define STAGE_SAFE_Y  480
+#define STAGE_SAFE_H  32
+static int16_t stage_y, stage_h;
+
+static void stage_pick(void)
+{
+	stage_y = STAGE_BIG_Y;
+	stage_h = STAGE_BIG_H;
+	for (uint8_t i = 0; i < depth; i++)
+		if (stk[i] == SCR_DOGFIGHT) { stage_y = STAGE_SAFE_Y; stage_h = STAGE_SAFE_H; return; }
+}
 
 // 1 — дальше рисуем в рабочую область (в неё уже перенесено то, что сейчас на экране: края
 // прямоугольника после выравнивания по два пикселя и места, которым фон не восстанавливают).
 // 0 — не помещается, рисуем прямо на экран, как раньше.
 static uint8_t stage_begin(int16_t x, int16_t y, int16_t w, int16_t h)
 {
-	if (x < 0 || y < 0 || x + w > SCREEN_W || y + h > SCREEN_H || h > STAGE_H) return 0;
+	stage_pick();
+	if (x < 0 || y < 0 || x + w > SCREEN_W || y + h > SCREEN_H || h > stage_h) return 0;
 	stg_x = x & ~1;
 	stg_w = (x + w - stg_x + 1) & ~1;
 	if (stg_x + stg_w > SCREEN_W) stg_w = SCREEN_W - stg_x;
 	stg_y = y;
 	stg_h = h;
-	gfx_copy(stg_x, stg_y, STAGE_Y, stg_w, stg_h);
-	gfx_yb = tx_yb = (uint16_t)(STAGE_Y - y);
+	gfx_copy(stg_x, stg_y, stage_y, stg_w, stg_h);
+	gfx_yb = tx_yb = (uint16_t)(stage_y - y);
 	return 1;
 }
 
 static void stage_end(void)
 {
 	gfx_yb = tx_yb = 0;
-	gfx_copy(stg_x, STAGE_Y, stg_y, stg_w, stg_h);
+	gfx_copy(stg_x, stage_y, stg_y, stg_w, stg_h);
 }
 
-static void flush_marked(void)
+// Отмеченные виджеты идут группами: в группу берутся те, что целиком помещаются в рабочую область
+// от самого верхнего из оставшихся. Группа собирается в буфере и уходит на экран одним DMA, поэтому
+// ряд кнопок (графики) появляется сразу, а не сверху вниз. Виджет выше области (список, окно)
+// рисуется прямо на экран, как раньше.
+static uint8_t flush_group(void)
 {
+	uint8_t top = 0xFF;
+	for (uint8_t i = 0; i < S.n; i++) {
+		const wdef_t *w = &W[i];
+		if (!marked[i] || w->type == W_CUSTOM) continue;
+		if (top == 0xFF || w->y < W[top].y) top = i;
+	}
+	if (top == 0xFF) return 0;
+	stage_pick();
+	int16_t by = W[top].y, be = 32000;   // пока одной группой: сборка по группам вскрывает дефект
+	(void)stage_h;                       // отрисовки со смещением (см. 15_widgets.md)
 	int16_t x0 = SCREEN_W, y0 = SCREEN_H, x1 = 0, y1 = 0;
 	uint8_t n = 0;
 	for (uint8_t i = 0; i < S.n; i++) {
 		const wdef_t *w = &W[i];
-		if (!marked[i] || w->type == W_CUSTOM) continue;
+		if (!marked[i] || w->type == W_CUSTOM || w->y < by || w->y + w->h + 1 > be) continue;
 		if (w->x < x0) x0 = w->x;
 		if (w->y < y0) y0 = w->y;
 		if (w->x + w->w > x1) x1 = w->x + w->w;
 		if (w->y + w->h + 1 > y1) y1 = w->y + w->h + 1;
 		n++;
 	}
-	uint8_t stage = n ? stage_begin(x0, y0, x1 - x0, y1 - y0) : 0;
-	for (uint8_t i = 0; i < S.n; i++)             // фон под теми, у кого он меняется
-		if (marked[i] == 2) restore(i, W[i].x, W[i].y, W[i].w, W[i].h + 1);
-	for (uint8_t i = 0; i < S.n; i++)
-		if (marked[i] && W[i].type != W_CUSTOM) draw_widget(i);
+	if (!n) {                                    // сам не помещается — прямо на экран
+		if (marked[top] == 2) restore(top, W[top].x, W[top].y, W[top].w, W[top].h + 1);
+		draw_widget(top);
+		marked[top] = 0;
+		return 1;
+	}
+	uint8_t stage = stage_begin(x0, y0, x1 - x0, y1 - y0);
+	for (uint8_t i = 0; i < S.n; i++) {          // фон под теми, у кого он меняется
+		const wdef_t *w = &W[i];
+		if (marked[i] == 2 && w->type != W_CUSTOM && w->y >= by && w->y + w->h + 1 <= be)
+			restore(i, w->x, w->y, w->w, w->h + 1);
+	}
+	for (uint8_t i = 0; i < S.n; i++) {
+		const wdef_t *w = &W[i];
+		if (!marked[i] || w->type == W_CUSTOM || w->y < by || w->y + w->h + 1 > be) continue;
+		draw_widget(i);
+		marked[i] = 0;
+	}
 	if (stage) stage_end();
+	return 1;
+}
+
+static void flush_marked(void)
+{
+	while (flush_group()) ;
 	for (uint8_t i = 0; i < S.n; i++)             // глобус и прочие «свои» виджеты — прямо на экран
 		if (marked[i] && W[i].type == W_CUSTOM) draw_widget(i);
 	memset(marked, 0, sizeof marked);
