@@ -13,11 +13,13 @@
 #include "state.h"
 #include "game.h"
 
-static uint8_t ram_slot[SAVE_SLOTS];     // первая из 2 страниц пула, 0 — пусто
+static uint8_t ram_slot[SAVE_SLOTS];     // первая из 3 страниц пула, 0 — пусто
 
+// Сохраняются подряд: страница ядра, вся страница солдат и занятая часть инвентаря
+// (страницы смежны в дальней памяти, см. state.h)
 static uint16_t blob_size(void)
 {
-	return 16384u + (uint16_t)ST->nsoldiers * sizeof(soldier_t);
+	return 32768u + (uint16_t)(ST->ninv * sizeof(inv_t));
 }
 
 // Сумма всего после заголовка: s = s*2 + b (циклически), по дальней памяти.
@@ -60,7 +62,7 @@ uint8_t st_save(uint8_t slot, const char *name) __banked
 	if (r == BIOS_OK) return SAVE_OK;
 	if (r != BIOS_NONE) return SAVE_IOERR;
 	if (!ram_slot[slot]) {
-		ram_slot[slot] = pg_alloc(2, 1);
+		ram_slot[slot] = pg_alloc(3, 1);
 		if (ram_slot[slot] == PG_NONE) { ram_slot[slot] = 0; return SAVE_IOERR; }
 	}
 	far_copy(FAR(ram_slot[slot], 0), FAR(STATE_PAGE, 0), size);
@@ -123,7 +125,7 @@ uint8_t st_delete(uint8_t slot) __banked
 	if (slot >= SAVE_SLOTS) return SAVE_BADSLOT;
 	uint8_t r = bios_file(BIOS_DELETE, slot, 0, 0, 0);
 	if (r == BIOS_NONE && ram_slot[slot]) {
-		pg_free(ram_slot[slot], 2);
+		pg_free(ram_slot[slot], 3);
 		ram_slot[slot] = 0;
 	}
 	return SAVE_OK;
@@ -135,4 +137,5 @@ void st_clear(void) __banked
 {
 	far_fill(FAR(STATE_PAGE, 0), 0, 0x4000);
 	far_fill(FAR(SOLDIER_PAGE, 0), 0, 0x4000);
+	far_fill(FAR(INV_PAGE, 0), 0, 0x4000);
 }

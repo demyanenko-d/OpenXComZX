@@ -4,6 +4,7 @@
 //
 //   STATE_PAGE     (#06)  state_t — ядро: время, деньги, базы, корабли, страны…
 //   STATE_PAGE + 1 (#07)  soldier_t[MAX_SOLDIERS] — солдаты
+//   STATE_PAGE + 2 (#08)  inv_t[INV_MAX] — инвентарь бойцов (общий пул записей)
 //
 // Доступ: на время вызовов экранов (scr_*) диспетчер подключает STATE_PAGE в
 // Win3, указатель ST действителен. Нельзя: держать указатели в ST через gfx_map
@@ -21,7 +22,7 @@
 #include "rules.h"
 
 #define ST_MAGIC        0x535A584Ful     // "OXZS"
-#define ST_VERSION      1
+#define ST_VERSION      2       // 2 — в блоб добавлены страница солдат целиком и инвентарь
 
 #define NAME_LEN        16
 #define SOLDIER_NAME    22
@@ -256,6 +257,7 @@ typedef struct {
 	uint8_t nufos, nmissions, nsites;   // занятых записей ufo[] / mission[] / site[] (пустой мир — без циклов)
 	uint8_t ncraft_out;             // кораблей со статусом CS_OUT (craft.c)
 	uint8_t iron_slot;              // Ironman: слот сохранения (st_save запоминает; имя — hdr.name)
+	uint16_t ninv;                  // записей в странице инвентаря (с дырами)
 } state_t;
 
 // --- солдат (страница STATE_PAGE + 1). base NONE8 — свободная запись.
@@ -271,6 +273,21 @@ typedef struct {
 	uint8_t transit, flags, psi_improve, type;
 	uint8_t pad[4];
 } soldier_t;                        // 64 байта
+
+// --- инвентарь бойцов (страница STATE_PAGE + 2): общий пул, soldier NONE8 — свободная запись.
+// Секция (slot) — номер записи правил invs; клетка (x, y) — в её сетке (рука и земля — 0, 0).
+// В оружии: ammo — тип вставленной обоймы (NONE16 — нет), rounds — патронов в ней; у самой
+// обоймы rounds — сколько осталось.
+#define INV_MAX     1024
+#define INV_NONE    0xFFFF
+#define INV_PAGE    (STATE_PAGE + 2)
+typedef struct {
+	uint8_t soldier, slot, x, y;
+	uint16_t item, ammo, rounds;
+} inv_t;                            // 10 байт
+
+_Static_assert(sizeof(inv_t) == 10, "inv_t");
+_Static_assert(sizeof(inv_t) * INV_MAX <= 16384, "inventory must fit one page");
 
 _Static_assert(sizeof(st_header_t) == 44, "st_header_t");
 _Static_assert(sizeof(state_t) <= 16384, "state_t must fit one page");

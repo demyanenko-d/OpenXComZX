@@ -186,6 +186,11 @@ void craft_launch(uint8_t c, uint8_t kind, uint8_t idx) __banked;     // Confirm
 void craft_return(uint8_t c) __banked;
 // Центр глобуса на цель (вид — по сетке предрасчитанных видов, масштаб не дальше zmin, скорость 5 с)
 void geo_center(const geo_t *p, uint8_t zmin) __banked;
+// Инвентарь бойцов (econ.c, страница INV_PAGE)
+void inv_get(uint16_t i, inv_t *v) __banked;
+void inv_put(uint16_t i, const inv_t *v) __banked;
+uint16_t inv_alloc(void) __banked;
+void inv_clear_soldier(uint8_t s) __banked;
 uint8_t waypoint_new(const geo_t *p) __banked;   // WP_PENDING до waypoint_confirm
 void waypoint_confirm(uint8_t w) __banked;
 void waypoint_drop(uint8_t w) __banked;

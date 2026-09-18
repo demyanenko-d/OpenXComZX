@@ -27,6 +27,41 @@ void soldier_put(uint8_t i, const soldier_t *s) __banked
 	far_write(FAR(SOLDIER_PAGE, 0) + (uint16_t)i * sizeof(soldier_t), s, sizeof *s);
 }
 
+// --- инвентарь бойцов (страница INV_PAGE): записи копией, как у солдат
+void inv_get(uint16_t i, inv_t *v) __banked
+{
+	far_read(FAR(INV_PAGE, 0) + (uint32_t)i * sizeof(inv_t), v, sizeof *v);
+}
+
+void inv_put(uint16_t i, const inv_t *v) __banked
+{
+	far_write(FAR(INV_PAGE, 0) + (uint32_t)i * sizeof(inv_t), v, sizeof *v);
+}
+
+// Свободная запись (дыра в пределах ninv или новая) — INV_NONE, если пул кончился
+uint16_t inv_alloc(void) __banked
+{
+	inv_t v;
+	for (uint16_t i = 0; i < ST->ninv; i++) {
+		inv_get(i, &v);
+		if (v.soldier == NONE8) return i;
+	}
+	if (ST->ninv >= INV_MAX) return INV_NONE;
+	return ST->ninv++;
+}
+
+// Снять с бойца всё (увольнение, гибель)
+void inv_clear_soldier(uint8_t s) __banked
+{
+	inv_t v;
+	for (uint16_t i = 0; i < ST->ninv; i++) {
+		inv_get(i, &v);
+		if (v.soldier != s) continue;
+		v.soldier = NONE8;
+		inv_put(i, &v);
+	}
+}
+
 void soldiers_clear(void) __banked
 {
 	uint8_t o = pg_map3(SOLDIER_PAGE);

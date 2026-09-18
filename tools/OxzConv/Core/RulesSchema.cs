@@ -280,6 +280,20 @@ namespace OxzConv
 			// по месяцам — [месяц, n, (номер, вес) x n] ... по возрастанию месяца.
 			t.Add(new TableSchema
 			{
+				Name = "invs", Key = "id", Comment = "секции инвентаря (inventories.rul): место на экране и сетка слотов",
+				Fields =
+				{
+					Name("id"),
+					F("x", "u16", "0"), F("y", "u16", "0"),
+					F("type", "u8", "0", comment: "RuleInventory: 0 — сетка slots, 1 — рука (2x3), 2 — земля"),
+					Fn("cols", "u8", (e, k, rs) => SlotSize(e, 0), "клеток в ширину (рука и земля — 0)"),
+					Fn("rows", "u8", (e, k, rs) => SlotSize(e, 1), "клеток в высоту"),
+					Fn("mask", "u16", (e, k, rs) => SlotMask(e), "занятые клетки сетки: бит (y * 4 + x)"),
+				},
+			});
+
+			t.Add(new TableSchema
+			{
 				Name = "ufoTrajectories", Key = "id", Comment = "траектории НЛО",
 				Fields =
 				{
@@ -491,6 +505,32 @@ namespace OxzConv
 				if (id != null) l.Add(new KeyValuePair<string, object>(id, t));
 			}
 			return l;
+		}
+
+		// invs.slots: клетки сетки секции — размеры и маска занятых (бит y * 4 + x)
+		static IEnumerable<List<object>> SlotCells(object e)
+		{
+			var l = Y.List(Y.Get(e, "slots"));
+			if (l == null) yield break;
+			foreach (var c in l) { var p = Y.List(c); if (p != null && p.Count >= 2) yield return p; }
+		}
+
+		static string SlotSize(object e, int axis)
+		{
+			int m = -1;
+			foreach (var p in SlotCells(e)) m = Math.Max(m, int.Parse(Y.Str(p[axis])));
+			return (m + 1).ToString();
+		}
+
+		static string SlotMask(object e)
+		{
+			int mask = 0;
+			foreach (var p in SlotCells(e))
+			{
+				int x = int.Parse(Y.Str(p[0])), y = int.Parse(Y.Str(p[1]));
+				if (x < 4 && y < 4) mask |= 1 << (y * 4 + x);
+			}
+			return mask.ToString();
 		}
 
 		// ArticleStateArmor: кукла spriteInventory + "M0.SPK", иначе + ".SPK" (что есть в пакетах)
