@@ -446,8 +446,8 @@ static const wdef_t w_carmor[] = {
 static const wdef_t w_sarmor[] = {
 	WINP(64, 20, 192, 160, UI_EL_WINDOW, POPB),
 	BTN(90, 156, 140, 16, UI_EL_BUTTON, STR_CANCEL_UC, A_POP, 0, ESC),
-	TXT(69, 28, 182, 16, UI_EL_TEXT, DYN(0), TC),
-	TXT(80, 52, 90, 9, UI_EL_TEXT, STR_TYPE, 0),
+	TXT(69, 28, 182, 16, UI_EL_TEXT, DYN(1), TC),   // слот 1: 0 занят списком, иначе заголовок
+	TXT(80, 52, 90, 9, UI_EL_TEXT, STR_TYPE, 0),    //   рисовался и в строках списка
 	TXT(190, 52, 70, 9, UI_EL_TEXT, STR_QUANTITY_UC, 0),
 	LST(81, 68, 152, 80, UI_EL_LIST, 0, WF_SEL),
 };
@@ -576,7 +576,7 @@ void ship_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked
 		}
 		break;
 	case SCR_SOLDIER_ARMOR:
-		if (slot == 0) {
+		if (slot == 1) {
 			soldier_t so;
 			soldier_get(sol_rec, &so);
 			str_fmt(buf, str_get(STR_SELECT_ARMOR_FOR_SOLDIER), so.name, "");
@@ -639,7 +639,11 @@ uint8_t ship_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				uint16_t l = rtab_word(&t, i, offsetof(r_craftWeapons_t, launcher));
 				if (l < MAX_ITEMS && ST->base[ctx.base].items[l]) lst[nlst++] = i;
 			}
-		} else if (ev == EVT_LIST && arg <= nlst) { weapon_set(arg); UI_GO(A_POP, 0); }
+		} else if (ev == EVT_LIST && arg <= nlst) {
+			weapon_set(arg);
+			ui_bg_stale();                       // окно корабля под нами держит старую картинку оружия
+			UI_GO(A_POP, 0);
+		}
 		break;
 	case SCR_CRAFT_EQUIP:
 		if (ev == EVT_OPEN) equip_fill();
@@ -684,6 +688,7 @@ uint8_t ship_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			if (si < MAX_ITEMS && ST->base[ctx.base].items[si]) ST->base[ctx.base].items[si]--;
 			so.armor = lst[arg];
 			soldier_put(sol_rec, &so);
+			ui_bg_stale();                       // список брони бойцов под нами держит старую строку
 			UI_GO(A_POP, 0);
 		}
 		break;
