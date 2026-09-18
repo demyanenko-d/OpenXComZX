@@ -417,7 +417,7 @@ key D
 waitmark 11 300
 shot tmp/shots/ui/60_debug_list.png
 pokew _cursor_x 100
-pokew _cursor_y 52
+pokew _cursor_y 60
 click L
 waitmark 202 300
 shot tmp/shots/ui/61_debug_open.png

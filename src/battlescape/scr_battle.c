@@ -34,14 +34,27 @@ static uint8_t level;                // этаж камеры
 static int16_t cam_x, cam_y;         // начало координат карты на экране
 static uint8_t __at(0xBE00) tile_y[256];   // вертикальное смещение тайла (MCD.P_Level) — память банка
 static far_t cells;                  // начало клеток карты
+static far_t map_phys;               // где лежит ресурс карты (слот SD мог смениться)
 static uint8_t loaded;
 static uint8_t __at(0xBF00) row[MAP_MAXX * 4];   // ряд клеток карты (Win1 занято, стек в Win0 мал)
-// Записи кадров тайлсета (SPRSET: x, y, w, h, смещение/2) — в памяти банка, чтобы блит не
-// лазил за ними в дальнюю память на каждую часть клетки.
-static uint8_t __at(0xB800) tile_tab[256 * 6];
-static far_t tile_data;              // данные кадров тайлсета
+// Кадры тайлсета в готовом для блита виде (17_battle_render.md §2): при загрузке карты записи
+// SPRSET (x, y, w, h, смещение/2) разворачиваются так, чтобы в кадре не осталось ни 32-битной
+// арифметики far_t, ни делений — только сложения.
+//   [0] страница источника, [1..2] смещение в ней, [3] DMALEN (w/2-1), [4] высота,
+//   [5] dx, [6] dy (угол кадра в ячейке), [7] ширина
+#define TE_SIZE 8
+static uint8_t __at(0xB000) tile_tab[256 * TE_SIZE];
 static far_t tiles_phys;             // где сейчас лежит тайлсет (слот SD мог смениться)
 static uint16_t tile_frames;
+
+// Дисплей-лист (17_battle_render.md §2): вид раскладывается в список готовых команд DMA —
+// по 8 байт, ровно то, что выгружается в регистры. Строится при смене камеры, этажа или карты,
+// а перерисовка становится циклом «прочитал 8 байт — записал 8 портов».
+#define DL_MAX  512
+#define DL_SIZE 8
+static uint8_t __at(0xA000) dl[DL_MAX * DL_SIZE];
+static uint16_t dl_n;                // записей в списке
+static uint8_t dl_ok;                // список отвечает текущему виду
 
 static void dma_wait(void)
 {
@@ -49,56 +62,68 @@ static void dma_wait(void)
 		;
 }
 
-// Кадр тайлсета в экран одним запуском DMA на полосу: источник лежит подряд (строка = w
-// байт), приёмник шагает на 512 (BLT1 | D_ALGN | ASZ, 02 §6). Полоса режется по границе
-// страницы экрана (32 строки), кадры с нечётным x или вылезающие за края окна — через
-// gfx_sprite (CPU с отсечением).
-static void blit_tile(uint8_t t, int16_t x, int16_t y)
+// Прогон списка: на запись — ожидание DMA и восемь выгрузок регистров
+static void dl_run(void)
 {
-	const uint8_t *e = tile_tab + (uint16_t)t * 6;
-	int16_t w = e[2], h = e[3];
-	if (!w) return;
-	int16_t bx = x + e[0], by = y + e[1];
-	int16_t step = w;                    // строка источника целиком
-	far_t src = tile_data + ((uint32_t)((uint16_t)e[4] | ((uint16_t)e[5] << 8)) << 1);
-	if (bx & 1) { gfx_sprite(tiles_res, t, x, y); return; }   // DMA адресует словами
-	if (bx < 0) {                        // обрезка по краям окна: строки короче шага источника
-		src -= bx;
-		w += bx;
-		bx = 0;
+	const uint8_t *p = dl;
+	for (uint16_t i = dl_n; i; i--, p += DL_SIZE) {
+		dma_wait();
+		TS_DMASAL = p[0]; TS_DMASAH = p[1]; TS_DMASAX = p[2];
+		TS_DMADAL = p[3]; TS_DMADAH = p[4]; TS_DMADAX = p[5];
+		TS_DMALEN = p[6];
+		TS_DMANUM = p[7];
+		TS_DMACTRL = DMA_BLT1 | DMA_D_ALGN | DMA_ASZ;
 	}
-	if (bx + w > SCREEN_W) w = SCREEN_W - bx;
-	w &= ~1;
-	if (w <= 0) return;
+}
+
+static uint8_t *dl_put(void)
+{
+	if (dl_n >= DL_MAX) return 0;
+	return dl + dl_n++ * DL_SIZE;
+}
+
+// Кадр тайлсета -> команды дисплей-листа: источник лежит подряд (строка = w байт), приёмник
+// шагает на 512 (BLT1 | D_ALGN | ASZ, 02 §6). Кадр целиком — одна команда; обрезанный по краю
+// окна — по команде на строку (источник перестаёт быть линейным).
+static void dl_tile(uint8_t t, int16_t x, int16_t y)
+{
+	const uint8_t *e = tile_tab + (uint16_t)t * TE_SIZE;
+	int16_t w = e[7], h = e[4];
+	if (!w) return;
+	int16_t bx = x + e[5], by = y + e[6];
+	int16_t step = w;                    // строка источника целиком
+	uint8_t sp = e[0];
+	uint16_t so = (uint16_t)e[1] | ((uint16_t)e[2] << 8);
+	uint8_t len = e[3];
+	(void)w; (void)step;
+	if (bx & 1) return;                  // DMA адресует словами; cam_x и dx кадра всегда чётные
+	if (bx <= -TILE_W || bx >= SCREEN_W) return;
 	if (by < 0) {                        // верх кадра выше окна — пропустить строки
-		src += (uint32_t)(-by) * (uint16_t)step;
+		so += (uint16_t)(-by) * (uint16_t)e[7];
 		h += by;
 		by = 0;
 	}
 	if (by + h > VIEW_H) h = VIEW_H - by;   // низ окна карты: дальше панель
 	if (h <= 0) return;
-	uint8_t sp = FAR_PAGE(src);
-	uint16_t so = FAR_OFFS(src);
-	uint8_t len = (uint8_t)(w / 2 - 1);
-	while (h > 0) {
-		uint8_t n = 1;
-		if (w == step) {                 // полная строка — источник идёт линейно: одна полоса
-			n = 32 - ((uint8_t)by & 31);   // (до конца страницы экрана)
-			if (n > h) n = (uint8_t)h;
-		}
-		uint16_t offs = (((uint16_t)by & 31) << 9) | (uint16_t)bx;
-		dma_wait();
-		TS_DMASAL = (uint8_t)so; TS_DMASAH = (uint8_t)(so >> 8); TS_DMASAX = sp;
-		TS_DMADAL = (uint8_t)offs; TS_DMADAH = (uint8_t)(offs >> 8);
-		TS_DMADAX = SCREEN_PAGE + (uint8_t)(by >> 5);
-		TS_DMALEN = len;
-		TS_DMANUM = n - 1;
-		TS_DMACTRL = DMA_BLT1 | DMA_D_ALGN | DMA_ASZ;
-		so += (uint16_t)n * (uint16_t)step;
-		while (so >= 0x4000) { so -= 0x4000; sp++; }
-		by += n;
-		h -= n;
+	// По краям окна кадр не обрезается: строка экрана — 512 байт, видимы только 320, так что
+	// вылезшее вправо уходит в невидимый хвост той же строки, а вылезшее влево — в хвост
+	// предыдущей. Обрезка по X стоила бы команды на каждую строку (источник перестаёт быть
+	// линейным). Исключение — первая строка экрана: слева от неё чужая страница.
+	if (bx < 0 && by == 0) {
+		so += (uint16_t)e[7];
+		by = 1;
+		if (--h <= 0) return;
 	}
+	while (so >= 0x4000) { so -= 0x4000; sp++; }
+	int16_t offs = (int16_t)(((uint16_t)by & 31) << 9) + bx;
+	uint8_t dpage = SCREEN_PAGE + (uint8_t)(by >> 5);
+	if (offs < 0) { offs += 0x4000; dpage--; }
+	uint8_t *d = dl_put();
+	if (!d) return;
+	d[0] = (uint8_t)so; d[1] = (uint8_t)(so >> 8); d[2] = sp;
+	d[3] = (uint8_t)offs; d[4] = (uint8_t)((uint16_t)offs >> 8); d[5] = dpage;
+	d[6] = len;
+	d[7] = (uint8_t)(h - 1);
 }
 
 static const wdef_t w_battle[] = {
@@ -122,6 +147,7 @@ static void clamp_cam(void)
 	if (cam_y < lo) cam_y = lo;
 	if (cam_y > hi) cam_y = hi;
 	cam_x &= ~1;                         // блит DMA адресует словами
+	dl_ok = 0;                           // вид изменился — список пересобрать
 }
 
 // Камера в центр карты: середина поля попадает в середину окна
@@ -148,6 +174,7 @@ static uint8_t load_map(void)
 		far_read(r.phys + 8 + (uint32_t)i * 4, t, 4);
 		tile_y[i] = t[0];
 	}
+	map_phys = r.phys;
 	cells = r.phys + 8 + (uint32_t)m_nt * 4;
 	level = m_sz > 1 ? 1 : 0;
 	center();
@@ -155,29 +182,41 @@ static uint8_t load_map(void)
 	return 1;
 }
 
-// Тайлсет карты: таблица кадров — в память банка (перечитывается, если ресурс переехал)
+// Тайлсет карты: записи SPRSET разворачиваются в готовые для блита (см. tile_tab). Делается
+// один раз при загрузке карты и после переезда ресурса в другой слот SD.
 static uint8_t load_tiles(void)
 {
 	res_t rs;
 	if (!res_find(tiles_res, &rs)) return 0;
-	if (rs.phys != tiles_phys) {
-		uint8_t hh[4];
-		far_read(rs.phys, hh, 4);
-		tile_frames = (uint16_t)hh[0] | ((uint16_t)hh[1] << 8);
-		far_read(rs.phys + 4, tile_tab, (tile_frames > 256 ? 256 : tile_frames) * 6);
-		tiles_phys = rs.phys;
+	if (rs.phys == tiles_phys) return 1;
+	dl_ok = 0;
+	uint8_t hh[4];
+	far_read(rs.phys, hh, 4);
+	tile_frames = (uint16_t)hh[0] | ((uint16_t)hh[1] << 8);
+	uint16_t n = tile_frames > 256 ? 256 : tile_frames;
+	far_t data = rs.phys + 4 + (uint32_t)tile_frames * 6;   // данные кадров за таблицей
+	for (uint16_t i = 0; i < n; i++) {
+		uint8_t e[6];
+		far_read(rs.phys + 4 + (uint32_t)i * 6, e, 6);
+		far_t src = data + ((uint32_t)((uint16_t)e[4] | ((uint16_t)e[5] << 8)) << 1);
+		uint8_t *p = tile_tab + i * TE_SIZE;
+		uint16_t so = FAR_OFFS(src);
+		p[0] = FAR_PAGE(src);
+		p[1] = (uint8_t)so; p[2] = (uint8_t)(so >> 8);
+		p[3] = e[2] ? (uint8_t)(e[2] / 2 - 1) : 0;
+		p[4] = e[3];
+		p[5] = e[0]; p[6] = e[1];
+		p[7] = e[2];
 	}
-	tile_data = rs.phys + 4 + (uint32_t)tile_frames * 6;
+	tiles_phys = rs.phys;
 	return 1;
 }
 
-static void draw_map(void)
+// Разложить вид в дисплей-лист: уровни снизу вверх, ряды Y, внутри ряда X, внутри клетки —
+// пол, западная стена, северная стена, объект (порядок художника, Map.cpp:626-966)
+static void build_list(void)
 {
-	res_t r;
-	if (!loaded) return;
-	if (!res_find((uint16_t)(RES_BATMAP0 + cur_map), &r)) return;   // слот мог смениться
-	if (!load_tiles()) return;
-	cells = r.phys + 8 + (uint32_t)m_nt * 4;
+	dl_n = 0;
 	for (uint8_t z = 0; z <= level; z++)
 		for (uint8_t y = 0; y < m_sy; y++) {
 			int16_t ry = (int16_t)y * 8 - (int16_t)z * 24 + cam_y;
@@ -198,9 +237,22 @@ static void draw_map(void)
 				for (uint8_t k = 0; k < 4; k++) {
 					uint8_t t = p[k];
 					if (!t) continue;
-					blit_tile((uint8_t)(t - 1), px, py - (int16_t)tile_y[t - 1]);
+					dl_tile((uint8_t)(t - 1), px, py - (int16_t)tile_y[t - 1]);
 				}
 		}
+	dl_ok = 1;
+}
+
+static void draw_map(void)
+{
+	res_t r;
+	if (!loaded) return;
+	if (!res_find((uint16_t)(RES_BATMAP0 + cur_map), &r)) return;   // слот мог смениться
+	if (!load_tiles()) return;
+	if (r.phys != map_phys) { map_phys = r.phys; cells = r.phys + 8 + (uint32_t)m_nt * 4; dl_ok = 0; }
+	if (!dl_ok) build_list();
+	dl_run();
+	dma_wait();
 }
 
 // Микробенчмарк DMA (клавиша B, тест bat_bench.oxs): сколько стоит запуск BLT1 и какова
@@ -220,8 +272,8 @@ static void bench_setup(uint16_t so, uint8_t sp, uint8_t len, uint8_t num)
 // 512 запусков по одной строке 32 байта: почти чистые накладные расходы
 static void bench_small(void)
 {
-	uint8_t sp = FAR_PAGE(tile_data);
-	uint16_t so = FAR_OFFS(tile_data);
+	uint8_t sp = tile_tab[0];
+	uint16_t so = (uint16_t)tile_tab[1] | ((uint16_t)tile_tab[2] << 8);
 	for (uint16_t i = 0; i < BENCH_N; i++) bench_setup(so, sp, 15, 0);
 	dma_wait();
 }
@@ -229,8 +281,8 @@ static void bench_small(void)
 // 512 запусков по 32 строки (1024 байта каждый): 512 КБ переноса
 static void bench_big(void)
 {
-	uint8_t sp = FAR_PAGE(tile_data);
-	uint16_t so = FAR_OFFS(tile_data);
+	uint8_t sp = tile_tab[0];
+	uint16_t so = (uint16_t)tile_tab[1] | ((uint16_t)tile_tab[2] << 8);
 	for (uint16_t i = 0; i < BENCH_N; i++) bench_setup(so, sp, 15, 31);
 	dma_wait();
 }
@@ -238,8 +290,8 @@ static void bench_big(void)
 // 512 запусков по 8 строк (256 байт) — размер, близкий к настоящей части клетки
 static void bench_tile(void)
 {
-	uint8_t sp = FAR_PAGE(tile_data);
-	uint16_t so = FAR_OFFS(tile_data);
+	uint8_t sp = tile_tab[0];
+	uint16_t so = (uint16_t)tile_tab[1] | ((uint16_t)tile_tab[2] << 8);
 	for (uint16_t i = 0; i < BENCH_N; i++) bench_setup(so, sp, 15, 7);
 	dma_wait();
 }
