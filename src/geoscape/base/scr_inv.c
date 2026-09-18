@@ -19,6 +19,7 @@
 #include "game.h"
 #include "scrdef.h"
 #include "input.h"
+#include "far.h"
 
 #define SLOT_W    16
 #define SLOT_H    16
@@ -27,10 +28,13 @@
 #define INV_GROUND  0                // порядок записей invs: земля первой (inventories.rul)
 #define GROUND_COLS 12               // клеток «земли» в ряд (x 0..191 при прокрутке 0)
 
+static char t1[40];
+static uint16_t hover_item = NONE16;  // предмет под курсором (подпись внизу)
 static uint8_t sel_sol;              // боец: запись в state (soldier_nth по экипажу)
 static uint8_t crew_i;               // его номер в экипаже корабля
 static uint16_t carry;               // взятая запись инвентаря (INV_NONE — ничего)
 static uint8_t ground_x;             // прокрутка «земли»
+static int16_t carry_x, carry_y;     // где нарисован несомый предмет (перерисовка по движению)
 
 static const wdef_t w_inv[] = {
 	IMG(0, 0, 320, 200, RES_TAC01_SCR),
@@ -38,14 +42,27 @@ static const wdef_t w_inv[] = {
 	TXT(28, 6, 210, 17, EL_RAW + 0, DYN(0), BIG),
 	TXT(245, 24, 70, 9, EL_RAW + 1, DYN(1), 0),    // вес
 	TXT(128, 140, 160, 9, EL_RAW + 1, DYN(2), 0),  // предмет под курсором
+	TXT(245, 32, 50, 9, EL_RAW + 1, DYN(3), 0),    // меткость
+	TXT(245, 40, 50, 9, EL_RAW + 1, DYN(4), 0),    // реакции
+	TXT(245, 48, 50, 9, EL_RAW + 1, DYN(5), 0),    // пси-навык
+	TXT(245, 56, 50, 9, EL_RAW + 1, DYN(6), 0),    // пси-сила
 	HOT(237, 1, 35, 22, A_POP, 0, ESC),            // OK
 	HOT(273, 1, 23, 22, A_CUSTOM, 2, 0),           // предыдущий боец
 	HOT(297, 1, 23, 22, A_CUSTOM, 3, 0),           // следующий
+	HOT(288, 32, 32, 25, A_CUSTOM, 4, 0),          // вынуть обойму (unload)
+	HOT(289, 137, 32, 15, A_CUSTOM, 5, 0),         // следующая страница «земли»
 };
 
 static const scr_t tab[] = {
 	SCR(SCR_INVENTORY, UI_SCR_INVENTORY, RES_PAL_BATTLESCAPE, RES_TAC01_SCR, SF_RAWPAL, w_inv),
 };
+
+static uint16_t rec_name_items(uint16_t item)
+{
+	rtab_t t;
+	rtab_open(RES_RULE_ITEMS, &t);
+	return item < t.n ? rtab_word(&t, item, 0) : 0xFFFF;
+}
 
 // --- правила секций
 
@@ -249,6 +266,45 @@ static uint8_t hit_slot(int16_t px, int16_t py, uint8_t *cx, uint8_t *cy)
 	return 0xFF;
 }
 
+// Совместима ли обойма с оружием (items.compatibleAmmo)
+static uint8_t ammo_fits(uint16_t weapon, uint16_t ammo)
+{
+	rtab_t t;
+	rlist_t l;
+	uint16_t v[8];
+	rtab_open(RES_RULE_ITEMS, &t);
+	far_read(t.base + 8 + (uint32_t)weapon * t.size + offsetof(r_items_t, compatible_ammo), &l, sizeof l);
+	uint8_t n = l.n > 8 ? 8 : l.n;
+	if (!n) return 0;
+	rtab_tail(&t, l.off, v, n * 2);
+	for (uint8_t i = 0; i < n; i++) if (v[i] == ammo) return 1;
+	return 0;
+}
+
+// Патронов в обойме (clipSize; -1 — бесконечно)
+static uint16_t clip_rounds(uint16_t item)
+{
+	rtab_t t;
+	rtab_open(RES_RULE_ITEMS, &t);
+	int16_t c = (int16_t)rtab_word(&t, item, offsetof(r_items_t, clip_size));
+	return c < 0 ? 999 : (uint16_t)c;
+}
+
+// Вынуть обойму из оружия под курсором на «землю» (кнопка unload оригинала)
+static void unload_weapon(void)
+{
+	inv_t v;
+	for (uint16_t i = 0; i < ST->ninv; i++) {
+		inv_get(i, &v);
+		if (v.soldier != sel_sol || v.ammo == NONE16) continue;
+		ground_add((uint8_t)v.ammo);
+		v.ammo = NONE16;
+		v.rounds = 0;
+		inv_put(i, &v);
+		return;
+	}
+}
+
 // Клик: взять предмет или положить взятый
 static void click_at(int16_t px, int16_t py)
 {
@@ -282,6 +338,20 @@ static void click_at(int16_t px, int16_t py)
 		carry = INV_NONE;
 		return;
 	}
+	uint16_t under = item_at(slot, cx, cy);      // оружие под курсором — попробовать зарядить
+	if (under != INV_NONE && under != carry) {
+		inv_t wv;
+		inv_get(under, &wv);
+		if (wv.ammo == NONE16 && ammo_fits(wv.item, v.item)) {
+			wv.ammo = v.item;
+			wv.rounds = clip_rounds(v.item);
+			inv_put(under, &wv);
+			v.soldier = NONE8;                   // обойма ушла в оружие
+			inv_put(carry, &v);
+			carry = INV_NONE;
+			return;
+		}
+	}
 	uint16_t keep = carry;
 	carry = INV_NONE;                            // fits не должен считать взятый предмет занятым
 	inv_t t;
@@ -313,6 +383,20 @@ void inv_scr_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked
 		soldier_get(sel_sol, &so);
 		strcpy(buf, so.name);
 		break;
+	case 2:                                      // предмет под курсором
+		if (hover_item != NONE16) str_copy(rec_name_items(hover_item), buf, 40);
+		break;
+	case 3: case 4: case 5: case 6: {            // меткость, реакции, пси-навык и сила
+		soldier_get(sel_sol, &so);
+		uint16_t str_id = slot == 3 ? STR_ACCURACY_SHORT : slot == 4 ? STR_REACTIONS_SHORT
+			: slot == 5 ? STR_PSIONIC_SKILL_SHORT : STR_PSIONIC_STRENGTH_SHORT;
+		uint8_t v = slot == 3 ? so.cur.firing : slot == 4 ? so.cur.reactions
+			: slot == 5 ? so.cur.psi_skill : so.cur.psi_strength;
+		if (slot >= 5 && !so.cur.psi_skill) break;   // пси — только у обученных (как в оригинале)
+		fmt_num(t1, v, 0);
+		str_fmt(buf, str_get(str_id), t1, "");
+		break;
+	}
 	case 1: {                                    // вес: сумма weight предметов бойца
 		rtab_t t;
 		inv_t v;
@@ -370,11 +454,39 @@ uint8_t inv_scr_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		draw_grid();
 		draw_soldier();
 		draw_items();
+		if (carry != INV_NONE) {                 // несомый предмет — у курсора
+			inv_t v;
+			inv_get(carry, &v);
+			draw_item(v.item, cursor_x - SLOT_W, cursor_y - SLOT_H);
+		}
 		break;
+	case EVT_TICK: {                             // подпись предмета под курсором и несомый за ним
+		uint8_t cx, cy, slot = hit_slot(cursor_x, cursor_y, &cx, &cy);
+		uint16_t it = NONE16;
+		if (slot != 0xFF) {
+			r_invs_t r;
+			inv_section(slot, &r);
+			if (r.type == 2) { uint8_t g = ground_item(cx, 0); if (g != NONE8) it = g; }
+			else { uint16_t rec = item_at(slot, cx, cy); if (rec != INV_NONE) { inv_t v; inv_get(rec, &v); it = v.item; } }
+		}
+		if (it != hover_item) { hover_item = it; ui_dirty(2); }
+		if (carry != INV_NONE && (cursor_x != carry_x || cursor_y != carry_y)) {
+			carry_x = cursor_x;
+			carry_y = cursor_y;
+			ui_dirty(9);
+		}
+		break;
+	}
 	case EVT_BUTTON: {
 		if (arg == 1) {                          // клик по кукле, слотам или земле
 			click_at(ui_click_x, ui_click_y);
 			ui_dirty(1);
+			ui_dirty(9);
+			break;
+		}
+		if (arg == 4) { unload_weapon(); ui_dirty(9); break; }
+		if (arg == 5) {                          // следующая страница «земли»
+			ground_x = ground_x + GROUND_COLS < CARGO_ITEMS ? ground_x + GROUND_COLS : 0;
 			ui_dirty(9);
 			break;
 		}

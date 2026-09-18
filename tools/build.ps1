@@ -32,7 +32,7 @@ $banks = @(
     @{ n = 7; page = 0x36; files = @('geoscape\save', 'geoscape\newgame', 'geoscape\base\econ', 'kernel\bios') }   # bios — только для save.c
     @{ n = 8; page = 0x37; files = @('geoscape\gtime', 'geoscape\base\lab') }
     @{ n = 9; page = 0x38; files = @('geoscape\base\scr_lab') }
-    @{ n = 10; page = 0x39; files = @('geoscape\base\scr_craft', 'geoscape\base\scr_inv') }   # корабли базы: снаряжение и инвентарь бойца
+    @{ n = 10; page = 0x39; files = @('geoscape\base\scr_craft') }
     @{ n = 11; page = 0x3A; files = @('kernel\gfx', 'kernel\cursor', 'kernel\boot'); ram = 0xBF00 }   # графика, опрос ввода, запуск; с #BF00 — фон под всплывающими окнами (gfx.c)
     @{ n = 12; page = 0x3B; files = @('kernel\fat', 'kernel\sdres') }
     @{ n = 13; page = 0x3C; files = @('common\scr_ufop') }
@@ -49,6 +49,7 @@ $banks = @(
     @{ n = 24; page = 0x47; files = @('geoscape\earth\globe', 'geoscape\earth\globe_s', 'geoscape\earth\globe_tab', 'geoscape\earth\globe_sq'); tab = 0xBC00 }   # глобус (globe.md): globe_s.s — асм, globe_sq.s — таблица _GTAB с #BC00
     @{ n = 25; page = 0x48; files = @('geoscape\earth\globe_sh', 'geoscape\earth\globe_sh_s', 'geoscape\earth\globe_view', 'geoscape\earth\globe_sh_tab'); ram = 0xB800 }   # глобус, банк 25 — ассемблер: тень (globe_sh.s — кадр, globe_sh_s.s — блоки и строки, globe_sh_tab.s — таблицы), предрасчитанные виды (globe_view.s); с #B800 — рабочие таблицы тени
     @{ n = 26; page = 0x49; files = @('geoscape\earth\globe_det', 'geoscape\earth\globe_det_s'); ram = 0xA800 }   # детали глобуса: линии, подписи, города (globe_det.c; точки и отрезки — globe_det_s.s); с #A800 — рабочая память
+    @{ n = 27; page = 0x4A; files = @('geoscape\base\scr_inv') }   # инвентарь бойца (экипировка перед вылетом)
 )
 
 # Пакеты данных игры: выход конвертера OxzConv (tmp\sd\OXZ\<игра>), вшиваются в SPG.

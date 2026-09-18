@@ -49,5 +49,26 @@ pokew _cursor_y 70
 click L
 wait 8
 shot tmp/shots/inv/02_hand.png
+# подпись предмета под курсором
+pokew _cursor_x 24
+pokew _cursor_y 70
+wait 8
+shot tmp/shots/inv/03_label.png
+# взять обойму с земли и вставить в оружие в руке (зарядка)
+pokew _cursor_x 40
+pokew _cursor_y 160
+click L
+wait 6
+pokew _cursor_x 16
+pokew _cursor_y 70
+click L
+wait 8
+shot tmp/shots/inv/04_loaded.png
+# вынуть обойму (кнопка unload)
+pokew _cursor_x 300
+pokew _cursor_y 44
+click L
+wait 8
+shot tmp/shots/inv/05_unloaded.png
 echo inventory scenario OK
 exit 0
