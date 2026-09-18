@@ -846,11 +846,16 @@ static uint8_t edit_idx(void)
 	return 0xFF;
 }
 
+// Поле ввода перерисовывается по 10 раз в секунду (мигает каретка), поэтому — через рабочую
+// область: раньше на экране мелькал стёртый фон, и «мигал» весь текст, а не одна каретка
 static void edit_redraw(uint8_t i)
 {
 	const wdef_t *w = &W[i];
+	uint8_t st = stage_begin(w->x, w->y, w->w, w->h + 1);
 	restore(i, w->x, w->y, w->w, w->h + 1);
+	wcolors(w);                 // restore ставит цвета фонового виджета
 	draw_widget(i);
+	if (st) stage_end();
 }
 
 // Клавиша в поле ввода (TextEdit::keyboardPress): стрелки — каретка (вверх/вниз —
