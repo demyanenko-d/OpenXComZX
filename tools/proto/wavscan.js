@@ -118,3 +118,33 @@ function scan(file) {
 }
 
 for (const f of process.argv.slice(2)) scan(f);
+
+// Темп по кускам записи: автокорреляция огибающей. Если период бита растёт от начала к
+// концу — музыка замедляется (жалоба «темп падает и падает»).
+function tempo(file) {
+	const { fq, s } = readWav(file);
+	const hop = Math.floor(fq / 100);                  // огибающая с шагом 10 мс
+	const env = [];
+	for (let p = 0; p + hop <= s.length; p += hop) {
+		let e = 0;
+		for (let i = 0; i < hop; i++) e += s[p + i] * s[p + i];
+		env.push(Math.sqrt(e / hop));
+	}
+	const part = Math.floor(env.length / 4);
+	const out = [];
+	for (let k = 0; k < 4; k++) {
+		const a = env.slice(k * part, (k + 1) * part);
+		const mean = a.reduce((x, y) => x + y, 0) / a.length;
+		const d = a.map(v => v - mean);
+		let best = 0, bestLag = 0;
+		for (let lag = 20; lag < Math.min(200, a.length / 2); lag++) {   // 0.2 .. 2 с
+			let c = 0;
+			for (let i = 0; i + lag < d.length; i++) c += d[i] * d[i + lag];
+			if (c > best) { best = c; bestLag = lag; }
+		}
+		out.push(`${(k * part / 100).toFixed(0)}-${((k + 1) * part / 100).toFixed(0)} с: ${(bestLag * 10)} мс`);
+	}
+	console.log(`  период повторов по четвертям: ${out.join(' | ')}`);
+}
+
+if (process.env.OXZ_TEMPO) for (const f of process.argv.slice(2)) tempo(f);

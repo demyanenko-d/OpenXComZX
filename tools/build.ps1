@@ -10,11 +10,13 @@ $out  = Join-Path $root 'tmp\build'
 New-Item -ItemType Directory -Force $out | Out-Null
 
 $KERNEL_PAGE = '0x04'; $DATA_PAGE = '0x05'
-$CODE_LOC = '0x0100'; $CODE_END = '0x3800'   # общий код в Win0
+$CODE_LOC = '0x0100'; $CODE_END = '0x2000'   # общий код в Win0
 $DATA_LOC = '0x4000'; $DATA_END = '0x7C00'   # данные в Win1
 $DMABUF_LOC = '0x7C00'; $DMABUF_END = '0x7FE0' # буферы DMA (чётная база); #7FE0-#7FF0 — заглушка входа
-$ENTRY = '0x7FE0'; $STACK_TOP = '0x3E00'
-$MUSIC_LOC = '0x2800'; $MUSIC_END = '0x3810'   # кольцо музыки и переменные плеера в Win0 (20 §4)
+$ENTRY = '0x7FE0'; $STACK_TOP = '0x3E00'   # ниже векторов IM2 (#3EFB); вниз стек уходит до ~#3600 (геоскейп)
+# Кольцо музыки и переменные плеера в Win0 (20 §4). Ниже #3010 — стек ядра, он в геоскейпе
+# проседает больше чем на килобайт и раньше затирал переменные плеера (22 §10.9).
+$MUSIC_LOC = '0x2000'; $MUSIC_END = '0x3010'
 $RES_PAGE = 0x50; $RES_LAST = 0xAF          # пакеты данных (memmap.h RES_PAGE..RES_LAST)
 
 # Общий код (Win0): ассемблер ядра и C-модули без банка.

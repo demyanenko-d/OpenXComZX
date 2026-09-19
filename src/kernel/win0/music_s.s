@@ -19,6 +19,7 @@
 	.globl	_mus_pushed
 	.globl	_mus_state
 	.globl	_mus_under
+	.globl	_mus_frames
 	.globl	_mus_out
 	.globl	mus_isr
 	.globl	_mus_out_opl3
@@ -84,6 +85,9 @@ mi_store:
 mi_tick:
 	ld	hl, #_mus_played
 	inc	(hl)
+	ld	hl, (_mus_frames)	; кадров музыки с начала трека: сверяется с _frames,
+	inc	hl			;   чтобы видеть потерянные прерывания (темп «плывёт»)
+	ld	(_mus_frames), hl
 	ret
 
 ;; Косвенный вызов процедуры вывода: режим звука выбирается в настройках (11_sound.md),
@@ -169,3 +173,4 @@ _mus_pushed::	.ds	1		; кадров положено, по модулю 256 — 
 _mus_state::	.ds	1		; 0 выкл, 1 играет, 2 пауза
 _mus_out::	.ds	2		; адрес процедуры вывода (режим звука)
 _mus_under::	.ds	1		; недоборы (диагностика, насыщается)
+_mus_frames::	.ds	2		; сыграно кадров музыки (диагностика темпа)
