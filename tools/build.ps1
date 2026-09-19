@@ -14,10 +14,11 @@ $CODE_LOC = '0x0100'; $CODE_END = '0x3800'   # общий код в Win0
 $DATA_LOC = '0x4000'; $DATA_END = '0x7C00'   # данные в Win1
 $DMABUF_LOC = '0x7C00'; $DMABUF_END = '0x7FE0' # буферы DMA (чётная база); #7FE0-#7FF0 — заглушка входа
 $ENTRY = '0x7FE0'; $STACK_TOP = '0x3E00'
+$MUSIC_LOC = '0x2800'; $MUSIC_END = '0x3810'   # кольцо музыки и переменные плеера в Win0 (20 §4)
 $RES_PAGE = 0x50; $RES_LAST = 0xAF          # пакеты данных (memmap.h RES_PAGE..RES_LAST)
 
 # Общий код (Win0): ассемблер ядра и C-модули без банка.
-$asm_common = @('kernel\win0\crt0', 'kernel\win0\bank', 'kernel\dmabuf', 'kernel\win0\glyph', 'kernel\win0\mul32', 'kernel\sd', 'kernel\win0\pages', 'kernel\win0\far', 'kernel\win0\res', 'kernel\win0\dbg', 'kernel\win0\input', 'kernel\win0\scrutil', 'kernel\win0\text')   # crt0 — первым: порядок областей; kernel\win0 — код окна 0; dmabuf (буферы DMA в Win1) и sd (код в банке 12) — ассемблер ядра вне Win0
+$asm_common = @('kernel\win0\crt0', 'kernel\win0\bank', 'kernel\dmabuf', 'kernel\win0\glyph', 'kernel\win0\mul32', 'kernel\sd', 'kernel\win0\pages', 'kernel\win0\far', 'kernel\win0\res', 'kernel\win0\dbg', 'kernel\win0\input', 'kernel\win0\music_s', 'kernel\win0\scrutil', 'kernel\win0\text')   # crt0 — первым: порядок областей; kernel\win0 — код окна 0; dmabuf (буферы DMA в Win1) и sd (код в банке 12) — ассемблер ядра вне Win0
 $c_common   = @()   # Win0 — только ассемблер (14_todo.md §1.3)
 
 # Банки кода (Win2): номер -> физическая страница и файлы C.
@@ -34,7 +35,7 @@ $banks = @(
     @{ n = 9; page = 0x38; files = @('geoscape\base\scr_lab') }
     @{ n = 10; page = 0x39; files = @('geoscape\base\scr_craft') }
     @{ n = 11; page = 0x3A; files = @('kernel\gfx', 'kernel\cursor', 'kernel\boot'); ram = 0xBF00 }   # графика, опрос ввода, запуск; с #BF00 — фон под всплывающими окнами (gfx.c)
-    @{ n = 12; page = 0x3B; files = @('kernel\fat', 'kernel\sdres') }
+    @{ n = 12; page = 0x3B; files = @('kernel\fat', 'kernel\sdres', 'kernel\music'); ram = 0xBF00 }   # музыка: состояние плеера с #BF00
     @{ n = 13; page = 0x3C; files = @('common\scr_ufop') }
     @{ n = 14; page = 0x3E; files = @('test\bank_a') }
     @{ n = 15; page = 0x3F; files = @('test\bank_b') }
@@ -190,12 +191,12 @@ Invoke-Tool node (@((Join-Path $root 'tools\checkasm.js')) + $asmFiles)
 
 $ihx = Join-Path $out 'oxz.ihx'
 Invoke-Tool sdcc (@('-mz80', '--sdcccall', '1', '--no-std-crt0', '--debug',
-    '--code-loc', $CODE_LOC, '--data-loc', $DATA_LOC, "-Wl-b_DMABUF=$DMABUF_LOC") + $bankLink + @('-o', $ihx) + $rels)
+    '--code-loc', $CODE_LOC, '--data-loc', $DATA_LOC, "-Wl-b_DMABUF=$DMABUF_LOC", "-Wl-b_MUSIC=$MUSIC_LOC") + $bankLink + @('-o', $ihx) + $rels)
 
 Invoke-Tool node (@((Join-Path $root 'tools\checkmap.js'), (Join-Path $out 'oxz.map'),
     "_CODE,_HOME,_INITIALIZER,_GSINIT,_GSFINAL=$CODE_LOC-$CODE_END",
     "_DATA,_INITIALIZED,_BSEG,_BSS,_HEAP,_KDATA=$DATA_LOC-$DATA_END",
-    "_DMABUF=$DMABUF_LOC-$DMABUF_END") + $bankCheck)
+    "_DMABUF=$DMABUF_LOC-$DMABUF_END", "_MUSIC=$MUSIC_LOC-$MUSIC_END") + $bankCheck)
 
 $winmap = @('--win', "0:$KERNEL_PAGE", '--win', "1:$DATA_PAGE") + $bankMap
 Invoke-Tool node (@((Join-Path $root 'tools\mkspg.js'), $ihx, (Join-Path $out 'oxz.spg'),

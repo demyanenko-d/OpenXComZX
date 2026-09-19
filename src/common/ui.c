@@ -15,6 +15,7 @@
 #include "ui_ids.h"
 #include "gfx.h"
 #include "text.h"
+#include "music.h"
 #include "input.h"
 #include "ui.h"
 #include "screens.h"
@@ -1007,6 +1008,7 @@ void ui_run(uint8_t first_screen) __banked
 	mark();
 	for (;;) {
 		wait_frames(1);
+		mus_pump();                  // такт музыки: подкачка с карты и долив кольца
 		t_start = frames;
 		if (ui_request) {
 			uint8_t id = ui_request;

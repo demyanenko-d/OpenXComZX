@@ -16,6 +16,8 @@
 	.globl	b_boot
 	.globl	___sdcc_bcall_ehl
 	.globl	input_isr
+	.globl	mus_isr
+	.globl	_mus_state
 	.globl	_frames
 	.globl	_input_on
 
@@ -74,6 +76,7 @@ STACK_TOP	= 0x3E00
 	.area	_HEAP
 	.area	_KDATA
 	.area	_DMABUF			; база -Wl-b_DMABUF=0x7C00 (чётная), dmabuf.s
+	.area	_MUSIC			; база -Wl-b_MUSIC=0x2800 (Win0), music_s.s
 
 ;; ---------------------------------------------------------------------
 ;; Ядро (общий код, Win0)
@@ -205,6 +208,9 @@ frame_work:
 	ld	a, (_input_on)
 	or	a
 	call	nz, input_isr
+	ld	a, (_mus_state)
+	dec	a
+	call	z, mus_isr		; 1 — играет: отдать чипу кадр музыки
 	ld	a, (_split_on)
 	or	a
 	jr	z, frame_done

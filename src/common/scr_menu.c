@@ -11,6 +11,7 @@
 #include "state.h"
 #include "game.h"
 #include "scrdef.h"
+#include "music.h"
 
 static uint8_t ng_diff, ng_iron;
 
@@ -382,6 +383,7 @@ uint8_t menu_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 {
 	switch (id) {
 	case SCR_MAIN_MENU:
+		if (ev == EVT_OPEN) mus_play(mus_kind(MK_MENU));   // GMSTORY / GMWAITLO (18 §2)
 		if (ev == EVT_BUTTON && arg == 1) {       // выход: в эмуляторе — код 0
 			OXZ_DBG_EXIT = 0;
 			for (;;) __asm__("halt");
