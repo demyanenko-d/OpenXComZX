@@ -148,13 +148,16 @@ for (const game of Object.keys(GAMES)) {
 
 // --- 2. точка цикла: расхождение регистров
 console.log('--- 2. Точка цикла: кадр повтора и рассинхрон регистров (что надо дописать при прыжке)\n');
-console.log('игра трек        кадров  loop_off  loopКадр  регистров_разных  из_них_важных(A0/B0/C0/4x)  байт_ресинка');
+console.log('Последний кадр потока — это уже первый кадр повтора (RenderTrack прерывается ПОСЛЕ Tick,');
+console.log('в котором сработал повтор), поэтому он в расчёте не учитывается: столбец «в_посл_кадре».\n');
+console.log('игра трек        кадров  loop_off  loopКадр  в_посл_кадре  регистров_разных  из_них_важных(A0/B0/C0/4x)  байт_ресинка');
 const resyncStats = [];
 for (const game of Object.keys(all)) {
   for (const t of all[game]) {
     const st = [new Map(), new Map()];
     let atLoop = null;
-    for (let i = 0; i < t.frames.length; i++) {
+    const lastW = t.frames[t.frames.length - 1].w.length;
+    for (let i = 0; i < t.frames.length - 1; i++) {
       if (i === t.loopFrame) atLoop = [new Map(st[0]), new Map(st[1])];
       for (const [b, r, v] of t.frames[i].w) st[b].set(r, v);
     }
@@ -170,7 +173,7 @@ for (const game of Object.keys(all)) {
     }
     resyncStats.push({ game, name: t.name, diff, hot, bytes: diff * 2 + 2 });
     console.log(`${game.padEnd(5)}${t.name.padEnd(10)}${String(t.frames.length).padStart(8)}${String(t.loop).padStart(10)}` +
-      `${String(t.loopFrame).padStart(10)}${String(diff).padStart(18)}${String(hot).padStart(28)}${String(diff * 2 + 2).padStart(14)}`);
+      `${String(t.loopFrame).padStart(10)}${String(lastW).padStart(14)}${String(diff).padStart(18)}${String(hot).padStart(28)}${String(diff * 2 + 2).padStart(14)}`);
   }
 }
 
