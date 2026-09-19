@@ -347,7 +347,11 @@ static void build_range(int16_t lo, int16_t hi)
 		int16_t yhi = (BUF_H - 1 - 8 * dlo - b) >> 4;
 		if (ylo < 0) ylo = 0;
 		if (yhi >= m_sy) yhi = m_sy - 1;
-		for (int16_t y = ylo; y <= yhi; y++) {
+		// Адрес ряда ведётся сложением: 32-битное умножение на каждый ряд стоило дороже,
+		// чем всё остальное в этом цикле вместе взятое.
+		uint16_t row_bytes = (uint16_t)m_sx * 4;
+		far_t rbase = cells + (uint32_t)(((uint32_t)z * m_sy + ylo) * m_sx) * 4;
+		for (int16_t y = ylo; y <= yhi; y++, rbase += row_bytes) {
 			int16_t ry = (int16_t)y * 8 - (int16_t)z * 24 + base_y + PAD_Y;
 			int16_t rx = -(int16_t)y * 16;   // мировая X клетки x этого ряда: rx + x*16
 			// Отрезок ряда: из lo-32 < wx <= hi и -40 < py < BUF_H получаем границы x
@@ -358,7 +362,7 @@ static void build_range(int16_t lo, int16_t hi)
 			if (x0 < 0) x0 = 0;
 			if (x1 >= m_sx) x1 = m_sx - 1;
 			if (x0 > x1) continue;
-			far_read(cells + (((uint32_t)z * m_sy + y) * m_sx + x0) * 4, row, (uint16_t)(x1 - x0 + 1) * 4);
+			far_read(rbase + (uint16_t)x0 * 4, row, (uint16_t)(x1 - x0 + 1) * 4);
 			uint8_t old = pg_map3(dl_page);   // дальше пишем команды в страницу списка
 			const uint8_t *p = row;
 			int16_t px = rx + x0 * 16, py = ry + x0 * 8;
