@@ -34,6 +34,7 @@ static uint16_t tiles_res;           // SPRSET тайлов этой карты
 static uint8_t level;                // этаж камеры
 static int16_t cam_x, cam_y;         // начало координат карты на экране
 static int16_t base_x, base_y;       // для какого положения камеры построен буфер
+static int16_t vx_lo, vx_hi;         // мировой диапазон X, который сейчас нарисован в буфере
 static uint8_t __at(0xBC00) tile_y[256];   // вертикальное смещение тайла (MCD.P_Level) — память банка
 static far_t cells;                  // начало клеток карты
 static far_t map_phys;               // где лежит ресурс карты (слот SD мог смениться)
@@ -75,8 +76,9 @@ static uint8_t dl_ok;                // список отвечает текущ
 // GXOffs/GYOffs, без единого блита.
 #define BUF_W   512
 #define BUF_H   256
-#define PAD_X   ((BUF_W - SCREEN_W) / 2)     // 96
+#define PAD_X   80                   // запас по X: 320 + 2*80 = 480 < 512, кольцо не перекрывается
 #define PAD_Y   ((BUF_H - VIEW_H) / 2)       // 56
+#define BIAS    1024                 // мировая X лежит в ±640; сдвиг делает её положительной
 extern uint8_t split_gx, split_gy, split_on, split_phase;
 extern uint16_t map_gx, map_gy, split_line, vblank_line;
 
@@ -174,13 +176,13 @@ static void dl_tile(uint8_t t, int16_t x, int16_t y)
 	const uint8_t *e = tile_tab + (uint16_t)t * TE_SIZE;
 	int16_t h = e[4];
 	if (!e[7]) return;
-	int16_t bx = x + e[5], by = y + e[6];
+	int16_t bx = (int16_t)((uint16_t)(x + e[5] + BIAS) & (BUF_W - 1)), by = y + e[6];
 	uint8_t sp = e[0];
 	uint16_t so = (uint16_t)e[1] | ((uint16_t)e[2] << 8);
 	uint8_t len = e[3];
 	int16_t w = e[7];
 	if (bx & 1) return;                  // DMA адресует словами; cam_x и dx кадра всегда чётные
-	if (bx <= -TILE_W || bx >= BUF_W || by <= -TILE_H || by >= BUF_H) return;
+	if (by <= -TILE_H || by >= BUF_H) return;
 	// Быстрый путь: кадр целиком внутри буфера — обрезать нечего, одна команда на кадр
 	if (by >= 0 && by + h <= BUF_H && bx >= 0 && bx + w <= BUF_W) {
 		uint8_t *q = dl_put();
@@ -199,22 +201,36 @@ static void dl_tile(uint8_t t, int16_t x, int16_t y)
 	}
 	if (by + h > BUF_H) h = BUF_H - by;
 	if (h <= 0) return;
-	// Край буфера: строки становятся короче шага источника, поэтому команда на строку
-	if (bx < 0) { so -= bx; w += bx; bx = 0; }
-	if (bx + w > BUF_W) w = BUF_W - bx;
-	w &= ~1;
-	if (w <= 0) return;
-	len = (uint8_t)(w / 2 - 1);
-	while (so >= 0x4000) { so -= 0x4000; sp++; }
+	// Кадр лёг на стык кольца: левая часть идёт в конец строки буфера, правая — в начало.
+	// Строки при этом короче шага источника, поэтому команда на строку (таких кадров мало —
+	// только те, что попали на стык).
 	uint16_t step = e[7];
+	uint16_t w1 = (uint16_t)(BUF_W - bx) & ~1;       // сколько влезает до конца строки
+	uint16_t w2 = ((uint16_t)w - w1) & ~1;           // остаток — в начало строки
+	while (so >= 0x4000) { so -= 0x4000; sp++; }
 	while (h > 0) {
-		uint8_t *d = dl_put();
-		if (!d) return;
-		uint16_t offs = row_ofs[by] + (uint16_t)bx;
-		d[0] = (uint8_t)so; d[1] = (uint8_t)(so >> 8); d[2] = sp;
-		d[3] = (uint8_t)offs; d[4] = (uint8_t)(offs >> 8); d[5] = row_page[by];
-		d[6] = len;
-		d[7] = 0;
+		uint8_t *d;
+		if (w1) {
+			d = dl_put();
+			if (!d) return;
+			uint16_t offs = row_ofs[by] + (uint16_t)bx;
+			d[0] = (uint8_t)so; d[1] = (uint8_t)(so >> 8); d[2] = sp;
+			d[3] = (uint8_t)offs; d[4] = (uint8_t)(offs >> 8); d[5] = row_page[by];
+			d[6] = (uint8_t)(w1 / 2 - 1);
+			d[7] = 0;
+		}
+		if (w2) {
+			uint16_t so2 = so + w1;
+			uint8_t sp2 = sp;
+			if (so2 >= 0x4000) { so2 -= 0x4000; sp2++; }
+			d = dl_put();
+			if (!d) return;
+			uint16_t offs = row_ofs[by];
+			d[0] = (uint8_t)so2; d[1] = (uint8_t)(so2 >> 8); d[2] = sp2;
+			d[3] = (uint8_t)offs; d[4] = (uint8_t)(offs >> 8); d[5] = row_page[by];
+			d[6] = (uint8_t)(w2 / 2 - 1);
+			d[7] = 0;
+		}
 		so += step;
 		if (so >= 0x4000) { so -= 0x4000; sp++; }
 		by++;
@@ -243,9 +259,9 @@ static void clamp_cam(void)
 	if (cam_y < lo) cam_y = lo;
 	if (cam_y > hi) cam_y = hi;
 	cam_x &= ~1;                         // блит DMA адресует словами
-	// вышли за запас буфера — вид придётся построить заново
-	if (cam_x - base_x > PAD_X || base_x - cam_x > PAD_X ||
-	    cam_y - base_y > PAD_Y || base_y - cam_y > PAD_Y) dl_ok = 0;
+	// по горизонтали буфер кольцевой (дорисовывается полосами), пересборка нужна только
+	// при уходе по вертикали за запас
+	if (cam_y - base_y > PAD_Y || base_y - cam_y > PAD_Y) dl_ok = 0;
 }
 
 // Камера в центр карты: середина поля попадает в середину окна
@@ -314,18 +330,20 @@ static uint8_t load_tiles(void)
 
 // Разложить вид в дисплей-лист: уровни снизу вверх, ряды Y, внутри ряда X, внутри клетки —
 // пол, западная стена, северная стена, объект (порядок художника, Map.cpp:626-966)
-static void build_list(void)
+// Разложить в список клетки, чья мировая экранная координата X попадает в [lo, hi]. Мировая X
+// клетки — (x - y) * 16, от камеры не зависит; в буфере ей отвечает колонка (X + BIAS) & 511,
+// то есть буфер по горизонтали кольцевой и при движении камеры ничего не переезжает — надо лишь
+// дорисовать въехавшую полосу. Полоса берётся с запасом в ширину спрайта: клетка рисуется
+// целиком, поэтому в неё должны попасть и соседи, чьи спрайты в неё заезжают.
+static void build_range(int16_t lo, int16_t hi)
 {
 	dl_n = 0;
-	base_x = cam_x;                      // вид построен для этого положения камеры
-	base_y = cam_y;
 	for (uint8_t z = 0; z <= level; z++)
 		for (uint8_t y = 0; y < m_sy; y++) {
-			int16_t ry = (int16_t)y * 8 - (int16_t)z * 24 + cam_y + PAD_Y;
-			int16_t rx = cam_x + PAD_X - (int16_t)y * 16;
-			// Видимый отрезок ряда: клетка x даёт px = rx + x*16, py = ry + x*8; из
-			// -32 < px < BUF_W и -40 < py < BUF_H получаем границы x (перебирать все незачем).
-			int16_t x0 = (-TILE_W + 1 - rx + 15) >> 4, x1 = (BUF_W - 1 - rx) >> 4;
+			int16_t ry = (int16_t)y * 8 - (int16_t)z * 24 + base_y + PAD_Y;
+			int16_t rx = -(int16_t)y * 16;   // мировая X клетки x этого ряда: rx + x*16
+			// Отрезок ряда: из lo-32 < wx <= hi и -40 < py < BUF_H получаем границы x
+			int16_t x0 = (lo - TILE_W + 1 - rx + 15) >> 4, x1 = (hi - rx) >> 4;
 			int16_t t0 = (-TILE_H + 1 - ry + 7) >> 3, t1 = (BUF_H - 1 - ry) >> 3;
 			if (t0 > x0) x0 = t0;
 			if (t1 < x1) x1 = t1;
@@ -340,10 +358,17 @@ static void build_list(void)
 				for (uint8_t k = 0; k < 4; k++) {
 					uint8_t t = p[k];
 					if (!t) continue;
-					dl_tile((uint8_t)(t - 1), px, py - (int16_t)tile_y[t - 1]);
+					dl_tile((uint8_t)(t - 1), px, py - (int16_t)tile_y[t - 1]);   // px — мировая X
 				}
 			pg_map3(old);
 		}
+}
+
+static void build_list(void)
+{
+	base_x = cam_x;                      // вид построен для этого положения камеры
+	base_y = cam_y;
+	build_range(-cam_x - PAD_X, -cam_x + SCREEN_W - 1 + PAD_X);
 	dl_ok = 1;
 }
 
@@ -352,8 +377,47 @@ static void build_list(void)
 // Камера внутри буфера: показать нужное место одной парой регистров
 static void show_cam(void)
 {
-	map_gx = (uint16_t)(PAD_X - (cam_x - base_x)) & 511;
+	map_gx = (uint16_t)(BIAS - cam_x) & (BUF_W - 1);
 	map_gy = (uint16_t)(BUF_Y + PAD_Y - (cam_y - base_y) - SPLIT_LEAD) & 511;
+}
+
+// Очистить колонки кольца, отвечающие мировому диапазону [lo, hi] (полоса на всю высоту буфера).
+// На завороте кольца получается два куска.
+static void fill_cols(int16_t lo, int16_t hi)
+{
+	uint16_t c0 = (uint16_t)(lo + BIAS) & (BUF_W - 1);
+	uint16_t n = (uint16_t)(hi - lo + 1);
+	if (n > BUF_W) n = BUF_W;
+	while (n) {
+		uint16_t part = BUF_W - c0;      // до конца строки буфера
+		if (part > n) part = n;
+		uint16_t w = (part + 1) & ~1;
+		far_t base = FAR(row_page[0], row_ofs[0] + c0);
+		uint16_t zero = 0;
+		far_write(base, &zero, 2);
+		dma_wait();
+		TS_DMASAL = (uint8_t)FAR_OFFS(base); TS_DMASAH = (uint8_t)(FAR_OFFS(base) >> 8);
+		TS_DMASAX = FAR_PAGE(base);
+		TS_DMADAL = (uint8_t)FAR_OFFS(base); TS_DMADAH = (uint8_t)(FAR_OFFS(base) >> 8);
+		TS_DMADAX = FAR_PAGE(base);
+		TS_DMALEN = (uint8_t)(w / 2 - 1);
+		TS_DMANUM = BUF_H - 1;
+		TS_DMACTRL = DMA_FILL | DMA_D_ALGN | DMA_ASZ;
+		dma_wait();
+		n -= part;
+		c0 = 0;
+	}
+}
+
+// Дорисовать полосу мирового диапазона [lo, hi]: очистить её и перерисовать все клетки, чьи
+// спрайты её задевают (на TILE_W шире с каждой стороны — соседи заезжают в полосу; поверх уже
+// нарисованного они лягут теми же пикселями, поэтому шов не портится).
+static void draw_strip(int16_t lo, int16_t hi)
+{
+	fill_cols(lo, hi);
+	build_range(lo - TILE_W, hi + TILE_W);
+	dl_run();
+	dma_wait();
 }
 
 static void draw_map(void)
@@ -363,11 +427,25 @@ static void draw_map(void)
 	if (!res_find((uint16_t)(RES_BATMAP0 + cur_map), &r)) return;   // слот мог смениться
 	if (!load_tiles()) return;
 	if (r.phys != map_phys) { map_phys = r.phys; cells = r.phys + 8 + (uint32_t)m_nt * 4; dl_ok = 0; }
-	if (dl_ok) { show_cam(); return; }   // вид уже в буфере — только сдвинуть окно
+	if (dl_ok) {
+		// Вид уже в буфере: если камера ушла по горизонтали, дорисовать въехавшую полосу —
+		// буфер кольцевой, поэтому переезжать ничему не нужно.
+		int16_t lo = -cam_x - TILE_W, hi = -cam_x + SCREEN_W - 1;
+		if (lo < vx_lo) { draw_strip(lo, vx_lo - 1); vx_lo = lo; }
+		if (hi > vx_hi) { draw_strip(vx_hi + 1, hi); vx_hi = hi; }
+		if (vx_hi - vx_lo > BUF_W - TILE_W) {   // в кольцо больше не влезает — забыть дальний край
+			if (hi > vx_hi - 8) vx_lo = vx_hi - (BUF_W - TILE_W);
+			else vx_hi = vx_lo + (BUF_W - TILE_W);
+		}
+		show_cam();
+		return;
+	}
 	build_list();
 	fill_buf();
 	dl_run();
 	dma_wait();
+	vx_lo = -cam_x - PAD_X;              // буфер покрывает окно плюс запас с обеих сторон
+	vx_hi = -cam_x + SCREEN_W - 1 + PAD_X;
 	show_cam();
 }
 
