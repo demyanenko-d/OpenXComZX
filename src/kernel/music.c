@@ -87,7 +87,9 @@ static void mus_silence(void)
 		return;
 	}
 	for (uint8_t chip = 0; chip < 2; chip++) {
-		AY_ADDR = s == 2 ? 0xF8 + chip : 0xFF - chip;   // выбор чипа (для FM ещё и «звук включён»)
+		// Байт выбора: у FM — чип и «звук включён» (#F8/#F9), у AY — чип 0 и FM выключен (#FE),
+		// иначе смещение молчащей FM-части занимает шкалу микшера (22 §10.13).
+		AY_ADDR = s == 2 ? 0xF8 + chip : 0xFE;
 		if (s == 2) {
 			for (uint8_t i = 0; i < 3; i++) { AY_ADDR = 0x28; AY_DATA = i; }
 		} else {
