@@ -58,6 +58,8 @@ namespace OxzConv
 		public class VoiceFrame
 		{
 			public int[] Freq = new int[12], Vol = new int[12], Patch = new int[12], Trig = new int[12];
+			public bool[] Key = new bool[12];      // нота ещё держится (иначе голос в затухании)
+			public bool[] Chorus = new bool[12];   // голос — расстроенный дубль (добавка OpenXcom)
 		}
 		class Ins { public int Sample, Prev, Volume, Pitch, Delay, Addr = -1, Start = -1, Ret = -1; }
 
@@ -71,6 +73,11 @@ namespace OxzConv
 			int vol = 127, tempo = 120, tempoRun = 60, tempoInc = 70, samples;
 			public bool Playing, Looped;
 			readonly int[] trig = new int[12];               // взятий ноты на голосе
+			// Хорус (расстроенный дубль голоса) — добавка OpenXcom, а не оригинала (09 §7).
+			// В потоке OPL3 он остаётся, но сведению на AY и FM только мешает: два голоса в
+			// унисон с расстройкой в 1 Гц съедают каналы и дают биения (22 §10.6).
+			readonly bool[] chorusCh = new bool[12];
+			bool inChorus;
 			public readonly List<byte[]> Patches = new List<byte[]>();   // тембры трека по 24 байта
 
 			public Player(byte[] data, Action<int, int> reg) { d = data; this.reg = reg; }
@@ -139,6 +146,7 @@ namespace OxzConv
 				var cc = ch[c]; int op1 = Ops1[c];
 				cc.Volume = volume; cc.Note = note; cc.Instr = instr;
 				trig[c]++;
+				chorusCh[c] = inChorus;
 				if (!same)
 				{
 					reg(0x20 + op1, D(s)); reg(0x23 + op1, D(s + 1));
@@ -198,7 +206,9 @@ namespace OxzConv
 									{
 										ins[ci].Sample = I.Sample;
 										ins[ci].Pitch = I.Pitch - 1;
+										inChorus = true;
 										PlayNote(a1, v, ci);
+										inChorus = false;
 									}
 									PlayNote(a1, v, i);
 								}
@@ -325,12 +335,15 @@ namespace OxzConv
 				{
 					var c = ch[i];
 					v.Trig[i] = trig[i];
-					if (c.Note == 0) { v.Patch[i] = -1; continue; }
+					v.Patch[i] = c.Sample == 0xFF ? -1 : c.Sample;
+					v.Key[i] = c.Note != 0;
+					v.Chorus[i] = chorusCh[i];
+					// Частоту отдаём и после снятия ноты: на OPL она ещё доигрывает затухание
+					// (регистры не меняются, гаснет огибающая), и сведению это тоже нужно.
 					int fnum = c.Freq | ((c.HiFreq & 3) << 8), block = (c.HiFreq >> 2) & 7;
 					// OPL: f = fnum * 49716 / 2^(20 - block)
 					v.Freq[i] = (int)((long)fnum * 4971600 >> (20 - block));
-					v.Vol[i] = c.Volume;
-					v.Patch[i] = c.Sample == 0xFF ? -1 : c.Sample;
+					v.Vol[i] = c.Note != 0 ? c.Volume : 0;
 				}
 				return v;
 			}

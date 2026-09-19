@@ -313,7 +313,7 @@ namespace OxzConv
 				int vol = (int)(127 * Y.Num(Y.Get(m, "normalization"), 0.76));
 				if (vol > 255) vol = 255;
 				pak.Add(0x0300 + types[type], ResType.Music, ss.data, rr.Frames.Count, ss.maxWrites, (vol << 8) | (rr.Loop ? 1 : 0));
-				var ay = MusicAy.Encode(rr.Voices, rr.Loop);
+				var ay = MusicAy.Encode(rr.Voices, rr.Patches, rr.Loop);
 				payk.Add(0x0300 + types[type], ResType.Music, ay.data, rr.Voices.Count, ay.maxWrites, (vol << 8) | (rr.Loop ? 1 : 0));
 				ayBytes += ay.data.Length; ayMax = Math.Max(ayMax, ay.maxWrites);
 				var fm = MusicFm.Encode(rr.Voices, rr.Patches, rr.Loop);

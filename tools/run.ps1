@@ -6,7 +6,7 @@
 # Эмулятор запускается из корня проекта: относительные пути в сценариях — от него.
 # Код выхода в тестовом режиме: код программы (#FAAF) / сценария (exit),
 # #FD — не прошёл expect, #FE — таймаут waitmark, #EE — авария (RST 0).
-param([int]$Frames = 0, [string]$Shot = '', [string]$Script = '', [switch]$Headless)
+param([int]$Frames = 0, [string]$Shot = '', [string]$Script = '', [string]$Wav = '', [switch]$Headless)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $out  = Join-Path $root 'tmp\build'
@@ -29,6 +29,8 @@ $argv = @('-c', $ini, '-l', (Join-Path $out 'oxz.labels'))
 if ($Frames -gt 0) { $argv += @('-t', "$Frames") }
 if ($Shot) { $argv += @('-o', [System.IO.Path]::GetFullPath((Join-Path $root $Shot))) }
 if ($Script) { $argv += @('-s', [System.IO.Path]::GetFullPath((Join-Path $root $Script))) }
+# -Wav: запись микшированного звука эмулятора в WAV (разбор музыки, 07 §…)
+if ($Wav) { $argv += @('-a', [System.IO.Path]::GetFullPath((Join-Path $root $Wav))) }
 if ($Headless) { $argv += '-H' }
 
 Push-Location $root

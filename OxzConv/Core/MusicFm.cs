@@ -30,7 +30,10 @@ namespace OxzConv
 		public const int Clock = 3548800;
 		const int Chips = 2, Chans = 6;
 
-		class Slot { public int Voice = -1, Trig = -1, Patch = -1; public bool On; }
+		// RelAge — сколько кадров канал молчит после key-off. Новую ноту отдаём тому каналу,
+		// который молчит дольше: снятая нота на OPL ещё доигрывает затухание, и если сразу
+		// занять её канал, звук обрывается там, где в оригинале он ещё слышен.
+		class Slot { public int Voice = -1, Trig = -1, Patch = -1, RelAge = 9999; public bool On; }
 
 		// F-number OPN: f = fnum * clock * 2^(block-1) / (72 * 2^20), где 72 — делитель
 		// прескалера с учётом разделения времени между операторами (emul_2203.cpp:1446).
@@ -80,7 +83,10 @@ namespace OxzConv
 			void Oper(int chip, int ch, int off, int ctl, int adsr, int slrr, int tl)
 			{
 				Reg(chip, 0x30 + off + ch, ctl & 0x0F);                      // DT = 0, MULT как в OPL
-				Reg(chip, 0x40 + off + ch, tl > 127 ? 127 : tl);             // TL: шкала OPL вдвое грубее
+				// TL переносится один к одному: шаг у OPL2 и OPN одинаковый, 0.75 дБ. Удвоение
+				// (была такая попытка) вдвое растягивает затухание в децибелах — тихие ноты
+				// пропадают, а громкие после компенсации перегружают сумму каналов и хрипят.
+				Reg(chip, 0x40 + off + ch, tl > 127 ? 127 : tl);
 				Reg(chip, 0x50 + off + ch, ((ctl & 0x10) != 0 ? 0x80 : 0) | Rate(adsr >> 4));
 				Reg(chip, 0x60 + off + ch, Rate(adsr & 0x0F));               // AM нет (нет LFO)
 				Reg(chip, 0x70 + off + ch, (ctl & 0x20) != 0 ? 0 : Rate(slrr & 0x0F));
@@ -118,19 +124,26 @@ namespace OxzConv
 					}
 
 				var v = voices[f];
-				// Кого слышно: самые громкие голоса, но звучащие держим на своих каналах —
-				// иначе нота прыгает между каналами и слышен щелчок перезапуска.
-				var order = Enumerable.Range(0, 12).Where(i => v.Vol[i] > 0 && v.Freq[i] > 0 && v.Patch[i] >= 0)
-					.OrderByDescending(i => v.Vol[i]).ToList();
+				// Хорус (расстроенный дубль, добавка OpenXcom) берём последним, а унисон не
+				// пускаем вовсе: две почти одинаковые ноты съедали по два канала из шести
+				// и давали биения — на FM это слышно как хрип (22 §10.6).
+				var order = new List<int>();
+				foreach (var i in Enumerable.Range(0, 12).Where(k => v.Vol[k] > 0 && v.Freq[k] > 0 && v.Patch[k] >= 0)
+					.OrderByDescending(k => v.Vol[k] - (v.Chorus[k] ? 48 : 0)))
+				{
+					if (order.Any(j => Math.Abs((double)v.Freq[j] / v.Freq[i] - 1) < 0.03)) continue;
+					order.Add(i);
+					if (order.Count == Chans) break;
+				}
 				var taken = new bool[12];
 				foreach (var s in slots)
 				{
 					if (s.Voice >= 0 && order.Contains(s.Voice)) { taken[s.Voice] = true; continue; }
 					s.Voice = -1;
 				}
-				foreach (var s in slots)
+				foreach (var s in slots) if (s.Voice < 0) s.RelAge++;
+				foreach (var s in slots.Where(x => x.Voice < 0).OrderByDescending(x => x.RelAge))
 				{
-					if (s.Voice >= 0) continue;
 					int pick = -1;
 					foreach (var i in order) if (!taken[i]) { pick = i; break; }
 					if (pick < 0) continue;
@@ -143,7 +156,7 @@ namespace OxzConv
 					int chip = c / 3, ch = c % 3;
 					if (s.Voice < 0)
 					{
-						if (s.On) { KeyOn(chip, ch, false); s.On = false; s.Trig = -1; }
+						if (s.On) { KeyOn(chip, ch, false); s.On = false; s.Trig = -1; s.RelAge = 0; }
 						continue;
 					}
 					int i = s.Voice, pi = v.Patch[i];
@@ -151,11 +164,11 @@ namespace OxzConv
 					if (pt == null) continue;
 					bool fresh = !s.On || s.Trig != v.Trig[i] || s.Patch != pi;
 					int con = (pt[10] ^ 0x01) & 1, fb = (pt[10] ^ 0x01) >> 1 & 7;
-					int tlCar = (63 - ((127 * (v.Vol[i] > 127 ? 127 : v.Vol[i])) >> 8)) * 2;
+					int tlCar = 63 - ((127 * (v.Vol[i] > 127 ? 127 : v.Vol[i])) >> 8);
 					if (s.Patch != pi)
 					{
 						Reg(chip, 0xB0 + ch, (fb << 3) | (con != 0 ? 7 : 4));
-						Oper(chip, ch, 0, pt[0], pt[4], pt[6], ((~pt[2]) & 0x3F) * 2);   // S1 — модулятор
+						Oper(chip, ch, 0, pt[0], pt[4], pt[6], (~pt[2]) & 0x3F);         // S1 — модулятор
 						s.Patch = pi;
 					}
 					Oper(chip, ch, 8, pt[1], pt[5], pt[7], tlCar);                      // S2 — несущая

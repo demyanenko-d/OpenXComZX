@@ -6,6 +6,10 @@
 // Почему нельзя пересчитывать на лету: в MUSIC.PAK лежат записи в регистры OPL3 (двенадцать
 // FM-голосов), а у AY три канала прямоугольника с общей огибающей. Сведение — это выбор, что
 // из двенадцати голосов слышно, и оно должно быть сделано заранее.
+//
+// Громкость канала берётся не из velocity, а из посчитанной огибающей ноты (MusicEnv):
+// иначе нота звучит ровной полкой до снятия, и трек идёт на максимуме без динамики (22 §10.5).
+// Самый низкий бас поднимается на октаву: ниже ~60 Гц меандр AY звучит не нотой, а треском.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,30 +20,40 @@ namespace OxzConv
 	{
 		public const int Clock = 1774400;          // частота AY на TS-Config (02 §7)
 		const int Chans = 3;
-
-		// Громкость AY логарифмическая (примерно -3 дБ на ступень), у плеера — линейная 0..127.
-		// Таблица переводит одно в другое: тихие ноты не должны пропадать совсем.
-		static readonly int[] VolTab = BuildVol();
-
-		static int[] BuildVol()
-		{
-			var t = new int[128];
-			for (int v = 1; v < 128; v++)
-			{
-				double db = 20 * Math.Log10(v / 127.0);     // -42..0 дБ
-				int step = (int)Math.Round(15 + db / 3.0);  // ступень AY = 3 дБ
-				t[v] = step < 1 ? 1 : step > 15 ? 15 : step;
-			}
-			return t;
-		}
+		// Шкала AY вдвое короче, чем у OPL: сжимаем динамику, иначе средние по силе ноты
+		// уходят в -24 дБ и трек звучит в четверть громкости.
+		const double Compress = 0.7;
+		const double Hyst = 4.0;                   // фора голосу, уже сидящему на канале, дБ
+		const double Chorus = 18.0;                // штраф хорусному дублю: берём, только если больше некого
+		const int BassHz100 = 6000;                // ниже — поднимаем на октаву
 
 		class Slot { public int Voice = -1; }
 
+		// Что на самом деле сыграет канал: ниже ~60 Гц меандр звучит не нотой, а треском,
+		// поэтому бас поднимается на октаву (в отдельных треках таких нот почти все).
+		static int Play(int hz100)
+		{
+			while (hz100 > 0 && hz100 < BassHz100) hz100 *= 2;
+			return hz100;
+		}
+
+		// Голос плеера со своей огибающей: velocity запоминается на key-on, дальше громкость
+		// падает по огибающей патча, и после снятия ноты голос ещё доигрывает затухание.
+		class Voice
+		{
+			public MusicEnv Env = new MusicEnv();
+			public int Patch = -1, Trig = -1, Freq;
+			public double Vel;                      // затухание от velocity, дБ
+			public bool Chorus;                     // расстроенный дубль (добавка OpenXcom)
+			public double Att = MusicEnv.Silence;
+		}
+
 		// Свести кадры голосов в поток записей в регистры AY.
 		// voices[f] — состояние 12 голосов плеера на кадр (Music.VoiceFrame).
-		public static (byte[] data, int maxWrites, int loopOffset) Encode(List<Music.VoiceFrame> voices, bool loop)
+		public static (byte[] data, int maxWrites, int loopOffset) Encode(List<Music.VoiceFrame> voices, List<byte[]> patches, bool loop)
 		{
 			var slots = Enumerable.Range(0, Chans).Select(_ => new Slot()).ToArray();
+			var vs = Enumerable.Range(0, 12).Select(_ => new Voice()).ToArray();
 			var last = Enumerable.Repeat(-1, 16).ToArray();
 			var o = new List<byte>();
 			int idle = 0, maxw = 0, loopOffset = -1;
@@ -59,11 +73,57 @@ namespace OxzConv
 				// Повтор — как у потока OPL3 (22 §2.3): кадр 0 ставит чип в исходное состояние,
 				// тело трека начинается с кадра 1, туда же возвращается плеер.
 				if (f == 1 && loop) { FlushIdle(); loopOffset = o.Count; loopState = (int[])last.Clone(); }
-				var freq = voices[f].Freq; var vol = voices[f].Vol;
-				// Кого слышно: берём самые громкие голоса, но держим уже звучащие на своих
-				// каналах — иначе мелодия прыгает между каналами и слышны щелчки.
-				var order = Enumerable.Range(0, 12).Where(i => vol[i] > 0 && freq[i] > 0)
-					.OrderByDescending(i => vol[i]).ToList();
+				var vf = voices[f];
+
+				// Огибающие: новая нота — заново, снятая — в затухание, и шаг на кадр
+				for (int i = 0; i < 12; i++)
+				{
+					var v = vs[i];
+					int pi = vf.Patch[i];
+					if (vf.Key[i])
+					{
+						if (pi >= 0 && pi < patches.Count && (pi != v.Patch || vf.Trig[i] != v.Trig))
+						{
+							v.Env.SetPatch(patches[pi], Music.FrameHz);
+							v.Env.KeyOn();
+							v.Patch = pi; v.Trig = vf.Trig[i];
+							int vel = vf.Vol[i] > 127 ? 127 : vf.Vol[i];
+							v.Vel = (63 - ((127 * vel) >> 8)) * 0.75;   // velocity -> TL несущей, 0.75 дБ
+								v.Chorus = vf.Chorus[i];
+						}
+						v.Freq = vf.Freq[i];
+					}
+					else if (v.Trig >= 0) { v.Env.KeyOff(); v.Trig = -1; }
+					v.Att = v.Env.Step() + v.Vel;
+					if (vf.Freq[i] > 0) v.Freq = vf.Freq[i];
+				}
+
+				// Кого слышно: три самых громких по огибающей. Тому, кто уже сидит на канале,
+				// даётся фора Hyst — иначе два почти равных голоса каждый кадр меняются
+				// каналами и нота дрожит. Без выбора «первых трёх» каналы залипали на
+				// затухающих хвостах: за трек меню менялось всего три десятка нот.
+				double Eff(int i) => vs[i].Att - (slots.Any(x => x.Voice == i) ? Hyst : 0) + (vs[i].Chorus ? Chorus : 0);
+				var order = new List<int>();
+				foreach (var i in Enumerable.Range(0, 12).Where(k => vs[k].Att < MusicEnv.Silence && vs[k].Freq > 0).OrderBy(Eff))
+				{
+					// Унисон в каналы не пускаем: два тона, разошедшиеся на процент, дают биения
+					// («дрожание нот»), а канал отнимают у настоящей второй ноты. Сравниваем уже
+					// поднятые частоты: бас 36 Гц и нота 73 Гц — это октава, но после подъёма
+					// баса они сливаются в один тон.
+					if (order.Any(j => Math.Abs((double)Play(vs[j].Freq) / Play(vs[i].Freq) - 1) < 0.03)) continue;
+					order.Add(i);
+					if (order.Count == Chans) break;
+				}
+				// Мелодию — обязательно. По одной громкости в каналы шёл почти один бас: в записи
+				// эмулятора 68 % энергии лежало ниже 100 Гц против 39 % у OPL3 (tools/proto/wavscan.js).
+				// Поэтому самый высокий из слышимых голосов занимает место самого тихого.
+				int hi = -1;
+				foreach (var i in Enumerable.Range(0, 12))
+					if (vs[i].Att < MusicEnv.Silence && vs[i].Freq > 0 && !vs[i].Chorus &&
+						(hi < 0 || vs[i].Freq > vs[hi].Freq)) hi = i;
+				if (hi >= 0 && order.Count == Chans && !order.Contains(hi) &&
+					!order.Any(j => Math.Abs((double)Play(vs[j].Freq) / Play(vs[hi].Freq) - 1) < 0.03))
+					order[Chans - 1] = hi;
 				var taken = new bool[12];
 				foreach (var s in slots)
 				{
@@ -83,19 +143,23 @@ namespace OxzConv
 				for (int c = 0; c < Chans; c++)
 				{
 					var s = slots[c];
-					if (s.Voice < 0 || vol[s.Voice] == 0)
+					// У AY всего 15 ступеней по 3 дБ — весь слышимый диапазон канала 45 дБ,
+					// и затухание ниже него уже не отличить от тишины.
+					int step = s.Voice < 0 ? 0 : (int)Math.Round((45.0 - vs[s.Voice].Att * Compress) / 3.0);
+					if (step > 15) step = 15;
+					if (s.Voice < 0 || step < 1)
 					{
 						Reg(8 + c, 0);
 						mixer |= 1 << c;                    // канал тона выключен
 						continue;
 					}
-					int hz100 = freq[s.Voice];
+					int hz100 = Play(vs[s.Voice].Freq);
 					int period = hz100 > 0 ? (int)(100L * Clock / (16L * hz100)) : 0;
 					if (period < 1) period = 1;
 					if (period > 4095) period = 4095;
 					Reg(c * 2, period & 0xFF);
 					Reg(c * 2 + 1, period >> 8);
-					Reg(8 + c, VolTab[vol[s.Voice] > 127 ? 127 : vol[s.Voice]]);
+					Reg(8 + c, step);
 				}
 				Reg(7, mixer | 0x38);                       // шум выключен, тоны по маске
 				int n = cur.Count / 2;
