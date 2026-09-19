@@ -338,8 +338,16 @@ static uint8_t load_tiles(void)
 static void build_range(int16_t lo, int16_t hi)
 {
 	dl_n = 0;
-	for (uint8_t z = 0; z <= level; z++)
-		for (uint8_t y = 0; y < m_sy; y++) {
+	int16_t dlo = (lo - TILE_W + 1 + 15) >> 4, dhi = hi >> 4;   // x - y для краёв полосы
+	for (uint8_t z = 0; z <= level; z++) {
+		// Какие ряды вообще могут попасть в буфер: по X полоса задаёт x - y = d из [dlo, dhi],
+		// значит by = (2y + d) * 8 - z * 24 + B, и из -40 < by < BUF_H выводятся границы y.
+		int16_t b = base_y + PAD_Y - (int16_t)z * 24;
+		int16_t ylo = (-TILE_H + 1 - 8 * dhi - b + 15) >> 4;
+		int16_t yhi = (BUF_H - 1 - 8 * dlo - b) >> 4;
+		if (ylo < 0) ylo = 0;
+		if (yhi >= m_sy) yhi = m_sy - 1;
+		for (int16_t y = ylo; y <= yhi; y++) {
 			int16_t ry = (int16_t)y * 8 - (int16_t)z * 24 + base_y + PAD_Y;
 			int16_t rx = -(int16_t)y * 16;   // мировая X клетки x этого ряда: rx + x*16
 			// Отрезок ряда: из lo-32 < wx <= hi и -40 < py < BUF_H получаем границы x
@@ -362,6 +370,7 @@ static void build_range(int16_t lo, int16_t hi)
 				}
 			pg_map3(old);
 		}
+	}
 }
 
 static void build_list(void)
