@@ -12,6 +12,7 @@
 #include "far.h"
 #include "res.h"
 #include "fat.h"
+#include "music.h"
 #include "dbg.h"
 
 #define SLOT_PAGES 4
@@ -90,7 +91,9 @@ uint8_t sdres_find(uint16_t id, res_t *r) __banked
 				if (!slot_id[s]) break;
 				else if (!slot_id[k] || (uint16_t)(use_clock - slot_use[k]) > (uint16_t)(use_clock - slot_use[s])) s = k;
 			slot_id[s] = 0;
+			mus_fill();                  // долгое чтение: кольцо не должно опустеть (20 §8.2)
 			if (fat_read(&pk[p], off, FAR(slot_page[s], 0), size)) return 0;
+			mus_fill();
 			r->type = e[2];
 			r->phys = FAR(slot_page[s], 0);
 			r->size = size;

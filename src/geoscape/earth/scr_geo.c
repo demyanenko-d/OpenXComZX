@@ -17,6 +17,8 @@
 #include "game.h"
 #include "globe.h"
 #include "scrdef.h"
+#include "music.h"
+#include "mus_ids.h"
 
 static char t1[80], t2[80];
 static char big_tmp[256];                // промежуточные str_fmt (список стран отчёта, сообщения с {2})
@@ -856,6 +858,11 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	switch (id) {
 	case SCR_GEOSCAPE:
 		if (ev == EVT_QUERY) return arg == ST->speed;
+		// Тема геоскейпа (18 §3): идёт воздушный бой — GMINTER; первый месяц — строго
+		// GMGEO1; иначе случайная из группы GMGEO.
+		if (ev == EVT_MUSIC)
+			mus_play(df_count ? mus_pick(MG_INTER)
+				: ST->months < 0 ? MUS_BASE + MUS_GMGEO1 : mus_pick(MG_GEO));
 		// глобус готовится в задний буфер до первой отрисовки экрана: иначе пока идёт кадр
 		// (несколько кадров), на экране виден фон панели без планеты
 		if (ev == EVT_OPEN) { globe_det_check(); globe_prepare(); break; }

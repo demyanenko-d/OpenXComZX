@@ -172,7 +172,7 @@ void mus_play(uint16_t id) __banked
 	M.pos = 12;                            // тело идёт за 12-байтным заголовком
 	if (M.loop != 0xFFFFFFFFul) M.loop += 12;
 	M.wr = 0;
-	mus_rd = 0;
+	mus_rd = (uint16_t)mus_ring;   // ISR читает по абсолютному адресу, а не по смещению
 	mus_pause = 0;
 	mus_played = 0;
 	mus_pushed = 0;
@@ -204,7 +204,7 @@ static uint8_t track_wrap(void)
 void mus_fill(void) __banked
 {
 	if (mus_state != 1) return;
-	uint16_t rd = rd_get();
+	uint16_t rd = rd_get() - (uint16_t)mus_ring;   // в смещение кольца
 	for (;;) {
 		uint8_t ahead = (uint8_t)(mus_pushed - mus_played);
 		if (ahead >= MUS_AHEAD) break;

@@ -36,6 +36,7 @@ uint8_t ui_arrow_max;
 extern volatile uint16_t frames;
 
 static uint8_t stk[STACK_MAX], stkf[STACK_MAX], depth;
+static uint8_t mus_scr = 0xFF;       // для какого экрана уже поставлена музыка (EVT_MUSIC)
 static uint8_t scroll[STACK_MAX][SDEF_MAXW];
 static uint8_t dirty;             // стек изменён без перерисовки
 static sdef_t S;                  // загруженный экран
@@ -1008,6 +1009,7 @@ void ui_run(uint8_t first_screen) __banked
 	mark();
 	for (;;) {
 		wait_frames(1);
+		if (cur != mus_scr) { mus_scr = cur; scr_event(cur, EVT_MUSIC, 0); }   // тема нового экрана
 		mus_pump();                  // такт музыки: подкачка с карты и долив кольца
 		t_start = frames;
 		if (ui_request) {
