@@ -651,7 +651,10 @@ static uint8_t load(uint8_t l)
 static void draw_all(void)
 {
 	memset(sig, 0, sizeof sig);                  // экран другой — подписи прошлого не годятся
-	for (uint8_t i = 0; i < S.n; i++) draw_widget(i);
+	for (uint8_t i = 0; i < S.n; i++) {
+		draw_widget(i);
+		mus_fill();                          // отрисовка целого экрана длится дольше запаса
+	}                                        //   кольца — иначе музыка «залипает» (20 §8.2)
 }
 
 static uint8_t bg_broken;                     // закрыто окно без перерисовки — на экране его остатки

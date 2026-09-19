@@ -13,6 +13,7 @@
 #include "state.h"
 #include "game.h"
 #include "scrdef.h"
+#include "music.h"
 
 extern volatile uint16_t frames;         // crt0.s
 
@@ -37,6 +38,7 @@ static uint8_t slide_load(uint8_t i)
 	far_read(r.phys + off, h, 4);
 	if (i >= h[0]) return 0;
 	cut_def = h[2];
+	if (!i && h[1] != 0xFF) mus_play(MUS_BASE + h[1]);   // тема слайд-шоу (cutscenes.rul musicId)
 	far_read(r.phys + off + 4 + (uint16_t)i * sizeof(slide_t), &sl, sizeof(slide_t));
 	if (!sl.secs) sl.secs = cut_def;
 	return 1;
