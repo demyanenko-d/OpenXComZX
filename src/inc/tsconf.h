@@ -195,4 +195,10 @@ __sfr __banked __at(0xFFC5) OPL3_DATA0;
 __sfr __banked __at(0xFFC6) OPL3_ADDR1;
 __sfr __banked __at(0xFFC7) OPL3_DATA1;
 
+// AY-3-8910 / TurboSound (FM): #FFFD — номер регистра, #BFFD — данные. Значение
+// %11111cc0 в #FFFD выбирает чип (бит 0) и у TurboSound FM разрешает FM-часть YM2203
+// (бит 2 = 0 — звучит, бит 1 — чтение статуса), 02 §7.
+__sfr __banked __at(0xFFFD) AY_ADDR;
+__sfr __banked __at(0xBFFD) AY_DATA;
+
 #endif

@@ -51,6 +51,14 @@ namespace OxzConv
 		}
 
 		class Chan { public int Note, Instr, Sample = 0xFF, Freq, HiFreq, Volume, Duration; }
+
+		// Что звучит на голосе плеера в этом кадре: нота (частота в сотых герца), громкость,
+		// номер тембра (сэмпла ADLIB) и счётчик взятий ноты — по нему сведение для чипов без
+		// OPL3 понимает, что ноту взяли заново, и даёт новый key-on.
+		public class VoiceFrame
+		{
+			public int[] Freq = new int[12], Vol = new int[12], Patch = new int[12], Trig = new int[12];
+		}
 		class Ins { public int Sample, Prev, Volume, Pitch, Delay, Addr = -1, Start = -1, Ret = -1; }
 
 		class Player
@@ -62,6 +70,8 @@ namespace OxzConv
 			readonly List<int> subtracks = new List<int>();
 			int vol = 127, tempo = 120, tempoRun = 60, tempoInc = 70, samples;
 			public bool Playing, Looped;
+			readonly int[] trig = new int[12];               // взятий ноты на голосе
+			public readonly List<byte[]> Patches = new List<byte[]>();   // тембры трека по 24 байта
 
 			public Player(byte[] data, Action<int, int> reg) { d = data; this.reg = reg; }
 
@@ -128,6 +138,7 @@ namespace OxzConv
 				var (c, same) = UnusedChannel(sample);
 				var cc = ch[c]; int op1 = Ops1[c];
 				cc.Volume = volume; cc.Note = note; cc.Instr = instr;
+				trig[c]++;
 				if (!same)
 				{
 					reg(0x20 + op1, D(s)); reg(0x23 + op1, D(s + 1));
@@ -228,6 +239,13 @@ namespace OxzConv
 				if (fmt == 1) p += d[0] + 1;
 				tempo = D(p++);
 				samples = p + 1;
+				Patches.Clear();
+				for (int i = 0; i < D(p); i++)
+				{
+					var s = new byte[24];
+					for (int j = 0; j < 24; j++) s[j] = (byte)D(samples + i * 24 + j);
+					Patches.Add(s);
+				}
 				p += D(p) * 24 + 1;
 				int nsub = D(p++);
 				for (int i = 0; i < nsub; i++) { int add = U16(p); subtracks.Add(p + 4); p += add; }
@@ -297,19 +315,24 @@ namespace OxzConv
 				} while (loop);
 			}
 
-			// Что звучит прямо сейчас: на канал — частота в сотых герца и громкость 0..127.
-			// Для чипов без FM (AY, SSG) важны не записи в регистры OPL, а сами ноты.
-			public void Voices(int[] freq, int[] vol)
+			// Что звучит прямо сейчас: на канал — частота в сотых герца, громкость 0..127,
+			// тембр и счётчик взятий. Для чипов не-OPL3 (AY, FM-часть YM2203) важны не записи
+			// в регистры OPL, а сами ноты: сведение заново раздаёт их по своим каналам.
+			public VoiceFrame Voices()
 			{
+				var v = new VoiceFrame();
 				for (int i = 0; i < 12; i++)
 				{
 					var c = ch[i];
-					if (c.Note == 0) { freq[i] = 0; vol[i] = 0; continue; }
+					v.Trig[i] = trig[i];
+					if (c.Note == 0) { v.Patch[i] = -1; continue; }
 					int fnum = c.Freq | ((c.HiFreq & 3) << 8), block = (c.HiFreq >> 2) & 7;
 					// OPL: f = fnum * 49716 / 2^(20 - block)
-					freq[i] = (int)((long)fnum * 4971600 >> (20 - block));
-					vol[i] = c.Volume;
+					v.Freq[i] = (int)((long)fnum * 4971600 >> (20 - block));
+					v.Vol[i] = c.Volume;
+					v.Patch[i] = c.Sample == 0xFF ? -1 : c.Sample;
 				}
+				return v;
 			}
 		}
 
@@ -344,9 +367,10 @@ namespace OxzConv
 			public bool Loop;
 			public int[][] Init, End;
 			public int LoopFrame = -1;
-			// Голоса по кадрам (частота в сотых герца и громкость 0..127 на каждый из 12
-			// голосов плеера) — из них MusicAy сводит поток для чипов без FM.
-			public List<(int[] freq, int[] vol)> Voices = new List<(int[], int[])>();
+			// Голоса по кадрам (нота, громкость, тембр на каждый из 12 голосов плеера) — из них
+			// MusicAy сводит поток на три канала AY, MusicFm — на шесть FM-каналов YM2203.
+			public List<VoiceFrame> Voices = new List<VoiceFrame>();
+			public List<byte[]> Patches = new List<byte[]>();   // тембры трека (24 байта ADLIB)
 			public double Seconds => Frames.Count / FrameHz;
 		}
 
@@ -380,11 +404,7 @@ namespace OxzConv
 				cur = r.Frames[f];
 				var before = new[] { (int[])last[0].Clone(), (int[])last[1].Clone() };
 				p.Tick();
-				while (r.Voices.Count < r.Frames.Count) {   // голоса — на каждый кадр, для AY
-					var fr = new int[12]; var vl = new int[12];
-					p.Voices(fr, vl);
-					r.Voices.Add((fr, vl));
-				}
+				while (r.Voices.Count < r.Frames.Count) r.Voices.Add(p.Voices());   // на каждый кадр
 				// Опкод повтора — ещё не признак зацикленности: у девяти треков оригинала декодер
 				// через пару тиков натыкается на конец и трек играется один раз (22 §2.2).
 				if (p.Looped && firstLoopFrame < 0) { firstLoopFrame = f; loopTick = k; end = before; }
@@ -396,6 +416,7 @@ namespace OxzConv
 				r.Frames.RemoveRange(firstLoopFrame, r.Frames.Count - firstLoopFrame);   // 22 §2.3
 				if (firstLoopFrame < r.Voices.Count) r.Voices.RemoveRange(firstLoopFrame, r.Voices.Count - firstLoopFrame);
 			}
+			r.Patches = p.Patches;
 			r.Init = init ?? new[] { (int[])last[0].Clone(), (int[])last[1].Clone() };
 			r.End = end ?? new[] { (int[])last[0].Clone(), (int[])last[1].Clone() };
 			return r;

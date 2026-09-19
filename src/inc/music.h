@@ -27,6 +27,7 @@ void mus_play(uint16_t id) __banked;    // начать трек (тот же id
 void mus_stop(void) __banked;           // остановить и заглушить чип
 void mus_pump(void) __banked;           // такт подкачки: SD и кольцо; звать раз за оборот цикла
 void mus_fill(void) __banked;           // только кольцо, без SD: можно звать из долгих операций
+void mus_set_mode(uint8_t mode) __banked; // сменить режим звука (SND_*) и перезапустить трек
 
 extern uint8_t mus_state;               // 0 выкл, 1 играет, 2 пауза (music_s.s)
 extern uint8_t mus_under;               // недоборы (диагностика)

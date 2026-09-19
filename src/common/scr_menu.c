@@ -442,7 +442,7 @@ uint8_t menu_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		if (ev == EVT_BUTTON) {
 			if (arg == 10) opt.music ^= 1;
 			else if (arg == 11) opt.sfx ^= 1;
-			else opt.sound = arg;
+			else mus_set_mode((uint8_t)arg);
 		}
 		break;
 	case SCR_UFOPAEDIA:

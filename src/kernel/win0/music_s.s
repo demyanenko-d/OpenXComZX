@@ -23,6 +23,7 @@
 	.globl	mus_isr
 	.globl	_mus_out_opl3
 	.globl	_mus_out_ay
+	.globl	_mus_out_ym
 
 RING_SIZE	= 4096
 
@@ -115,6 +116,32 @@ mo_l:
 	out	(c), a			; данные
 	res	0, c
 	jr	nz, mo_l
+	ret
+
+;; FM-части двух YM2203 (TurboSound FM): порты те же, что у AY, но регистры #20 и выше
+;; уходят в FM-часть чипа, а #00-#0F — в SSG, которую музыка не трогает (она отдана
+;; эффектам). Перед пачкой пишем в #FFFD байт выбора: %11111cc0 — бит 0 номер чипа,
+;; бит 1 «читать статус» (не нужен), бит 2 «FM молчит» (должен быть 0, 02 §7).
+;; Банк 0 потока (BC = #FFC4) — чип 0, банк 1 (#FFC6) — чип 1.
+;; Поток готовит конвертер (OxzConv/Core/MusicFm.cs) — здесь только выгрузка пар.
+_mus_out_ym::
+	ld	a, c
+	and	a, #0x02		; #C4 -> 0, #C6 -> 1
+	rra
+	or	a, #0xF8		; FM включён, статус не читаем
+	ld	bc, #0xFFFD
+	out	(c), a
+myo_l:
+	ld	a, (hl)
+	inc	hl
+	ld	b, #0xFF
+	out	(c), a			; номер регистра
+	ld	a, (hl)
+	inc	hl
+	ld	b, #0xBF
+	out	(c), a			; значение
+	dec	e
+	jr	nz, myo_l
 	ret
 
 ;; То же для AY-3-8910: адрес в #FFFD, данные в #BFFD (02 §7). Поток для AY готовит

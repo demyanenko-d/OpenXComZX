@@ -37,14 +37,21 @@ extern uint8_t mus_pause, mus_played, mus_pushed;
 extern uint16_t mus_out;
 
 // Поток под чип выбирается в настройках (11_sound.md): для OPL3 — записи в регистры FM,
-// для AY — тот же трек, сведённый конвертером на три канала (MusicAy.cs).
-static const char *const pak_name[2][2] = {
-	{ "OXZ/UFO/MUSIC.PAK", "OXZ/UFO/MUSICAY.PAK" },
-	{ "OXZ/TFTD/MUSIC.PAK", "OXZ/TFTD/MUSICAY.PAK" },
+// для AY — тот же трек, сведённый конвертером на три канала (MusicAy.cs), для двух YM2203 —
+// на шесть FM-каналов (MusicFm.cs; SSG обоих чипов остаётся эффектам).
+static const char *const pak_name[2][3] = {
+	{ "OXZ/UFO/MUSIC.PAK", "OXZ/UFO/MUSICAY.PAK", "OXZ/UFO/MUSICFM.PAK" },
+	{ "OXZ/TFTD/MUSIC.PAK", "OXZ/TFTD/MUSICAY.PAK", "OXZ/TFTD/MUSICFM.PAK" },
 };
 extern void mus_out_opl3(void);
 extern void mus_out_ay(void);
-#define MUS_AY_MODE (opt.sound != SND_OPL3_AY)
+extern void mus_out_ym(void);
+
+// Номер потока по режиму звука: 0 — OPL3, 1 — AY, 2 — FM-части YM2203
+static uint8_t mus_stream(void)
+{
+	return opt.sound == SND_OPL3_AY ? 0 : opt.sound == SND_2YM ? 2 : 1;
+}
 
 // Состояние плеера — в памяти банка: Win1 заполнен почти доверху (20 §11).
 typedef struct {
@@ -62,15 +69,29 @@ typedef struct {
 } mus_t;
 static mus_t __at(0xBF00) M;
 
-// Заглушить чип: снять ноты со всех каналов обоих банков (иначе после конца трека
-// последняя нота тянется вечно).
+// Заглушить чип: снять ноты со всех каналов (иначе после конца трека последняя нота
+// тянется вечно). У каждого чипа это делается по-своему: OPL3 — сбросом бита KEY-ON,
+// AY — нулевой громкостью, YM2203 — key-off FM-каналов (SSG не трогаем, она под эффекты).
 static void mus_silence(void)
 {
-	for (uint8_t i = 0; i < 9; i++) {
-		OPL3_ADDR0 = 0xB0 + i; OPL3_DATA0 = 0;
+	uint8_t s = mus_stream();
+	if (s == 0) {
+		for (uint8_t i = 0; i < 9; i++) {
+			OPL3_ADDR0 = 0xB0 + i; OPL3_DATA0 = 0;
+		}
+		for (uint8_t i = 0; i < 3; i++) {
+			OPL3_ADDR1 = 0xB0 + i; OPL3_DATA1 = 0;
+		}
+		return;
 	}
-	for (uint8_t i = 0; i < 3; i++) {
-		OPL3_ADDR1 = 0xB0 + i; OPL3_DATA1 = 0;
+	for (uint8_t chip = 0; chip < 2; chip++) {
+		AY_ADDR = s == 2 ? 0xF8 + chip : 0xFF - chip;   // выбор чипа (для FM ещё и «звук включён»)
+		if (s == 2) {
+			for (uint8_t i = 0; i < 3; i++) { AY_ADDR = 0x28; AY_DATA = i; }
+		} else {
+			for (uint8_t i = 8; i < 11; i++) { AY_ADDR = i; AY_DATA = 0; }
+			break;                                      // музыка AY — только на первом чипе
+		}
 	}
 }
 
@@ -79,7 +100,7 @@ static uint8_t mus_open(void)
 	if (M.opened) return M.opened == 1;
 	M.opened = 2;
 	if (fat_mount()) return 0;
-	if (fat_open(pak_name[res_game() == 2][MUS_AY_MODE ? 1 : 0], &M.file)) return 0;
+	if (fat_open(pak_name[res_game() == 2][mus_stream()], &M.file)) return 0;
 	M.opened = 1;
 	return 1;
 }
@@ -162,6 +183,19 @@ void mus_stop(void) __banked
 
 #define MUS_MAGIC 0x4D55
 
+// Смена режима звука в настройках: чип и пакет потока другие, поэтому сначала глушим
+// прежний чип, потом забываем открытый файл и начинаем тот же трек заново.
+void mus_set_mode(uint8_t mode) __banked
+{
+	uint16_t id = M.magic == MUS_MAGIC ? M.id : 0;
+	if (mode == opt.sound) return;
+	mus_stop();
+	opt.sound = mode;
+	M.opened = 0;
+	M.id = 0;
+	if (id) mus_play(id);
+}
+
 void mus_play(uint16_t id) __banked
 {
 	if (M.magic != MUS_MAGIC) { memset(&M, 0, sizeof M); M.page = PG_NONE; M.magic = MUS_MAGIC; }
@@ -186,7 +220,8 @@ void mus_play(uint16_t id) __banked
 	mus_pushed = 0;
 	M.eof = 0;
 	M.rest = 0;
-	mus_out = MUS_AY_MODE ? (uint16_t)&mus_out_ay : (uint16_t)&mus_out_opl3;
+	uint8_t s = mus_stream();
+	mus_out = s == 0 ? (uint16_t)&mus_out_opl3 : s == 1 ? (uint16_t)&mus_out_ay : (uint16_t)&mus_out_ym;
 	if (!stage_load()) return;
 	M.id = id;
 	mus_state = 1;

@@ -33,16 +33,17 @@ namespace OxzConv
 			return t;
 		}
 
-		class Slot { public int Freq, Vol, Voice = -1; }
+		class Slot { public int Voice = -1; }
 
 		// Свести кадры голосов в поток записей в регистры AY.
-		// voices[f] — по 12 пар (частота в сотых герца, громкость 0..127) на кадр.
-		public static (byte[] data, int maxWrites, int loopOffset) Encode(List<(int[] freq, int[] vol)> voices, int loopFrame)
+		// voices[f] — состояние 12 голосов плеера на кадр (Music.VoiceFrame).
+		public static (byte[] data, int maxWrites, int loopOffset) Encode(List<Music.VoiceFrame> voices, bool loop)
 		{
 			var slots = Enumerable.Range(0, Chans).Select(_ => new Slot()).ToArray();
 			var last = Enumerable.Repeat(-1, 16).ToArray();
 			var o = new List<byte>();
 			int idle = 0, maxw = 0, loopOffset = -1;
+			int[] loopState = null;                     // состояние регистров в точке повтора
 			var cur = new List<byte>();
 
 			void Reg(int r, int v)
@@ -55,8 +56,10 @@ namespace OxzConv
 
 			for (int f = 0; f < voices.Count; f++)
 			{
-				if (f == loopFrame) { FlushIdle(); loopOffset = o.Count; }
-				var (freq, vol) = voices[f];
+				// Повтор — как у потока OPL3 (22 §2.3): кадр 0 ставит чип в исходное состояние,
+				// тело трека начинается с кадра 1, туда же возвращается плеер.
+				if (f == 1 && loop) { FlushIdle(); loopOffset = o.Count; loopState = (int[])last.Clone(); }
+				var freq = voices[f].Freq; var vol = voices[f].Vol;
 				// Кого слышно: берём самые громкие голоса, но держим уже звучащие на своих
 				// каналах — иначе мелодия прыгает между каналами и слышны щелчки.
 				var order = Enumerable.Range(0, 12).Where(i => vol[i] > 0 && freq[i] > 0)
@@ -108,6 +111,21 @@ namespace OxzConv
 				}
 			}
 			FlushIdle();
+			// Возврат состояния к точке повтора: за круг регистры разошлись с тем, какими были
+			// в кадре 1, и без этого второй круг звучит иначе первого (у OPL3 то же делает блок
+			// ресинка, 22 §2.4). Здесь это обычный кадр в конце потока — плеер его просто играет.
+			if (loopState != null)
+			{
+				cur.Clear();
+				for (int r0 = 0; r0 < 16; r0++)
+					if (loopState[r0] >= 0 && loopState[r0] != last[r0]) { last[r0] = loopState[r0]; cur.Add((byte)r0); cur.Add((byte)loopState[r0]); }
+				int m = cur.Count / 2;
+				if (m > 0)
+				{
+					maxw = Math.Max(maxw, m);
+					o.Add((byte)m); o.AddRange(cur); o.Add(0);
+				}
+			}
 			o.Add(0xFF);
 			var hdr = new byte[12];
 			BitConverter.GetBytes(loopOffset >= 0 ? (uint)loopOffset : 0xFFFFFFFF).CopyTo(hdr, 0);
