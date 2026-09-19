@@ -27,7 +27,12 @@ namespace OxzConv
 		const double Chorus = 18.0;                // штраф хорусному дублю: берём, только если больше некого
 		const int BassHz100 = 6000;                // ниже — поднимаем на октаву
 
-		class Slot { public int Voice = -1; }
+		// Скорость изменения громкости канала, ступеней за кадр (ступень 3 дБ). Без ограничения
+		// нота вступает скачком на десяток ступеней за 20 мс — это и слышно как щелчок.
+		const int RampUp = 5, RampDown = 4;
+		const int NoteDip = 3;                     // насколько приглушить канал на кадре смены ноты
+
+		class Slot { public int Voice = -1, Vol, Period; }
 
 		// Что на самом деле сыграет канал: ниже ~60 Гц меандр звучит не нотой, а треском,
 		// поэтому бас поднимается на октаву (в отдельных треках таких нот почти все).
@@ -57,7 +62,6 @@ namespace OxzConv
 			var last = Enumerable.Repeat(-1, 16).ToArray();
 			var o = new List<byte>();
 			int idle = 0, maxw = 0, loopOffset = -1;
-			int[] loopState = null;                     // состояние регистров в точке повтора
 			var cur = new List<byte>();
 
 			void Reg(int r, int v)
@@ -72,7 +76,19 @@ namespace OxzConv
 			{
 				// Повтор — как у потока OPL3 (22 §2.3): кадр 0 ставит чип в исходное состояние,
 				// тело трека начинается с кадра 1, туда же возвращается плеер.
-				if (f == 1 && loop) { FlushIdle(); loopOffset = o.Count; loopState = (int[])last.Clone(); }
+				// Точка повтора: забываем состояние регистров, и кадр 1 выписывает всё, что нужно.
+				// Так после прыжка на loop_offset чип получает верные значения из самого потока —
+				// не нужен ни блок ресинка, ни кадр глушения в конце, который обрывал звук на
+				// стыке круга (в записи — провал до нуля на 60 мс, 22 §10.11).
+				if (f == 1 && loop)
+				{
+					FlushIdle(); loopOffset = o.Count;
+					for (int r0 = 0; r0 < 16; r0++) last[r0] = -1;
+					// Громкости считаем уже нулевыми: тогда кадр 1 не пишет нули явно, и на стыке
+					// круга ноты конца трека доигрывают, а не обрываются (как у потока OPL3).
+					last[8] = last[9] = last[10] = 0;
+					last[7] = 0x3F;                 // и микшер: иначе кадр 1 выключает тоны и обрывает звук
+				}
 				var vf = voices[f];
 
 				// Огибающие: новая нота — заново, снятая — в затухание, и шаг на кадр
@@ -149,16 +165,25 @@ namespace OxzConv
 					if (step > 15) step = 15;
 					if (s.Voice < 0 || step < 1)
 					{
-						Reg(8 + c, 0);
-						mixer |= 1 << c;                    // канал тона выключен
+						s.Vol = s.Vol > RampDown ? s.Vol - RampDown : 0;   // гасим не рывком
+						Reg(8 + c, s.Vol);
+						if (s.Vol == 0) mixer |= 1 << c;    // тон выключаем, только когда доехали до нуля
 						continue;
 					}
 					int hz100 = Play(vs[s.Voice].Freq);
 					int period = hz100 > 0 ? (int)(100L * Clock / (16L * hz100)) : 0;
 					if (period < 1) period = 1;
 					if (period > 4095) period = 4095;
+					// Смена тона при полной громкости щёлкает (меандр обрывается на полпути):
+					// на кадре смены ноты приглушаем канал, дальше громкость доедет рампой.
+					if (s.Period > 0 && Math.Abs((double)period / s.Period - 1) > 0.03) step -= NoteDip;
+					s.Period = period;
 					Reg(c * 2, period & 0xFF);
 					Reg(c * 2 + 1, period >> 8);
+					if (step < 1) step = 1;
+					if (step > s.Vol + RampUp) step = s.Vol + RampUp;
+					else if (step < s.Vol - RampDown) step = s.Vol - RampDown;
+					s.Vol = step;
 					Reg(8 + c, step);
 				}
 				Reg(7, mixer | 0x38);                       // шум выключен, тоны по маске
@@ -175,21 +200,6 @@ namespace OxzConv
 				}
 			}
 			FlushIdle();
-			// Возврат состояния к точке повтора: за круг регистры разошлись с тем, какими были
-			// в кадре 1, и без этого второй круг звучит иначе первого (у OPL3 то же делает блок
-			// ресинка, 22 §2.4). Здесь это обычный кадр в конце потока — плеер его просто играет.
-			if (loopState != null)
-			{
-				cur.Clear();
-				for (int r0 = 0; r0 < 16; r0++)
-					if (loopState[r0] >= 0 && loopState[r0] != last[r0]) { last[r0] = loopState[r0]; cur.Add((byte)r0); cur.Add((byte)loopState[r0]); }
-				int m = cur.Count / 2;
-				if (m > 0)
-				{
-					maxw = Math.Max(maxw, m);
-					o.Add((byte)m); o.AddRange(cur); o.Add(0);
-				}
-			}
 			o.Add(0xFF);
 			var hdr = new byte[12];
 			BitConverter.GetBytes(loopOffset >= 0 ? (uint)loopOffset : 0xFFFFFFFF).CopyTo(hdr, 0);

@@ -57,7 +57,6 @@ namespace OxzConv
 			var cur = new[] { new List<byte>(), new List<byte>() };
 			var o = new List<byte>();
 			int idle = 0, maxw = 0, loopOffset = -1;
-			int[][] loopState = null;
 
 			void Reg(int chip, int rg, int val)
 			{
@@ -114,7 +113,10 @@ namespace OxzConv
 			{
 				// Как и у OPL3 (22 §2.3): кадр 0 ставит чипы в исходное состояние, тело трека
 				// начинается с кадра 1 — туда и возвращается плеер по loop_offset.
-				if (f == 1 && loop) { FlushIdle(); loopOffset = o.Count; loopState = new[] { (int[])last[0].Clone(), (int[])last[1].Clone() }; }
+				// Точка повтора: забываем состояние регистров — кадр 1 выпишет всё сам, и после прыжка
+				// на loop_offset чипы получают верные значения из потока. Кадр глушения в конце,
+				// который для этого стоял раньше, обрывал звук на стыке круга (22 §10.11).
+				if (f == 1 && loop) { FlushIdle(); loopOffset = o.Count; for (int chip = 0; chip < Chips; chip++) for (int r0 = 0; r0 < 256; r0++) last[chip][r0] = -1; }
 				cur[0].Clear(); cur[1].Clear();
 				if (f == 0)
 					for (int chip = 0; chip < Chips; chip++)
@@ -183,27 +185,6 @@ namespace OxzConv
 				FlushFrame();
 			}
 			FlushIdle();
-			// Возврат к состоянию точки повтора (у OPL3 то же делает блок ресинка, 22 §2.4):
-			// снимаем все ноты и дописываем разошедшиеся регистры обычным кадром в конце потока.
-			if (loopState != null)
-			{
-				cur[0].Clear(); cur[1].Clear();
-				foreach (var s in slots) s.Voice = s.Trig = s.Patch = -1;
-				for (int chip = 0; chip < Chips; chip++)
-				{
-					for (int ch = 0; ch < 3; ch++) KeyOn(chip, ch, false);
-					for (int rg = 0; rg < 256; rg++)
-					{
-						int want = loopState[chip][rg];
-						if (want < 0 || want == last[chip][rg] || rg == 0x28) continue;
-						last[chip][rg] = want;
-						cur[chip].Add((byte)rg); cur[chip].Add((byte)want);
-					}
-				}
-				foreach (var s in slots) s.On = false;
-				FlushFrame();
-				FlushIdle();
-			}
 			o.Add(0xFF);
 			var hdr = new byte[12];
 			BitConverter.GetBytes(loopOffset >= 0 ? (uint)loopOffset : 0xFFFFFFFF).CopyTo(hdr, 0);

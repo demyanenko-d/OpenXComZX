@@ -148,3 +148,26 @@ function tempo(file) {
 }
 
 if (process.env.OXZ_TEMPO) for (const f of process.argv.slice(2)) tempo(f);
+
+// Щелчки: резкий скачок огибающей за кадр (20 мс). На AY это слышно как «клик» при взятии
+// ноты — громкость канала прыгает сразу на десяток ступеней (3 дБ каждая).
+function clicks(file) {
+	const { fq, s } = readWav(file);
+	const step = Math.floor(fq / 50);
+	const env = [];
+	for (let p = 0; p + step <= s.length; p += step) {
+		let e = 0;
+		for (let i = 0; i < step; i++) e += s[p + i] * s[p + i];
+		env.push(Math.sqrt(e / step));
+	}
+	let n6 = 0, n12 = 0, worst = 0;
+	for (let i = 1; i < env.length; i++) {
+		const d = Math.abs(20 * Math.log10(Math.max(env[i], 1) / Math.max(env[i - 1], 1)));
+		if (d > 6) n6++;
+		if (d > 12) n12++;
+		if (d > worst) worst = d;
+	}
+	console.log(`  скачки огибающей: >6 дБ ${n6}, >12 дБ ${n12} (за ${(env.length / 50).toFixed(0)} с), наибольший ${worst.toFixed(0)} дБ`);
+}
+
+if (process.env.OXZ_CLICKS) for (const f of process.argv.slice(2)) clicks(f);
