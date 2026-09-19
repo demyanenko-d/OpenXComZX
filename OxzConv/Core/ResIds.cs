@@ -29,6 +29,7 @@ namespace OxzConv
 			S("UI", 0x0030);
 			S("CUTSCENES", 0x0031);   // заставки: слайды (CUTS.PAK на SD), палитры и подписи
 			S("GLOBEDET", 0x0032);    // детали глобуса: линии, подписи стран, города (GlobeDetail.cs)
+			S("MUSGRP", 0x0033);      // музыка: состав групп (GMGEO, GMINTER) и роли экранов (22 §1.3)
 			// полноэкранные картинки геоскейпа и баз
 			for (int i = 1; i <= 17; i++) S($"BACK{i:00}.SCR", 0x0100 + i);
 			S("GEOBORD.SCR", 0x0120); S("UP_BORD2.SCR", 0x0121); S("GRAPHS.SPK", 0x0122); S("GRAPH.BDY", 0x0123);

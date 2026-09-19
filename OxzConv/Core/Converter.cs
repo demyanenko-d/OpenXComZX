@@ -314,8 +314,71 @@ namespace OxzConv
 				if (rr.Loop) nloop++; else nonce++;
 				n++; bytes += ss.data.Length; maxw = Math.Max(maxw, ss.maxWrites);
 			}
+			var have = new HashSet<int>();
+			foreach (var m in rules) { string t = Y.Str(Y.Get(m, "type")); if (Y.Has(m, "catPos") && t != null && types.ContainsKey(t)) have.Add(types[t]); }
+			BuildMusGroups(types, have);
 			var res = pak.Write(Path.Combine(OutDir, "MUSIC.PAK"));
 			report.Add($"MUSIC.PAK: {n} music types ({nloop} looped, {nonce} one-shot), {cache.Count} tracks, {secs / 60:0.0} min, streams {Kb(bytes)} KB, max {maxw} writes/frame ({Kb(res.bytes)} KB)");
+		}
+
+		// Состав музыкальных групп и роли экранов (22 §1.3). Группы — по правилу оригинала
+		// (имя типа содержит имя группы как подстроку, Mod.cpp:504), роли — из правил, а не
+		// зашиты в движок. Формат: u8 n_grp, n_grp x {first, count}, u8 n_kind, n_kind x тип,
+		// затем пул номеров типов; #FF — «темы нет, оставить играть текущее».
+		static readonly string[] MusGroups = { "GMGEO", "GMINTER" };
+		byte[] musGrpTable;
+
+		void BuildMusGroups(Dictionary<string, int> types, HashSet<int> have)
+		{
+			string Iface(string screen)
+			{
+				var list = Y.List(Y.Get(Y.Load(ox.ReadText($"standard/{RuleFolder}/interfaces.rul")), "interfaces")) ?? new List<object>();
+				foreach (var o in list)
+					if (Y.Str(Y.Get(o, "type")) == screen) return Y.Str(Y.Get(o, "music"));
+				return null;
+			}
+			string Vars(string key)
+			{
+				if (!ox.Exists($"standard/{RuleFolder}/vars.rul")) return null;
+				return Y.Str(Y.Get(Y.Get(Y.Load(ox.ReadText($"standard/{RuleFolder}/vars.rul")), "constants"), key));   // ключи лежат под constants
+			}
+			string Cutscene(string type)
+			{
+				var list = Y.List(Y.Get(Y.Load(ox.ReadText($"standard/{RuleFolder}/cutscenes.rul")), "cutscenes")) ?? new List<object>();
+				foreach (var o in list)
+					if (Y.Str(Y.Get(o, "type")) == type) return Y.Str(Y.Get(Y.Get(o, "slideshow"), "musicId"));
+				return null;
+			}
+			byte Type(string name)
+			{
+				if (name == null || !types.TryGetValue(name, out var t) || !have.Contains(t)) return 0xFF;
+				return (byte)t;
+			}
+			var pool = new List<byte>();
+			var wins = new List<byte[]>();
+			foreach (var grp in MusGroups)
+			{
+				int first = pool.Count;
+				foreach (var kv in types)
+					if (kv.Key.Contains(grp) && have.Contains(kv.Value)) pool.Add((byte)kv.Value);
+				wins.Add(new[] { (byte)first, (byte)(pool.Count - first) });
+			}
+			var kinds = new[]
+			{
+				Type(Iface("mainMenu")), Type(Iface("soldierMemorial")),
+				Type(Vars("goodDebriefingMusic") ?? "GMMARS"), Type(Vars("badDebriefingMusic") ?? "GMMARS"),
+				Type("GMTACTIC"), Type("GMDEFEND"),
+				Type(Cutscene("loseGame")), Type(Cutscene("winGame")),
+			};
+			var o2 = new List<byte> { (byte)wins.Count };
+			foreach (var w in wins) o2.AddRange(w);
+			o2.Add((byte)kinds.Length);
+			o2.AddRange(kinds);
+			o2.AddRange(pool);
+			musGrpTable = o2.ToArray();
+			var names = new List<string>();
+			for (int i = 0; i < MusGroups.Length; i++) names.Add($"{MusGroups[i]} {wins[i][1]}");
+			report.Add($"  music groups: {string.Join(", ", names)}; roles " + string.Join(",", kinds.Select(k => k == 0xFF ? "-" : k.ToString())));
 		}
 
 		// ------------------------------------------------------------ заставки (CUTS.PAK)
@@ -465,6 +528,7 @@ namespace OxzConv
 				pak.Add(RulesSchema.ResBase + i, ResType.Table, t.data, t.count, t.recSize);
 				parts.Add($"{schema[i].Name} {t.count}x{t.recSize}");
 			}
+			if (musGrpTable != null) pak.Add(ids.Id("MUSGRP"), ResType.Table, musGrpTable, MusGroups.Length);
 			var det = GlobeDetail.Build(rs, sections, ox, RuleFolder);   // детали глобуса: линии, подписи, города
 			pak.Add(ids.Id("GLOBEDET"), ResType.Blob, det.data);
 			parts.Add("GLOBEDET: " + det.info);
