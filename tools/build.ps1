@@ -54,6 +54,7 @@ $banks = @(
     @{ n = 26; page = 0x49; files = @('geoscape\earth\globe_det', 'geoscape\earth\globe_det_s'); ram = 0xA800 }   # детали глобуса: линии, подписи, города (globe_det.c; точки и отрезки — globe_det_s.s); с #A800 — рабочая память
     @{ n = 27; page = 0x4A; files = @('geoscape\base\scr_inv') }   # инвентарь бойца (экипировка перед вылетом)
     @{ n = 28; page = 0x4B; files = @('battlescape\scr_battle'); ram = 0xB000 }   # наземный бой: отрисовка карты (этап Б1)
+    @{ n = 29; page = 0x4C; files = @('battlescape\mapgen'); ram = 0xB000 }   # генератор миссии: карта из блоков по mapScript (16 §3)
 )
 
 # Пакеты данных игры: выход конвертера OxzConv (tmp\sd\OXZ\<игра>), вшиваются в SPG.

@@ -263,6 +263,14 @@ Z80 проверка была `bit (hl)` без переворота.
 
 ## 3. Генерация карты
 
+**Состояние (2026-09-20):** первый рабочий генератор в движке — `src/battlescape/mapgen.c`
+(банк 29). Данные готовит конвертер: `MCD.PAK` (наборы частей, таблицы `TERRAINS` и
+`MAPSCRIPTS` — вшито в SPG), `MAPS.PAK` (блоки карт) и `TILES.PAK` (тайлсеты наборов) — на
+SD. Команды: addBlock, addLine, fillArea, checkBlock, removeBlock, resize, conditionals,
+executionChances/executions, maxUses. Замер на TFTD: террейны 0-4 собираются, поле 40x40
+(и 50x50 после resize), непустых клеток 1600-2900. Осталось: addCraft, addUFO, digTunnel,
+отрисовка сгенерированного (тайлсеты наборов вместо готового BATTILE) и маршруты RMP.
+
 Опорный файл — `Battlescape/BattlescapeGenerator.cpp` (3069 строк).
 Порт ожидается **1.5–2.5 тыс. строк C** — это самая «переносимая» часть боя:
 только целочисленная арифметика и чтение файлов.

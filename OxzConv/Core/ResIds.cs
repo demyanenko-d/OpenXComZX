@@ -48,6 +48,9 @@ namespace OxzConv
 			// карты боя (BATTLE.PAK): готовые поля и их тайлсеты — пока нет генератора карт (Core/Battle.cs)
 			S("BATMAP0", 0x01C0); S("BATMAP1", 0x01C1); S("BATMAP2", 0x01C2);
 			S("BATTILE0", 0x01C8); S("BATTILE1", 0x01C9); S("BATTILE2", 0x01CA);
+			// генератор миссий (16 §3): таблицы террейнов и скриптов; наборы, блоки и тайлсеты
+			// получают динамические номера по именам MCDSET_/MAPBLK_/TILESET_
+			S("TERRAINS", 0x01D0); S("MAPSCRIPTS", 0x01D1);
 			// строить после заполнения: инициализаторы полей выполняются раньше тела конструктора
 			staticMap = Static.ToDictionary(kv => kv.Key.ToUpperInvariant(), kv => kv.Value);
 		}

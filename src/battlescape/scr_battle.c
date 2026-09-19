@@ -21,6 +21,8 @@
 #include "far.h"
 #include "pages.h"
 #include "scrdef.h"
+#include "dbg.h"
+#include "mapgen.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 #define TILE_W     32
@@ -28,7 +30,8 @@
 #define MAP_MAXX   64                // предел ширины карты (буфер ряда)
 #define NMAPS      3
 
-static uint8_t cur_map;              // какая карта показывается (по очереди при входе)
+static uint8_t cur_map;
+static uint16_t gen_terrain;             // какой террейн пробует генератор (клавиша G)
 static uint8_t m_sx, m_sy, m_sz, m_nt;
 static uint16_t tiles_res;           // SPRSET тайлов этой карты
 static uint8_t level;                // этаж камеры
@@ -558,6 +561,21 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		case 'b': case 'B': bench_small(); return 0;   // микробенчмарк DMA: 512 запусков по 32 байта
 		case 'n': case 'N': bench_tile(); return 0;    // ... по 256 байт (размер части клетки)
 		case 'v': case 'V': bench_big(); return 0;     // ... по 1024 байта
+		case 'g': case 'G': {
+			// Отладка генератора миссии (16 §3): собрать карту террейна gen_terrain и
+			// доложить в журнал, что получилось. Отрисовка сгенерированного — следующий шаг.
+			uint8_t ok = mapgen_run(gen_terrain, 4, 4);
+			dbg_puts("mapgen: terrain ");
+			dbg_dec(gen_terrain);
+			dbg_puts(ok ? " ok " : " FAIL ");
+			if (ok) {
+				dbg_dec(mapgen_sx()); dbg_puts("x"); dbg_dec(mapgen_sy());
+				dbg_puts(" cells "); dbg_dec(mapgen_filled());
+			}
+			dbg_puts("\n");
+			gen_terrain++;
+			return 0;
+		}
 		case 'm': case 'M':
 			cur_map = cur_map + 1 < NMAPS ? cur_map + 1 : 0;
 			if (!load_map()) { cur_map = 0; load_map(); }
