@@ -22,6 +22,7 @@
 	.globl	_mus_out
 	.globl	mus_isr
 	.globl	_mus_out_opl3
+	.globl	_mus_out_ay
 
 RING_SIZE	= 4096
 
@@ -114,6 +115,22 @@ mo_l:
 	out	(c), a			; данные
 	res	0, c
 	jr	nz, mo_l
+	ret
+
+;; То же для AY-3-8910: адрес в #FFFD, данные в #BFFD (02 §7). Поток для AY готовит
+;; конвертер (OxzConv/Core/MusicAy.cs) — здесь только выгрузка пар.
+_mus_out_ay::
+mao_l:
+	ld	a, (hl)
+	inc	hl
+	ld	bc, #0xFFFD		; выбор регистра
+	out	(c), a
+	ld	a, (hl)
+	inc	hl
+	ld	b, #0xBF		; #BFFD — данные
+	out	(c), a
+	dec	e
+	jr	nz, mao_l
 	ret
 
 	.area	_MUSIC			; база -Wl-b_MUSIC=0x2800 (tools/build.ps1)

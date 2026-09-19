@@ -286,8 +286,9 @@ namespace OxzConv
 			var intro = gfs.Has("SOUND/AINTRO.CAT") ? gfs.Read("SOUND/AINTRO.CAT") : null;
 			var iEnt = intro != null ? Music.CatEntries(intro) : new List<(int, int)>();
 			var pak = new PakWriter(Game);
+			var payk = new PakWriter(Game);   // тот же трек для чипов без FM (AY/SSG)
 			var cache = new Dictionary<int, (Music.Render r, (byte[] data, int maxWrites) s)>();
-			int n = 0, maxw = 0, nloop = 0, nonce = 0; long bytes = 0; double secs = 0;
+			int n = 0, maxw = 0, nloop = 0, nonce = 0, ayMax = 0; long bytes = 0, ayBytes = 0; double secs = 0;
 			if (prevDir != null) Directory.CreateDirectory(Path.Combine(prevDir, "music"));
 			foreach (var m in rules)
 			{
@@ -311,6 +312,9 @@ namespace OxzConv
 				int vol = (int)(127 * Y.Num(Y.Get(m, "normalization"), 0.76));
 				if (vol > 255) vol = 255;
 				pak.Add(0x0300 + types[type], ResType.Music, ss.data, rr.Frames.Count, ss.maxWrites, (vol << 8) | (rr.Loop ? 1 : 0));
+				var ay = MusicAy.Encode(rr.Voices, rr.Loop ? rr.LoopFrame : -1);
+				payk.Add(0x0300 + types[type], ResType.Music, ay.data, rr.Voices.Count, ay.maxWrites, (vol << 8) | (rr.Loop ? 1 : 0));
+				ayBytes += ay.data.Length; ayMax = Math.Max(ayMax, ay.maxWrites);
 				if (rr.Loop) nloop++; else nonce++;
 				n++; bytes += ss.data.Length; maxw = Math.Max(maxw, ss.maxWrites);
 			}
@@ -318,6 +322,8 @@ namespace OxzConv
 			foreach (var m in rules) { string t = Y.Str(Y.Get(m, "type")); if (Y.Has(m, "catPos") && t != null && types.ContainsKey(t)) have.Add(types[t]); }
 			BuildMusGroups(types, have);
 			var res = pak.Write(Path.Combine(OutDir, "MUSIC.PAK"));
+			var resAy = payk.Write(Path.Combine(OutDir, "MUSICAY.PAK"));
+			report.Add($"MUSICAY.PAK: сведено на 3 канала AY, {Kb(ayBytes)} KB потоков, max {ayMax} writes/frame ({Kb(resAy.bytes)} KB)");
 			report.Add($"MUSIC.PAK: {n} music types ({nloop} looped, {nonce} one-shot), {cache.Count} tracks, {secs / 60:0.0} min, streams {Kb(bytes)} KB, max {maxw} writes/frame ({Kb(res.bytes)} KB)");
 		}
 

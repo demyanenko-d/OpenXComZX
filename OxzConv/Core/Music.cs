@@ -296,6 +296,21 @@ namespace OxzConv
 					ClearChannels();
 				} while (loop);
 			}
+
+			// Что звучит прямо сейчас: на канал — частота в сотых герца и громкость 0..127.
+			// Для чипов без FM (AY, SSG) важны не записи в регистры OPL, а сами ноты.
+			public void Voices(int[] freq, int[] vol)
+			{
+				for (int i = 0; i < 12; i++)
+				{
+					var c = ch[i];
+					if (c.Note == 0) { freq[i] = 0; vol[i] = 0; continue; }
+					int fnum = c.Freq | ((c.HiFreq & 3) << 8), block = (c.HiFreq >> 2) & 7;
+					// OPL: f = fnum * 49716 / 2^(20 - block)
+					freq[i] = (int)((long)fnum * 4971600 >> (20 - block));
+					vol[i] = c.Volume;
+				}
+			}
 		}
 
 		// Регистр 12-голосного «OPL2» плеера -> (банк, регистр OPL3) или null.
@@ -328,6 +343,10 @@ namespace OxzConv
 			public List<List<byte>[]> Frames = new List<List<byte>[]>();
 			public bool Loop;
 			public int[][] Init, End;
+			public int LoopFrame = -1;
+			// Голоса по кадрам (частота в сотых герца и громкость 0..127 на каждый из 12
+			// голосов плеера) — из них MusicAy сводит поток для чипов без FM.
+			public List<(int[] freq, int[] vol)> Voices = new List<(int[], int[])>();
 			public double Seconds => Frames.Count / FrameHz;
 		}
 
@@ -361,14 +380,22 @@ namespace OxzConv
 				cur = r.Frames[f];
 				var before = new[] { (int[])last[0].Clone(), (int[])last[1].Clone() };
 				p.Tick();
+				while (r.Voices.Count < r.Frames.Count) {   // голоса — на каждый кадр, для AY
+					var fr = new int[12]; var vl = new int[12];
+					p.Voices(fr, vl);
+					r.Voices.Add((fr, vl));
+				}
 				// Опкод повтора — ещё не признак зацикленности: у девяти треков оригинала декодер
 				// через пару тиков натыкается на конец и трек играется один раз (22 §2.2).
 				if (p.Looped && firstLoopFrame < 0) { firstLoopFrame = f; loopTick = k; end = before; }
 				if (loopTick > 0 && k >= loopTick + 10) break;
 			}
+			r.LoopFrame = firstLoopFrame;
 			r.Loop = firstLoopFrame >= 0 && p.Playing;
-			if (r.Loop && firstLoopFrame < r.Frames.Count)
+			if (r.Loop && firstLoopFrame < r.Frames.Count) {
 				r.Frames.RemoveRange(firstLoopFrame, r.Frames.Count - firstLoopFrame);   // 22 §2.3
+				if (firstLoopFrame < r.Voices.Count) r.Voices.RemoveRange(firstLoopFrame, r.Voices.Count - firstLoopFrame);
+			}
 			r.Init = init ?? new[] { (int[])last[0].Clone(), (int[])last[1].Clone() };
 			r.End = end ?? new[] { (int[])last[0].Clone(), (int[])last[1].Clone() };
 			return r;

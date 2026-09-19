@@ -17,6 +17,7 @@
 #include "far.h"
 #include "res.h"
 #include "fat.h"
+#include "game.h"
 #include "music.h"
 #include "res_ids.h"
 #include "dbg.h"
@@ -35,8 +36,15 @@ extern uint16_t mus_rd;
 extern uint8_t mus_pause, mus_played, mus_pushed;
 extern uint16_t mus_out;
 
-static const char *const pak_name[2] = { "OXZ/UFO/MUSIC.PAK", "OXZ/TFTD/MUSIC.PAK" };
+// Поток под чип выбирается в настройках (11_sound.md): для OPL3 — записи в регистры FM,
+// для AY — тот же трек, сведённый конвертером на три канала (MusicAy.cs).
+static const char *const pak_name[2][2] = {
+	{ "OXZ/UFO/MUSIC.PAK", "OXZ/UFO/MUSICAY.PAK" },
+	{ "OXZ/TFTD/MUSIC.PAK", "OXZ/TFTD/MUSICAY.PAK" },
+};
 extern void mus_out_opl3(void);
+extern void mus_out_ay(void);
+#define MUS_AY_MODE (opt.sound != SND_OPL3_AY)
 
 // Состояние плеера — в памяти банка: Win1 заполнен почти доверху (20 §11).
 typedef struct {
@@ -71,7 +79,7 @@ static uint8_t mus_open(void)
 	if (M.opened) return M.opened == 1;
 	M.opened = 2;
 	if (fat_mount()) return 0;
-	if (fat_open(pak_name[res_game() == 2], &M.file)) return 0;
+	if (fat_open(pak_name[res_game() == 2][MUS_AY_MODE ? 1 : 0], &M.file)) return 0;
 	M.opened = 1;
 	return 1;
 }
@@ -178,7 +186,7 @@ void mus_play(uint16_t id) __banked
 	mus_pushed = 0;
 	M.eof = 0;
 	M.rest = 0;
-	mus_out = (uint16_t)&mus_out_opl3;
+	mus_out = MUS_AY_MODE ? (uint16_t)&mus_out_ay : (uint16_t)&mus_out_opl3;
 	if (!stage_load()) return;
 	M.id = id;
 	mus_state = 1;
