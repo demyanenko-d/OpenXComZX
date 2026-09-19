@@ -26,6 +26,7 @@ namespace OxzConv
 		Dictionary<string, int> strIndex;
 		Func<string, (string pal, int backpal)> screenPal;
 		Dictionary<string, string> bgScreen;
+		BattleData battle;   // террейны, наборы и блоки карт для генератора (16 §3)
 
 		public Converter(string gameDir, string outRoot, string previewRoot, OxcomData ox, string lang, Action<string> log)
 		{
@@ -276,6 +277,11 @@ namespace OxzConv
 			var pal = pal6.TryGetValue("PAL_BATTLESCAPE", out var p) ? p : pal6["PAL_GEOSCAPE"];
 			var (n, info) = new Battle(gfs, ox, RuleFolder, Game, ids, report).Build(OutDir, prevDir, pal);
 			report.Add("BATTLE.PAK: " + info);
+			// Данные для генератора миссий: наборы MCD, блоки и тайлсеты порознь (16 §3)
+			battle = new BattleData(gfs, ox, RuleFolder, Game, ids, report);
+			battle.LoadRules();
+			battle.LoadScripts();
+			battle.Build(OutDir, prevDir, pal);
 		}
 
 		// ------------------------------------------------------------ музыка (MUSIC.PAK)

@@ -57,7 +57,8 @@ $banks = @(
 )
 
 # Пакеты данных игры: выход конвертера OxzConv (tmp\sd\OXZ\<игра>), вшиваются в SPG.
-$packs = @('PAL', 'LANG', 'RULES', 'GEO')
+# MCD — наборы частей карт, террейны и mapScripts для генератора миссий (16 §3)
+$packs = @('PAL', 'LANG', 'RULES', 'GEO', 'MCD')
 
 function Invoke-Tool([string]$exe, [string[]]$argv) {
     # Вывод перехватывается ради предупреждения SDCC 112 (неявное объявление функции): в банке
