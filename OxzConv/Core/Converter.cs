@@ -287,7 +287,7 @@ namespace OxzConv
 			var iEnt = intro != null ? Music.CatEntries(intro) : new List<(int, int)>();
 			var pak = new PakWriter(Game);
 			var cache = new Dictionary<int, (Music.Render r, (byte[] data, int maxWrites) s)>();
-			int n = 0, maxw = 0; long bytes = 0; double secs = 0;
+			int n = 0, maxw = 0, nloop = 0, nonce = 0; long bytes = 0; double secs = 0;
 			if (prevDir != null) Directory.CreateDirectory(Path.Combine(prevDir, "music"));
 			foreach (var m in rules)
 			{
@@ -306,11 +306,16 @@ namespace OxzConv
 					secs += r.Seconds;
 				}
 				var (rr, ss) = cache[catPos];
-				pak.Add(0x0300 + types[type], ResType.Music, ss.data, rr.Frames.Count, ss.maxWrites, rr.Loop ? 1 : 0);
+				// normalization из music.rul (умолчание 0.76) — громкость трека относительно других;
+				// поток остаётся на полной шкале, коэффициент применяет плеер вместе с регулятором (22 §3.3)
+				int vol = (int)(127 * Y.Num(Y.Get(m, "normalization"), 0.76));
+				if (vol > 255) vol = 255;
+				pak.Add(0x0300 + types[type], ResType.Music, ss.data, rr.Frames.Count, ss.maxWrites, (vol << 8) | (rr.Loop ? 1 : 0));
+				if (rr.Loop) nloop++; else nonce++;
 				n++; bytes += ss.data.Length; maxw = Math.Max(maxw, ss.maxWrites);
 			}
 			var res = pak.Write(Path.Combine(OutDir, "MUSIC.PAK"));
-			report.Add($"MUSIC.PAK: {n} music types, {cache.Count} tracks, {secs / 60:0.0} min, streams {Kb(bytes)} KB, max {maxw} writes/frame ({Kb(res.bytes)} KB)");
+			report.Add($"MUSIC.PAK: {n} music types ({nloop} looped, {nonce} one-shot), {cache.Count} tracks, {secs / 60:0.0} min, streams {Kb(bytes)} KB, max {maxw} writes/frame ({Kb(res.bytes)} KB)");
 		}
 
 		// ------------------------------------------------------------ заставки (CUTS.PAK)

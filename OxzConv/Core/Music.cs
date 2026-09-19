@@ -320,7 +320,16 @@ namespace OxzConv
 			return null;
 		}
 
-		public class Render { public List<List<byte>[]> Frames = new List<List<byte>[]>(); public bool Loop; public double Seconds => Frames.Count / FrameHz; }
+		// Frames — по кадру на 1/50 с (пары «регистр, значение» отдельно для банка 0 и 1).
+		// Init/End — состояние регистров после первого кадра и в конце потока: их разница и есть
+		// блок ресинка, без которого второй круг звучит иначе первого (22 §2.4).
+		public class Render
+		{
+			public List<List<byte>[]> Frames = new List<List<byte>[]>();
+			public bool Loop;
+			public int[][] Init, End;
+			public double Seconds => Frames.Count / FrameHz;
+		}
 
 		public static Render RenderTrack(byte[] data, double maxSeconds = 1200)
 		{
@@ -342,15 +351,26 @@ namespace OxzConv
 			Emit(1, 0x04, 0x00);
 			p.Setup();
 			int maxTicks = (int)Math.Floor(maxSeconds * TickHz);
+			int loopTick = -1;
+			int[][] init = null, end = null;
 			for (int k = 1; k <= maxTicks && p.Playing; k++)
 			{
 				int f = (int)Math.Floor(k * FrameHz / TickHz);
 				while (r.Frames.Count <= f) r.Frames.Add(new[] { new List<byte>(), new List<byte>() });
+				if (init == null && f > 0) init = new[] { (int[])last[0].Clone(), (int[])last[1].Clone() };
 				cur = r.Frames[f];
+				var before = new[] { (int[])last[0].Clone(), (int[])last[1].Clone() };
 				p.Tick();
-				if (p.Looped && firstLoopFrame < 0) { firstLoopFrame = f; break; }
+				// Опкод повтора — ещё не признак зацикленности: у девяти треков оригинала декодер
+				// через пару тиков натыкается на конец и трек играется один раз (22 §2.2).
+				if (p.Looped && firstLoopFrame < 0) { firstLoopFrame = f; loopTick = k; end = before; }
+				if (loopTick > 0 && k >= loopTick + 10) break;
 			}
-			r.Loop = firstLoopFrame >= 0;
+			r.Loop = firstLoopFrame >= 0 && p.Playing;
+			if (r.Loop && firstLoopFrame < r.Frames.Count)
+				r.Frames.RemoveRange(firstLoopFrame, r.Frames.Count - firstLoopFrame);   // 22 §2.3
+			r.Init = init ?? new[] { (int[])last[0].Clone(), (int[])last[1].Clone() };
+			r.End = end ?? new[] { (int[])last[0].Clone(), (int[])last[1].Clone() };
 			return r;
 		}
 
@@ -377,10 +397,35 @@ namespace OxzConv
 			}
 			FlushIdle();
 			o.Add(0xFF);
+			// Блок ресинка (22 §2.4): к точке повтора состояние чипа расходится с тем, каким оно
+			// было в начале, на десятки регистров — включая зависшие ноты. После #FF кладём эту
+			// разницу в формате кадра, плеер проигрывает её перед прыжком на loop_offset.
+			int resync = 0;
+			if (r.Loop && r.Init != null && r.End != null)
+			{
+				var diff = new[] { new List<byte>(), new List<byte>() };
+				for (int bank = 0; bank < 2; bank++)
+					for (int rg = 0; rg < 256; rg++)
+					{
+						int want = r.Init[bank][rg], have = r.End[bank][rg];
+						if (want < 0 || want == have) continue;
+						diff[bank].Add((byte)rg); diff[bank].Add((byte)want);
+					}
+				int d0 = diff[0].Count / 2, d1 = diff[1].Count / 2;
+				resync = d0 + d1;
+				for (int i = 0, j = 0; i < d0 || j < d1;)
+				{
+					int k0 = Math.Min(127, d0 - i), k1 = Math.Min(255, d1 - j);
+					o.Add((byte)k0); o.AddRange(diff[0].GetRange(i * 2, k0 * 2));
+					o.Add((byte)k1); o.AddRange(diff[1].GetRange(j * 2, k1 * 2));
+					i += k0; j += k1;
+				}
+			}
 			var hdr = new byte[12];
 			BitConverter.GetBytes(r.Loop && loopOffset >= 0 ? (uint)loopOffset : 0xFFFFFFFF).CopyTo(hdr, 0);
 			BitConverter.GetBytes(r.Frames.Count).CopyTo(hdr, 4);
 			hdr[8] = (byte)maxw; hdr[9] = (byte)(maxw >> 8);
+			hdr[10] = (byte)resync; hdr[11] = (byte)(resync >> 8);
 			return (hdr.Concat(o).ToArray(), maxw);
 		}
 
