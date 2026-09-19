@@ -65,7 +65,10 @@ function spectrum(s, from, to) {
 
 function scan(file) {
 	const { fq, s } = readWav(file);
-	let peak = 0, sum = 0, clip = 0, jumps = 0, maxJump = 0;
+	// Порог «мелкого» разрыва: короткий щелчок при пике ~10000 даёт скачок в пару тысяч,
+	// до половины шкалы он не дотягивает. Меняется через OXZ_JUMP.
+	const smallTh = +(process.env.OXZ_JUMP || 2500);
+	let peak = 0, sum = 0, clip = 0, jumps = 0, small = 0, maxJump = 0;
 	for (let i = 0; i < s.length; i++) {
 		const a = Math.abs(s[i]);
 		if (a > peak) peak = a;
@@ -75,13 +78,14 @@ function scan(file) {
 			const d = Math.abs(s[i] - s[i - 1]);
 			if (d > maxJump) maxJump = d;
 			if (d > 16000) jumps++;             // разрыв волны: половина шкалы за сэмпл
+			if (d > smallTh) small++;
 		}
 	}
 	const rms = Math.sqrt(sum / s.length);
 	const db = v => (20 * Math.log10(Math.max(v, 1e-9) / 32768)).toFixed(1);
 	console.log(`\n${file}: ${(s.length / fq).toFixed(1)} с, ${fq} Гц`);
 	console.log(`  пик ${peak.toFixed(0)} (${db(peak)} dBFS), RMS ${rms.toFixed(0)} (${db(rms)} dBFS)`);
-	console.log(`  у предела ${(clip * 100 / s.length).toFixed(3)} %, разрывов волны ${jumps} (наибольший скачок ${maxJump.toFixed(0)})`);
+	console.log(`  у предела ${(clip * 100 / s.length).toFixed(3)} %, разрывов волны ${jumps} (наибольший скачок ${maxJump.toFixed(0)}), скачков > ${smallTh}: ${small}`);
 
 	// огибающая по 100 мс: видно атаки и затухания
 	const step = Math.floor(fq / 10), env = [];
@@ -161,13 +165,16 @@ function clicks(file) {
 		env.push(Math.sqrt(e / step));
 	}
 	let n6 = 0, n12 = 0, worst = 0;
+	const at = [];
 	for (let i = 1; i < env.length; i++) {
 		const d = Math.abs(20 * Math.log10(Math.max(env[i], 1) / Math.max(env[i - 1], 1)));
 		if (d > 6) n6++;
-		if (d > 12) n12++;
+		if (d > 12) { n12++; at.push((i / 50).toFixed(1)); }
 		if (d > worst) worst = d;
 	}
 	console.log(`  скачки огибающей: >6 дБ ${n6}, >12 дБ ${n12} (за ${(env.length / 50).toFixed(0)} с), наибольший ${worst.toFixed(0)} дБ`);
+	// Где именно: щелчки, привязанные к месту в треке, видно по периодичности.
+	if (at.length) console.log(`    >12 дБ на ${at.join(' ')} с`);
 }
 
 if (process.env.OXZ_CLICKS) for (const f of process.argv.slice(2)) clicks(f);

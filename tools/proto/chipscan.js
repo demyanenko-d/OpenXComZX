@@ -8,7 +8,9 @@ const fs = require('fs');
 const path = require('path');
 
 const game = (process.argv[2] || 'TFTD').toUpperCase();
-const dir = path.join(__dirname, '..', '..', 'tmp', 'sd', 'OXZ', game);
+// Каталог с пакетами можно подменить (сравнение двух сведений): OXZ_DIR=tmp/mtest/midi
+const root = process.env.OXZ_DIR || path.join(__dirname, '..', '..', 'tmp', 'sd');
+const dir = path.join(root, 'OXZ', game);
 const AY_CLOCK = 1774400, FM_CLOCK = 3548800, FRAME_HZ = 3500000 / 71680;
 
 function pak(file) {

@@ -30,6 +30,7 @@ exe ресурсами (~1.3 МБ).
 OxzConv.exe                                  # спросит каталог игры и куда писать
 OxzConv.exe <каталог игры>                   # можно перетащить папку на exe; данные — рядом с exe
 OxzConv.exe --game DIR --out DIR [--preview DIR] [--oxcom <bin OpenXcom>] [--lang en-US]
+                                 [--music adlib|midi]   # источник музыки для AY и FM, 22 §11
 OxzConv.exe headers <каталог>                # заголовки C для движка (зовёт tools/build.ps1)
 ```
 

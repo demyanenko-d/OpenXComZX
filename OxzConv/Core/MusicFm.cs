@@ -129,9 +129,12 @@ namespace OxzConv
 				// Хорус (расстроенный дубль, добавка OpenXcom) берём последним, а унисон не
 				// пускаем вовсе: две почти одинаковые ноты съедали по два канала из шести
 				// и давали биения — на FM это слышно как хрип (22 §10.6).
+				// Ударные (источник MIDI) на FM берутся последними и только тональные: у YM2203
+				// нет шума, а хэт и малый — это шум. Их голоса приходят с нулевой частотой и
+				// отсеиваются сами; бочка и томы идут тоном (22 §11.4).
 				var order = new List<int>();
 				foreach (var i in Enumerable.Range(0, 12).Where(k => v.Vol[k] > 0 && v.Freq[k] > 0 && v.Patch[k] >= 0)
-					.OrderByDescending(k => v.Vol[k] - (v.Chorus[k] ? 48 : 0)))
+					.OrderByDescending(k => v.Vol[k] - (v.Chorus[k] ? 48 : 0) - (v.Drum[k] ? 32 : 0)))
 				{
 					if (order.Any(j => Math.Abs((double)v.Freq[j] / v.Freq[i] - 1) < 0.03)) continue;
 					order.Add(i);

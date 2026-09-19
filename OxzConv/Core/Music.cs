@@ -60,6 +60,10 @@ namespace OxzConv
 			public int[] Freq = new int[12], Vol = new int[12], Patch = new int[12], Trig = new int[12];
 			public bool[] Key = new bool[12];      // нота ещё держится (иначе голос в затухании)
 			public bool[] Chorus = new bool[12];   // голос — расстроенный дубль (добавка OpenXcom)
+			// Ударные есть только у источника MIDI (канал 9 GM, MusicMidi): у ADLIB-плеера
+			// ударные уже разложены по тем же 12 голосам, отличить их нечем.
+			public bool[] Drum = new bool[12];     // голос — ударный
+			public int[] Noise = new int[12];      // период шума AY (0 — играть тоном)
 		}
 		class Ins { public int Sample, Prev, Volume, Pitch, Delay, Addr = -1, Start = -1, Ret = -1; }
 
@@ -384,7 +388,8 @@ namespace OxzConv
 			// MusicAy сводит поток на три канала AY, MusicFm — на шесть FM-каналов YM2203.
 			public List<VoiceFrame> Voices = new List<VoiceFrame>();
 			public List<byte[]> Patches = new List<byte[]>();   // тембры трека (24 байта ADLIB)
-			public double Seconds => Frames.Count / FrameHz;
+			// У источника MIDI (MusicMidi) потока OPL3 нет — длину даёт список голосов.
+			public double Seconds => Math.Max(Frames.Count, Voices.Count) / FrameHz;
 		}
 
 		public static Render RenderTrack(byte[] data, double maxSeconds = 1200)

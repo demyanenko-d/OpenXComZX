@@ -2,6 +2,7 @@
 //   OxzConv.exe                                   — спросит каталоги в консоли
 //   OxzConv.exe <каталог игры>                    — данные рядом с exe (перетаскивание)
 //   OxzConv.exe --game DIR --out DIR [--preview DIR] [--oxcom DIR] [--lang en-US]
+//                                    [--music adlib|midi]   — источник музыки для AY и FM
 //   OxzConv.exe headers <каталог>                 — заголовки C для движка
 //   OxzConv.exe dump <OXZ\игра> [таблица [число]]  — проверка: ресурсы / записи правил
 using System;
@@ -51,7 +52,16 @@ namespace OxzConv
 				opt.TryGetValue("preview", out var prev);
 				opt.TryGetValue("oxcom", out var oxDir);
 				opt.TryGetValue("lang", out var lang);
-				var conv = new Converter(opt["game"], opt["out"], prev, new OxcomData(oxDir), lang ?? "en-US", Console.WriteLine);
+				opt.TryGetValue("music", out var music);
+				if (music != null && music != "adlib" && music != "midi")
+				{
+					Console.Error.WriteLine("oxzconv: --music принимает adlib или midi");
+					return 2;
+				}
+				var conv = new Converter(opt["game"], opt["out"], prev, new OxcomData(oxDir), lang ?? "en-US", Console.WriteLine)
+				{
+					MusicSource = music ?? "adlib",
+				};
 				conv.Run();
 				Console.WriteLine($"Copy the folder {Path.Combine(opt["out"], "OXZ")} to the root of the SD card.");
 				if (interactive) { Console.Write("Press Enter to exit..."); Console.ReadLine(); }
@@ -66,7 +76,7 @@ namespace OxzConv
 
 		static int Usage()
 		{
-			Console.Error.WriteLine("usage: OxzConv [<game dir>] | --game DIR --out DIR [--preview DIR] [--oxcom DIR] [--lang en-US] | headers DIR");
+			Console.Error.WriteLine("usage: OxzConv [<game dir>] | --game DIR --out DIR [--preview DIR] [--oxcom DIR] [--lang en-US] [--music adlib|midi] | headers DIR");
 			return 2;
 		}
 	}

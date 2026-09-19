@@ -14,6 +14,10 @@ namespace OxzConv
 		readonly OxcomData ox;
 		readonly Action<string> log;
 		public readonly string Game, RuleFolder, OutDir;
+		// Источник музыки для потоков AY и FM: "adlib" — прогон плеера ADLIB.CAT (умолчание),
+		// "midi" — разбор MIDI оригинала из SOUND/GM.CAT (22 §11). Поток OPL3 (MUSIC.PAK)
+		// всегда собирается из ADLIB.CAT: там играет тот же чип, что у оригинала.
+		public string MusicSource = "adlib";
 		readonly string prevDir, lang;
 		readonly ResIds ids = new ResIds();
 		readonly List<string> report = new List<string>();
@@ -285,6 +289,13 @@ namespace OxzConv
 			var adlib = gfs.Read("SOUND/ADLIB.CAT"); var aEnt = Music.CatEntries(adlib);
 			var intro = gfs.Has("SOUND/AINTRO.CAT") ? gfs.Read("SOUND/AINTRO.CAT") : null;
 			var iEnt = intro != null ? Music.CatEntries(intro) : new List<(int, int)>();
+			// Второй источник: MIDI оригинала (SOUND/GM.CAT, контейнер как у ADLIB.CAT).
+			// Номер записи тот же catPos: каталоги параллельны (по 22 записи в обеих играх).
+			bool useMidi = MusicSource == "midi" && gfs.Has("SOUND/GM.CAT");
+			var gm = useMidi ? gfs.Read("SOUND/GM.CAT") : null;
+			var gEnt = gm != null ? Music.CatEntries(gm) : new List<(int, int)>();
+			var midiCache = new Dictionary<int, Music.Render>();
+			int midiNotes = 0;
 			var pak = new PakWriter(Game);
 			var payk = new PakWriter(Game);   // тот же трек на трёх каналах AY
 			var pfm = new PakWriter(Game);    // он же на FM-частях двух YM2203
@@ -313,11 +324,23 @@ namespace OxzConv
 				int vol = (int)(127 * Y.Num(Y.Get(m, "normalization"), 0.76));
 				if (vol > 255) vol = 255;
 				pak.Add(0x0300 + types[type], ResType.Music, ss.data, rr.Frames.Count, ss.maxWrites, (vol << 8) | (rr.Loop ? 1 : 0));
-				var ay = MusicAy.Encode(rr.Voices, rr.Patches, rr.Loop);
-				payk.Add(0x0300 + types[type], ResType.Music, ay.data, rr.Voices.Count, ay.maxWrites, (vol << 8) | (rr.Loop ? 1 : 0));
+				// Для AY и FM голоса берём из выбранного источника: прогон ADLIB или MIDI.
+				var vr = rr;
+				if (useMidi && catPos < gEnt.Count)
+				{
+					if (!midiCache.ContainsKey(catPos))
+					{
+						var song = MusicMidi.ParseCat(Music.CatTrack(gm, gEnt[catPos]));
+						midiCache[catPos] = MusicMidi.Render(song);
+						midiNotes += song.Notes;
+					}
+					vr = midiCache[catPos];
+				}
+				var ay = MusicAy.Encode(vr.Voices, vr.Patches, vr.Loop);
+				payk.Add(0x0300 + types[type], ResType.Music, ay.data, vr.Voices.Count, ay.maxWrites, (vol << 8) | (vr.Loop ? 1 : 0));
 				ayBytes += ay.data.Length; ayMax = Math.Max(ayMax, ay.maxWrites);
-				var fm = MusicFm.Encode(rr.Voices, rr.Patches, rr.Loop);
-				pfm.Add(0x0300 + types[type], ResType.Music, fm.data, rr.Voices.Count, fm.maxWrites, (vol << 8) | (rr.Loop ? 1 : 0));
+				var fm = MusicFm.Encode(vr.Voices, vr.Patches, vr.Loop);
+				pfm.Add(0x0300 + types[type], ResType.Music, fm.data, vr.Voices.Count, fm.maxWrites, (vol << 8) | (vr.Loop ? 1 : 0));
 				fmBytes += fm.data.Length; fmMax = Math.Max(fmMax, fm.maxWrites);
 				if (rr.Loop) nloop++; else nonce++;
 				n++; bytes += ss.data.Length; maxw = Math.Max(maxw, ss.maxWrites);
@@ -328,8 +351,9 @@ namespace OxzConv
 			var res = pak.Write(Path.Combine(OutDir, "MUSIC.PAK"));
 			var resAy = payk.Write(Path.Combine(OutDir, "MUSICAY.PAK"));
 			var resFm = pfm.Write(Path.Combine(OutDir, "MUSICFM.PAK"));
-			report.Add($"MUSICAY.PAK: сведено на 3 канала AY, {Kb(ayBytes)} KB потоков, max {ayMax} writes/frame ({Kb(resAy.bytes)} KB)");
-			report.Add($"MUSICFM.PAK: сведено на 6 FM-каналов 2 x YM2203, {Kb(fmBytes)} KB потоков, max {fmMax} writes/frame ({Kb(resFm.bytes)} KB)");
+			string src = useMidi ? $"источник MIDI (GM.CAT, {midiCache.Count} треков, {midiNotes} нот)" : "источник ADLIB";
+			report.Add($"MUSICAY.PAK: сведено на 3 канала AY, {src}, {Kb(ayBytes)} KB потоков, max {ayMax} writes/frame ({Kb(resAy.bytes)} KB)");
+			report.Add($"MUSICFM.PAK: сведено на 6 FM-каналов 2 x YM2203, {src}, {Kb(fmBytes)} KB потоков, max {fmMax} writes/frame ({Kb(resFm.bytes)} KB)");
 			report.Add($"MUSIC.PAK: {n} music types ({nloop} looped, {nonce} one-shot), {cache.Count} tracks, {secs / 60:0.0} min, streams {Kb(bytes)} KB, max {maxw} writes/frame ({Kb(res.bytes)} KB)");
 		}
 

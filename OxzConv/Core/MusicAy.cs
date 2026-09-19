@@ -25,6 +25,11 @@ namespace OxzConv
 		const double Compress = 0.7;
 		const double Hyst = 4.0;                   // фора голосу, уже сидящему на канале, дБ
 		const double Chorus = 18.0;                // штраф хорусному дублю: берём, только если больше некого
+		// Ударные (канал 9 GM, только источник MIDI) идут шумом AY. Канал под них отнимать у
+		// мелодии нельзя — их вдвое больше, чем мелодических нот (у UFO 18 % всех взятий, и
+		// почти все — закрытый хэт), поэтому штраф даётся большой: шум берёт канал, только
+		// когда мелодии этот канал не нужен (22 §11.4).
+		const double DrumPenalty = 12.0;
 		const int BassHz100 = 6000;                // ниже — поднимаем на октаву
 
 		// Скорость изменения громкости канала, ступеней за кадр (ступень 3 дБ). Без ограничения
@@ -32,7 +37,7 @@ namespace OxzConv
 		const int RampUp = 5, RampDown = 4;
 		const int NoteDip = 3;                     // насколько приглушить канал на кадре смены ноты
 
-		class Slot { public int Voice = -1, Vol, Period; }
+		class Slot { public int Voice = -1, Vol, Period, Noise; }
 
 		// Что на самом деле сыграет канал: ниже ~60 Гц меандр звучит не нотой, а треском,
 		// поэтому бас поднимается на октаву (в отдельных треках таких нот почти все).
@@ -50,6 +55,8 @@ namespace OxzConv
 			public int Patch = -1, Trig = -1, Freq;
 			public double Vel;                      // затухание от velocity, дБ
 			public bool Chorus;                     // расстроенный дубль (добавка OpenXcom)
+			public bool Drum;                       // ударный голос (источник MIDI)
+			public int Noise;                       // период шума AY (0 — играть тоном)
 			public double Att = MusicEnv.Silence;
 		}
 
@@ -106,6 +113,7 @@ namespace OxzConv
 							int vel = vf.Vol[i] > 127 ? 127 : vf.Vol[i];
 							v.Vel = (63 - ((127 * vel) >> 8)) * 0.75;   // velocity -> TL несущей, 0.75 дБ
 								v.Chorus = vf.Chorus[i];
+								v.Drum = vf.Drum[i]; v.Noise = vf.Noise[i];
 						}
 						v.Freq = vf.Freq[i];
 					}
@@ -118,15 +126,18 @@ namespace OxzConv
 				// даётся фора Hyst — иначе два почти равных голоса каждый кадр меняются
 				// каналами и нота дрожит. Без выбора «первых трёх» каналы залипали на
 				// затухающих хвостах: за трек меню менялось всего три десятка нот.
-				double Eff(int i) => vs[i].Att - (slots.Any(x => x.Voice == i) ? Hyst : 0) + (vs[i].Chorus ? Chorus : 0);
+				double Eff(int i) => vs[i].Att - (slots.Any(x => x.Voice == i) ? Hyst : 0)
+					+ (vs[i].Chorus ? Chorus : 0) + (vs[i].Drum ? DrumPenalty : 0);
+				bool Sounds(int k) => vs[k].Att < MusicEnv.Silence && (vs[k].Freq > 0 || vs[k].Noise > 0);
 				var order = new List<int>();
-				foreach (var i in Enumerable.Range(0, 12).Where(k => vs[k].Att < MusicEnv.Silence && vs[k].Freq > 0).OrderBy(Eff))
+				foreach (var i in Enumerable.Range(0, 12).Where(Sounds).OrderBy(Eff))
 				{
+					if (vs[i].Noise > 0) { order.Add(i); if (order.Count == Chans) break; continue; }
 					// Унисон в каналы не пускаем: два тона, разошедшиеся на процент, дают биения
 					// («дрожание нот»), а канал отнимают у настоящей второй ноты. Сравниваем уже
 					// поднятые частоты: бас 36 Гц и нота 73 Гц — это октава, но после подъёма
 					// баса они сливаются в один тон.
-					if (order.Any(j => Math.Abs((double)Play(vs[j].Freq) / Play(vs[i].Freq) - 1) < 0.03)) continue;
+					if (order.Any(j => vs[j].Noise == 0 && Math.Abs((double)Play(vs[j].Freq) / Play(vs[i].Freq) - 1) < 0.03)) continue;
 					order.Add(i);
 					if (order.Count == Chans) break;
 				}
@@ -135,10 +146,10 @@ namespace OxzConv
 				// Поэтому самый высокий из слышимых голосов занимает место самого тихого.
 				int hi = -1;
 				foreach (var i in Enumerable.Range(0, 12))
-					if (vs[i].Att < MusicEnv.Silence && vs[i].Freq > 0 && !vs[i].Chorus &&
+					if (vs[i].Att < MusicEnv.Silence && vs[i].Freq > 0 && !vs[i].Chorus && !vs[i].Drum &&
 						(hi < 0 || vs[i].Freq > vs[hi].Freq)) hi = i;
 				if (hi >= 0 && order.Count == Chans && !order.Contains(hi) &&
-					!order.Any(j => Math.Abs((double)Play(vs[j].Freq) / Play(vs[hi].Freq) - 1) < 0.03))
+					!order.Any(j => vs[j].Noise == 0 && Math.Abs((double)Play(vs[j].Freq) / Play(vs[hi].Freq) - 1) < 0.03))
 					order[Chans - 1] = hi;
 				var taken = new bool[12];
 				foreach (var s in slots)
@@ -155,7 +166,7 @@ namespace OxzConv
 					s.Voice = pick; taken[pick] = true;
 				}
 				cur.Clear();
-				int mixer = 0;
+				int mixer = 0x3F;                       // всё выключено, ниже включаем нужное
 				for (int c = 0; c < Chans; c++)
 				{
 					var s = slots[c];
@@ -167,9 +178,26 @@ namespace OxzConv
 					{
 						s.Vol = s.Vol > RampDown ? s.Vol - RampDown : 0;   // гасим не рывком
 						Reg(8 + c, s.Vol);
-						if (s.Vol == 0) mixer |= 1 << c;    // тон выключаем, только когда доехали до нуля
+						// Источник звука выключаем, только когда громкость доехала до нуля
+						if (s.Vol > 0) mixer &= ~(s.Noise > 0 ? 8 << c : 1 << c);
 						continue;
 					}
+					if (vs[s.Voice].Noise > 0)
+					{
+						// Ударный голос: тон канала не нужен, звучит шум. Период шума один на
+						// чип — при двух ударах в кадре побеждает последний, это редко.
+						Reg(6, vs[s.Voice].Noise & 0x1F);
+						mixer &= ~(8 << c);
+						s.Noise = vs[s.Voice].Noise; s.Period = 0;
+						if (step < 1) step = 1;
+						if (step > s.Vol + RampUp) step = s.Vol + RampUp;
+						else if (step < s.Vol - RampDown) step = s.Vol - RampDown;
+						s.Vol = step;
+						Reg(8 + c, step);
+						continue;
+					}
+					s.Noise = 0;
+					mixer &= ~(1 << c);
 					int hz100 = Play(vs[s.Voice].Freq);
 					int period = hz100 > 0 ? (int)(100L * Clock / (16L * hz100)) : 0;
 					if (period < 1) period = 1;
@@ -186,7 +214,7 @@ namespace OxzConv
 					s.Vol = step;
 					Reg(8 + c, step);
 				}
-				Reg(7, mixer | 0x38);                       // шум выключен, тоны по маске
+				Reg(7, mixer);                              // тоны и шум по маске (1 — выключено)
 				int n = cur.Count / 2;
 				maxw = Math.Max(maxw, n);
 				if (n == 0) { idle++; continue; }
