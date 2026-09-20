@@ -28,6 +28,7 @@ uint8_t res_game(void);                    // 1 — UFO, 2 — TFTD (загол�
 
 // Ресурсы с SD мимо кэша слотов (банк 12, sdres.c): для боя — наборы тайлов миссии,
 // которые не влезают в слот и должны лежать до конца боя (16 §2.4).
+void sdres_flush(void) __banked;           // отдать страницы кэша слотов в пул
 uint32_t sdres_size(uint16_t id) __banked;
 uint8_t sdres_load(uint16_t id, uint8_t page, res_t *r) __banked;
 

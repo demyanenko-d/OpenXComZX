@@ -74,10 +74,13 @@ static uint8_t __at(0xBE40) unit_tab[32 * TE_SIZE];   // кадры листа �
 // Дисплей-лист (17_battle_render.md §2): вид раскладывается в список готовых команд DMA —
 // по 8 байт, ровно то, что выгружается в регистры. Строится при смене камеры, этажа или карты,
 // а перерисовка становится циклом «прочитал 8 байт — записал 8 портов».
-#define DL_MAX  2048
+// Список живёт в двух страницах: карта миссии бывает 60x60 клеток в четыре этажа, и в одну
+// страницу (2048 записей) вид перестал влезать — часть клеток просто не рисовалась.
+#define DL_PAGE_N 2048                   // записей в странице (16 КБ / 8)
+#define DL_MAX  (DL_PAGE_N * 2)
 #define DL_SIZE 8
-static uint8_t *const dl = (uint8_t *)0xC000;   // страница dl_page, подключается в Win3
-static uint8_t dl_page = PG_NONE;
+static uint8_t *const dl = (uint8_t *)0xC000;   // подключённая страница списка
+static uint8_t dl_page = PG_NONE;        // первая из двух подряд
 static uint16_t dl_n;                // записей в списке
 static uint8_t dl_ok;                // список отвечает текущему виду
 
@@ -173,7 +176,8 @@ static void dl_run(void)
 {
 	uint8_t old = pg_map3(dl_page);
 	const uint8_t *p = dl;
-	for (uint16_t i = dl_n; i; i--, p += DL_SIZE) {
+	for (uint16_t i = dl_n, k = 0; i; i--, k++, p += DL_SIZE) {
+		if (k == DL_PAGE_N) { pg_map3(dl_page + 1); p = dl; }
 		dma_wait();
 		TS_DMASAL = p[0]; TS_DMASAH = p[1]; TS_DMASAX = p[2];
 		TS_DMADAL = p[3]; TS_DMADAH = p[4]; TS_DMADAX = p[5];
@@ -185,10 +189,13 @@ static void dl_run(void)
 }
 
 // Вызывается, когда в Win3 уже подключена страница списка (build_list переключает по рядам)
+static uint16_t dl_over;                 // сколько кадров не влезло в список (диагностика)
+
 static uint8_t *dl_put(void)
 {
-	if (dl_n >= DL_MAX) return 0;
-	return dl + dl_n++ * DL_SIZE;
+	if (dl_n >= DL_MAX) { dl_over++; return 0; }
+	if (dl_n == DL_PAGE_N) pg_map3(dl_page + 1);   // перевалили во вторую страницу
+	return dl + (dl_n++ & (DL_PAGE_N - 1)) * DL_SIZE;
 }
 
 // Кадр (запись вида tile_tab/unit_tab) -> команды дисплей-листа: источник лежит подряд
@@ -428,7 +435,8 @@ static void build_range(int16_t lo, int16_t hi)
 			if (x1 >= m_sx) x1 = m_sx - 1;
 			if (x0 > x1) continue;
 			far_read(rbase + (uint16_t)x0 * 4, row, (uint16_t)(x1 - x0 + 1) * 4);
-			uint8_t old = pg_map3(dl_page);   // дальше пишем команды в страницу списка
+			// дальше пишем команды в страницу списка — ту, в которой сейчас его конец
+			uint8_t old = pg_map3(dl_n >= DL_PAGE_N ? dl_page + 1 : dl_page);
 			const uint8_t *p = row;
 			int16_t px = rx + x0 * 16, py = ry + x0 * 8;
 			for (int16_t x = x0; x <= x1; x++, p += 4, px += 16, py += 8)
@@ -650,6 +658,9 @@ static uint8_t load_gen(uint16_t terrain)
 	if (!mapgen_run(terrain, mods, levels)) return 0;
 	mapgen_sets(set, tset, &ns);
 	if (ns > GEN_SETS) ns = GEN_SETS;
+	memset(tile_tab, 0, sizeof tile_tab);   // не оставлять кадры прошлой карты: если набор
+	memset(tile_y, 0, sizeof tile_y);       //   не загрузится, его части просто не рисуются
+	sdres_flush();                       // кэш ресурсов отдаёт страницы: наборы тайлов важнее
 	uint16_t part = 0;                   // сквозной номер части миссии
 	for (uint8_t s = 0; s < ns && part < 256; s++) {
 		res_t rm, rt;
@@ -694,6 +705,11 @@ static uint8_t load_gen(uint16_t terrain)
 	if (load_unit_sheet(res_game() == 2 ? RES_UNIT_TDXCOM_0 : RES_UNIT_XCOM_0)) place_squad(6);
 	else nunits = 0;
 	sel = 0;
+	dbg_puts("bat: map "); dbg_dec(m_sx); dbg_puts("x"); dbg_dec(m_sy);
+	dbg_puts(" z "); dbg_dec(m_sz); dbg_puts(" parts "); dbg_dec(m_nt);
+	dbg_puts(" sets "); dbg_dec(gen_ns); dbg_puts("/"); dbg_dec(ns); dbg_puts(" units "); dbg_dec(nunits);
+	dbg_puts(" free "); dbg_dec(pg_free_count()); dbg_puts("
+");
 	center();
 	if (nunits) center_on_unit();        // камера на первого бойца отряда
 	loaded = 1;
@@ -853,7 +869,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		break;
 	}
 	case EVT_OPEN:
-		if (dl_page == PG_NONE) dl_page = pg_alloc(1, 1);
+		if (dl_page == PG_NONE) dl_page = pg_alloc(2, 1);   // список вида: две страницы подряд
 		if (pf_page == PG_NONE) pf_page = pg_alloc(1, 1);   // рабочая память поиска пути
 		// Карта миссии собирается генератором (16 §3). Пока миссии нет, террейн берётся
 		// по очереди — клавиша G дальше пересобирает карту следующего террейна.
@@ -871,7 +887,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		break;
 	case EVT_CLOSE:                      // следующий бой — на следующей карте (генератора ещё нет)
 		split_stop();
-		if (dl_page != PG_NONE) { pg_free(dl_page, 1); dl_page = PG_NONE; dl_ok = 0; }
+		if (dl_page != PG_NONE) { pg_free(dl_page, 2); dl_page = PG_NONE; dl_ok = 0; }
 		if (pf_page != PG_NONE) { pg_free(pf_page, 1); pf_page = PG_NONE; }
 		path_n = 0;
 		cur_map = cur_map + 1 < NMAPS ? cur_map + 1 : 0;
@@ -924,7 +940,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			dbg_puts("mapgen: terrain ");
 			dbg_dec(gen_terrain);
 			dbg_puts(ok ? " ok " : " FAIL ");
-			if (ok) { dbg_dec(m_sx); dbg_puts("x"); dbg_dec(m_sy); dbg_puts(" parts "); dbg_dec(m_nt); dbg_puts(" sets "); dbg_dec(gen_ns); dbg_puts(" units "); dbg_dec(nunits); }
+			if (ok) { dbg_puts("dl "); dbg_dec(dl_n); dbg_puts(" over "); dbg_dec(dl_over); dbg_puts(" "); dbg_dec(m_sx); dbg_puts("x"); dbg_dec(m_sy); dbg_puts(" parts "); dbg_dec(m_nt); dbg_puts(" sets "); dbg_dec(gen_ns); dbg_puts(" units "); dbg_dec(nunits); }
 			dbg_puts("\n");
 			gen_terrain++;
 			ui_dirty(0);

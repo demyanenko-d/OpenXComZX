@@ -92,6 +92,19 @@ static uint8_t packs_open(void)
 	return any;
 }
 
+// Отдать страницы кэша слотов обратно в пул: перед боем они нужнее под наборы тайлов
+// миссии (каждый слот — 4 страницы, всего до 24). Слоты заведутся заново при первом же
+// запросе ресурса — если к тому времени память освободится.
+void sdres_flush(void) __banked
+{
+	for (uint8_t s = 0; s < nslots; s++) {
+		if (slot_page[s] != PG_NONE) pg_free(slot_page[s], SLOT_PAGES);
+		slot_page[s] = PG_NONE;
+		slot_id[s] = 0;
+	}
+	nslots = 0;
+}
+
 // Размер ресурса, не загружая его: нужно, чтобы выделить под него страницы (sdres_load).
 // 0 — ресурса нет.
 uint32_t sdres_size(uint16_t id) __banked
