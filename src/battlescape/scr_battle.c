@@ -836,7 +836,9 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	case EVT_OPEN:
 		if (dl_page == PG_NONE) dl_page = pg_alloc(1, 1);
 		if (pf_page == PG_NONE) pf_page = pg_alloc(1, 1);   // рабочая память поиска пути
-		if (!load_map() && cur_map) { cur_map = 0; load_map(); }
+		// Карта миссии собирается генератором (16 §3). Пока миссии нет, террейн берётся
+		// по очереди — клавиша G дальше пересобирает карту следующего террейна.
+		if (!load_gen(gen_terrain) && !load_map() && cur_map) { cur_map = 0; load_map(); }
 		split_start();
 		break;
 	case EVT_TICK:
