@@ -522,11 +522,17 @@ uint8_t geo2_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			UI_GO(A_PUSH, SCR_ALLOC_PSI);
 		}
 		break;
-	case SCR_CONFIRM_LANDING:                     // «Нет»: returnToBase; «Да» — боя на земле нет: тоже домой
+	case SCR_CONFIRM_LANDING:                     // «Нет» — корабль домой, «Да» — высадка в бой
 		if (ev == EVT_BUTTON) {
-			if (ST->craft[ctx.craft].type != NONE8 && ST->craft[ctx.craft].status == CS_OUT) craft_return(ctx.craft);
-			if (arg == 3) UI_GO(A_POP, 0);
-			else not_ported("BATTLESCAPE");
+			if (arg == 3) {
+				if (ST->craft[ctx.craft].type != NONE8 && ST->craft[ctx.craft].status == CS_OUT) craft_return(ctx.craft);
+				UI_GO(A_POP, 0);
+			} else {
+				// Бой: карту собирает генератор при открытии экрана (16 §3). Выбор террейна
+				// и размера по развёртыванию миссии — следующий шаг, корабль пока остаётся
+				// на месте, разбора после боя ещё нет.
+				UI_GO(A_POP_PUSH, SCR_BATTLE);
+			}
 		}
 		break;
 	case SCR_CONFIRM_CYDONIA:
