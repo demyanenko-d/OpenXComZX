@@ -42,6 +42,10 @@ static uint16_t mis_deploy = 0xFFFF, mis_ufo = 0xFFFF, mis_craft = 0xFFFF;
 static uint8_t m_sx, m_sy, m_sz, m_nt;
 static uint16_t tiles_res;           // SPRSET тайлов этой карты
 static uint8_t level;                // этаж камеры
+// Показывать все этажи снизу до текущего или только текущий: кнопка «1/2» на панели,
+// в оригинале Camera::toggleShowAllLayers. С одним этажом крыша корабля не мешает смотреть
+// внутрь, но верхние этажи не видны — как в оригинале.
+static uint8_t all_levels = 1;
 static int16_t cam_x, cam_y;         // начало координат карты на экране
 static int16_t base_x, base_y;       // для какого положения камеры построен буфер
 static int16_t vx_lo, vx_hi;         // мировой диапазон X, который сейчас нарисован в буфере
@@ -287,6 +291,7 @@ static const wdef_t w_battle[] = {
 	HOT(144, 144, 32, 16, A_NONE, 5, 'i'),         // инвентарь
 	HOT(144, 160, 32, 16, A_NONE, 6, 'c'),         // центрировать на бойце
 	HOT(176, 144, 32, 16, A_NONE, 7, 0),           // следующий боец
+	HOT(208, 144, 32, 16, A_NONE, 9, 0),           // показывать все этажи или только текущий
 	HOT(240, 144, 32, 16, A_NONE, 8, 0),           // конец хода
 	HOT(240, 160, 32, 16, A_POP, 0, ESC),          // выйти из боя
 };
@@ -340,7 +345,7 @@ static uint8_t load_map(void)
 	rows_init();
 	map_phys = r.phys;
 	cells = r.phys + 8 + (uint32_t)m_nt * 4;
-	level = m_sz > 1 ? 1 : 0;
+	level = 0;                           // камера начинается на земле, как в оригинале
 	center();
 	loaded = 1;
 	return 1;
@@ -391,20 +396,19 @@ static void dl_unit_frame(uint8_t fr, int16_t x, int16_t y)
 	dl_blit(e, x, y);
 }
 
-// Юниты этого ряда: рисуются после клетки, в порядке ноги -> торс -> руки
-static void draw_units_row(uint8_t z, int16_t y, int16_t rx, int16_t ry, int16_t x0, int16_t x1)
+// Боец в этой клетке (если он тут есть): ноги, торс, руки по направлению
+static void draw_unit_at(uint8_t z, uint8_t y, uint8_t x, int16_t px, int16_t py)
 {
 	if (!nunits || unit_page == PG_NONE) return;
 	for (uint8_t i = 0; i < nunits; i++) {
 		const unit_t *u = &units[i];
-		if (!u->alive || u->z != z || u->y != (uint8_t)y) continue;
-		if (u->x < (uint8_t)x0 || u->x > (uint8_t)x1) continue;
-		int16_t px = rx + (int16_t)u->x * 16, py = ry + (int16_t)u->x * 8;
+		if (!u->alive || u->z != z || u->y != y || u->x != x) continue;
 		uint8_t d = u->dir & 7;
 		dl_unit_frame(16 + d, px, py);       // ноги
 		dl_unit_frame(24 + d, px, py);       // торс
 		dl_unit_frame(0 + d, px, py);        // левая рука
 		dl_unit_frame(8 + d, px, py);        // правая рука
+		return;
 	}
 }
 
@@ -412,7 +416,7 @@ static void build_range(int16_t lo, int16_t hi)
 {
 	dl_n = 0;
 	int16_t dlo = (lo - TILE_W + 1 + 15) >> 4, dhi = hi >> 4;   // x - y для краёв полосы
-	for (uint8_t z = 0; z <= level; z++) {
+	for (uint8_t z = all_levels ? 0 : level; z <= level; z++) {
 		// Какие ряды вообще могут попасть в буфер: по X полоса задаёт x - y = d из [dlo, dhi],
 		// значит by = (2y + d) * 8 - z * 24 + B, и из -40 < by < BUF_H выводятся границы y.
 		int16_t b = base_y + PAD_Y - (int16_t)z * 24;
@@ -440,13 +444,16 @@ static void build_range(int16_t lo, int16_t hi)
 			uint8_t old = pg_map3(dl_n >= DL_PAGE_N ? dl_page + 1 : dl_page);
 			const uint8_t *p = row;
 			int16_t px = rx + x0 * 16, py = ry + x0 * 8;
-			for (int16_t x = x0; x <= x1; x++, p += 4, px += 16, py += 8)
+			for (int16_t x = x0; x <= x1; x++, p += 4, px += 16, py += 8) {
 				for (uint8_t k = 0; k < 4; k++) {
 					uint8_t t = p[k];
 					if (!t) continue;
 					dl_tile((uint8_t)(t - 1), px, py - (int16_t)tile_y[t - 1]);   // px — мировая X
 				}
-			draw_units_row(z, y, rx, ry, x0, x1);
+				// Боец идёт сразу за своей клеткой: клетки правее и ниже рисуются позже и
+				// закрывают его — иначе он виден сквозь стены и закрытые двери.
+				draw_unit_at(z, (uint8_t)y, (uint8_t)x, px, py);
+			}
 			pg_map3(old);
 		}
 	}
@@ -709,18 +716,13 @@ static uint8_t load_gen(uint16_t terrain)
 	map_phys = cells;
 	tiles_phys = 0;
 	rows_init();
-	level = m_sz > 1 ? 1 : 0;
+	level = 0;                           // камера начинается на земле, как в оригинале
 	gen_mode = 1;
 	dl_ok = 0;
 	// отряд: лист брони X-COM (TDXCOM_0 у TFTD, XCOM_0 у UFO)
 	if (load_unit_sheet(res_game() == 2 ? RES_UNIT_TDXCOM_0 : RES_UNIT_XCOM_0)) place_squad(6);
 	else nunits = 0;
 	sel = 0;
-	dbg_puts("bat: map "); dbg_dec(m_sx); dbg_puts("x"); dbg_dec(m_sy);
-	dbg_puts(" z "); dbg_dec(m_sz); dbg_puts(" parts "); dbg_dec(m_nt);
-	dbg_puts(" sets "); dbg_dec(gen_ns); dbg_puts("/"); dbg_dec(ns); dbg_puts(" units "); dbg_dec(nunits);
-	dbg_puts(" free "); dbg_dec(pg_free_count()); dbg_puts("
-");
 	center();
 	if (nunits) center_on_unit();        // камера на первого бойца отряда
 	loaded = 1;
@@ -939,6 +941,11 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		case 5: UI_GO(A_PUSH, SCR_INVENTORY); break;
 		case 6: center_on_unit(); ui_dirty(0); break;
 		case 7: if (nunits) { sel = (uint8_t)((sel + 1) % nunits); center_on_unit(); ui_dirty(0); } break;
+		case 9:                              // «1/2»: все этажи или только текущий
+			all_levels = !all_levels;
+			dl_ok = 0;
+			ui_dirty(0);
+			break;
 		case 8:                              // конец хода: время и энергия бойцов восстанавливаются
 			for (uint8_t i = 0; i < nunits; i++) { units[i].tu = units[i].tu_max; units[i].en = units[i].tu_max; }
 			ui_dirty(0);
