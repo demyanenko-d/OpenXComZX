@@ -19,6 +19,7 @@
 #include "scrdef.h"
 #include "music.h"
 #include "mus_ids.h"
+#include "dbg.h"
 
 static char t1[80], t2[80];
 static char big_tmp[256];                // промежуточные str_fmt (список стран отчёта, сообщения с {2})
@@ -42,6 +43,7 @@ extern volatile uint16_t frames;         // crt0.s
 static uint8_t rep_arg;
 static uint16_t rep_at;
 static uint8_t spd_shown;                        // какая скорость показана на переключателях
+static uint8_t df_shown = 0xFF;                  // состояние боёв, уже выведенное в журнал
 static const uint8_t rep_box[6][4] = {
 	{ 259, 176, 12, 10 }, { 283, 176, 12, 10 }, { 271, 162, 13, 12 }, { 271, 187, 13, 12 },
 	{ 295, 156, 23, 23 }, { 300, 182, 13, 17 },
@@ -183,6 +185,9 @@ static void show_event(void)
 {
 	if (!gev_n) return;
 	ev_cur = gev[0];
+	// Журнал событий геоскейпа: по нему видно, во что упёрся ход времени (07 §4)
+	dbg_puts("geo: event "); dbg_dec(ev_cur.kind); dbg_puts(" what "); dbg_dec(ev_cur.what);
+	dbg_puts(" base "); dbg_dec(ev_cur.base); dbg_puts(" left "); dbg_dec(gev_n); dbg_puts("\n");
 	if (ev_cur.kind == GE_ARRIVED) {
 		narr = 0;
 		uint8_t k = 0;
@@ -930,6 +935,15 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 					}
 			}
 			if (gev_n) { show_event(); break; }     // сначала — непоказанные события
+			{   // журнал боёв: печатается только при смене состояния, иначе тихо
+				uint8_t st = (uint8_t)(df_count * 16 + df_nmax * 4 + dz_state);
+				uint8_t was = df_shown;
+				if (st != was) {
+					df_shown = st;
+					dbg_puts("geo: df n "); dbg_dec(df_count); dbg_puts(" max "); dbg_dec(df_nmax);
+					dbg_puts(" zoom "); dbg_dec(dz_state); dbg_puts(" gev "); dbg_dec(gev_n); dbg_puts("\n");
+				}
+			}
 			if (df_count) {                          // бои: развёрнутый — окна, время стоит
 				if (!df_nmax && df_run()) ui_dirty(10);   // свёрнутые: конец боя или разворот — значки
 				if (df_nmax) { if (icons_on) ui_dirty(10); UI_GO(A_PUSH, SCR_DOGFIGHT); break; }

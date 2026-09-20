@@ -12,6 +12,7 @@
 #include "rules.h"
 #include "state.h"
 #include "game.h"
+#include "dbg.h"
 
 static uint16_t cword(uint8_t type, uint8_t off)
 {
@@ -179,6 +180,18 @@ static void home(uint8_t c)
 	cr->order = 0;
 }
 
+// Журнал прибытия к НЛО: печатается, только когда у корабля меняется исход (07 §4) —
+// по нему видно, почему бой не начался (корабль уже в бою, не догнать, нет слота боя).
+static uint8_t arr_why[MAX_CRAFTS];
+
+static void arr_log(uint8_t c, uint8_t why)
+{
+	uint8_t was = arr_why[c];
+	if (was == why) return;
+	arr_why[c] = why;
+	dbg_puts("craft: "); dbg_dec(c); dbg_puts(" ufo -> "); dbg_dec(why); dbg_puts("\n");
+}
+
 // Прибытие к цели (GeoscapeState::time5Seconds, reachedDestination)
 static void arrive(uint8_t c)
 {
@@ -189,17 +202,22 @@ static void arrive(uint8_t c)
 	case DK_UFO: {
 		ufo_t *u = &ST->ufo[d];
 		if (u->status == US_FLYING) {
-			if (cr->flags & CRF_BATTLE) return;
+			if (cr->flags & CRF_BATTLE) { arr_log(c, 1); return; }   // уже в бою
 			uint16_t mx = cword(cr->type, offsetof(r_crafts_t, speed_max));
-			if (ST->ufo[d].speed > mx) return;       // не догнать
+			if (ST->ufo[d].speed > mx) { arr_log(c, 2); return; }    // не догнать
 			uint8_t e = df_start(c, d);              // не больше 4 боёв: иначе — на следующем шаге
+			arr_log(c, e ? 4 : 3);                   // 3 — нет слота боя, 4 — бой начался
 			if (e) gev_push(GE_DOGFIGHT, e - 1, c, d);
 			return;
 		}
 		if (crew(c)) {
+			arr_log(c, 5);                           // высадка
 			if (!(ST->craft[c].flags & CRF_BATTLE)) { ST->speed = 0; gev_push(GE_LANDING, NONE8, c, DK_UFO); }
-		} else if (ST->ufo[d].status != US_LANDED)
+		} else if (ST->ufo[d].status != US_LANDED) {
+			arr_log(c, 7);                           // домой
 			craft_return(c);
+		} else
+			arr_log(c, 6);                           // висит над севшим НЛО
 		return;
 	}
 	case DK_WAYPOINT:
