@@ -17,6 +17,7 @@ uint16_t mapgen_find_kind(uint8_t kind) __banked;
 uint16_t mapgen_kind_nth(uint8_t kind, uint8_t n) __banked;   // n-я карта этого вида   // 1 — корабль X-COM, 2 — НЛО (#FFFF нет)
 void mapgen_craft(uint8_t *x, uint8_t *y, uint8_t *w, uint8_t *l) __banked;   // место корабля
 void mapgen_free(void) __banked;         // отдать страницы карты обратно в пул
+void mapgen_used(uint8_t *mask) __banked;   // 32 байта: какие части попали на карту
 
 uint16_t mapgen_sx(void) __banked;
 uint16_t mapgen_filled(void) __banked;   // непустых клеток (проверка укладки)

@@ -630,7 +630,7 @@ static void step_unit(void)
 // что нужно для показа: таблица частей (tile_tab) и тайлсеты наборов в своих страницах.
 // Номер части в клетке — как в MAP оригинала: 0 пусто, иначе номер части миссии; рендер
 // берёт tile_tab[t - 1], поэтому часть t кладётся в строку t - 1.
-#define GEN_SETS 8
+#define GEN_SETS 16              // столько же, сколько у генератора (MAX_SETS)
 static uint8_t gen_mode;                 // 1 — показывается сгенерированная карта
 static uint8_t gen_page[GEN_SETS], gen_np[GEN_SETS], gen_ns;
 
@@ -662,10 +662,20 @@ static uint8_t load_gen(uint16_t terrain)
 	memset(tile_tab, 0, sizeof tile_tab);   // не оставлять кадры прошлой карты: если набор
 	memset(tile_y, 0, sizeof tile_y);       //   не загрузится, его части просто не рисуются
 	sdres_flush();                       // кэш ресурсов отдаёт страницы: наборы тайлов важнее
+	// Тайлсет грузим только у наборов, чьи части реально попали на карту: пустые наборы
+	// (те же BLANKS) иначе съедают страницы, которых потом не хватает кораблю и НЛО.
+	uint8_t used[32];
+	mapgen_used(used);
 	uint16_t part = 0;                   // сквозной номер части миссии
 	for (uint8_t s = 0; s < ns && part < 256; s++) {
 		res_t rm, rt;
 		if (!res_find(set[s], &rm)) continue;
+		uint8_t need = 0;                // используется ли хоть одна часть набора
+		for (uint16_t i = 0; i < rm.a && part + i < 256; i++) {
+			uint16_t g = part + i;
+			if (used[g >> 3] & (1 << (g & 7))) { need = 1; break; }
+		}
+		if (!need) { part += rm.a; continue; }
 		uint32_t tsz = sdres_size(tset[s]);
 		uint8_t np = (uint8_t)((tsz + 16383) >> 14);
 		uint8_t pg = np ? pg_alloc(np, 1) : PG_NONE;

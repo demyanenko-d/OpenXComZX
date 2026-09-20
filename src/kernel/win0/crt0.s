@@ -221,6 +221,19 @@ split_wait:				; reti и обработчик отработает второй 
 	djnz	split_wait
 	jr	frame_done
 frame_work:
+	;; Сплит: смещения карты и следующий разрез ставятся ПЕРВЫМИ. Ввод (спрайт курсора в
+	;; S-file) и музыка (до сотни записей в чип) занимают заметное время, и если делать их
+	;; раньше, установка смещений съезжает за начало картинки — изображение дрожит, особенно
+	;; когда мышь движется (17 §3).
+	ld	a, (_split_on)
+	or	a
+	jr	z, frame_count
+	call	set_map_offs		; бой: вернуть смещения карты до начала картинки
+	xor	a, a
+	ld	(_split_phase), a
+	ld	hl, (_split_line)	; следующее прерывание — на строке разреза
+	call	set_vsint
+frame_count:
 	ld	hl, (_frames)
 	inc	hl
 	ld	(_frames), hl
@@ -230,14 +243,6 @@ frame_work:
 	ld	a, (_mus_state)
 	dec	a
 	call	z, mus_isr		; 1 — играет: отдать чипу кадр музыки
-	ld	a, (_split_on)
-	or	a
-	jr	z, frame_done
-	call	set_map_offs		; бой: вернуть смещения карты до начала картинки
-	xor	a, a
-	ld	(_split_phase), a
-	ld	hl, (_split_line)	; следующее прерывание — на строке разреза
-	call	set_vsint
 frame_done:
 	pop	hl
 	pop	de

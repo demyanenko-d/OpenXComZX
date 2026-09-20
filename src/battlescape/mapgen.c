@@ -26,6 +26,7 @@
 #define MAX_MOD     8                  // модулей по стороне (до 80x80 клеток)
 #define MAX_PARTS   255                // частей в наборах террейна (номер в клетке — байт)
 #define MAX_BLOCKS  64                 // блоков в террейне, которые различает генератор
+#define MAX_SETS    16                 // наборов MCD на миссию (террейн + корабль + НЛО)
 
 // Команды скрипта — те же номера, что в конвертере
 #define C_ADD_BLOCK 0
@@ -61,11 +62,10 @@ typedef struct {
 	blk_t blk[MAX_BLOCKS];
 	uint8_t uses[MAX_BLOCKS];          // сколько раз блок уже поставлен (maxUses)
 	uint8_t nsets;
-	uint16_t set[8];                   // ресурсы MCDSET террейна
-	uint8_t setn[8];                   // частей в каждом наборе — для трансляции номеров
-	uint16_t tset[8];                  // ресурсы TILESET
-	uint8_t tpage[8];                  // страницы, куда загружены тайлсеты
-	uint8_t tpages[8];                 // сколько страниц занял тайлсет
+	// Наборов бывает больше восьми: у террейна миссии их до шести, плюс корабль и НЛО
+	uint16_t set[MAX_SETS];            // ресурсы MCDSET
+	uint8_t setn[MAX_SETS];            // частей в каждом наборе — для трансляции номеров
+	uint16_t tset[MAX_SETS];           // ресурсы TILESET
 	far_t cells;                       // карта: sx*sy*sz клеток по 4 байта
 	uint8_t page;                      // первая страница карты
 	uint8_t pages;
@@ -94,7 +94,7 @@ static uint8_t load_terrain(uint16_t idx, int16_t *script)
 	*script = (int16_t)far_word(p);
 	G.nsets = far_byte(p + 2);
 	G.nblk = far_byte(p + 3);
-	if (G.nsets > 8) G.nsets = 8;
+	if (G.nsets > MAX_SETS) G.nsets = MAX_SETS;
 	if (G.nblk > MAX_BLOCKS) G.nblk = MAX_BLOCKS;
 	p += 5;                                 // за nBlocks идёт вид террейна (kind)
 	for (uint8_t i = 0; i < G.nsets; i++) { G.set[i] = far_word(p); G.tset[i] = far_word(p + 2); p += 4; }
@@ -249,7 +249,7 @@ static uint8_t place_extra(uint16_t terr, const int16_t *rects, uint8_t nrects, 
 	if (terr >= n) return 0;
 	far_t p = r.phys + far_word(r.phys + 2 + (uint32_t)terr * 2);
 	uint8_t nsets = far_byte(p + 2), nblk = far_byte(p + 3);
-	if (!nsets || !nblk || G.nsets + nsets > 8) return 0;
+	if (!nsets || !nblk || G.nsets + nsets > MAX_SETS) return 0;
 	p += 5;
 
 	// сдвиг номеров частей — столько их уже занято террейном миссии
@@ -596,6 +596,23 @@ void mapgen_free(void) __banked
 void mapgen_craft(uint8_t *x, uint8_t *y, uint8_t *w, uint8_t *l) __banked
 {
 	*x = G.craft_x; *y = G.craft_y; *w = G.craft_w; *l = G.craft_l;
+}
+
+// Какие части реально попали на карту: по биту на часть (256 бит). Экран боя грузит
+// тайлсеты только тех наборов, чьи части используются, — иначе на пустые наборы уходит
+// память, которой потом не хватает кораблю и НЛО.
+void mapgen_used(uint8_t *mask) __banked
+{
+	memset(mask, 0, 32);
+	for (uint8_t z = 0; z < G.sz; z++)
+		for (uint16_t y = 0; y < G.sy; y++) {
+			uint8_t row[80 * 4];
+			uint16_t len = G.sx * 4;
+			if (len > sizeof row) len = sizeof row;
+			far_read(G.cells + ((uint32_t)(z * G.sy + y) * G.sx) * 4, row, len);
+			for (uint16_t x = 0; x < len; x++)
+				if (row[x]) mask[row[x] >> 3] |= (uint8_t)(1 << (row[x] & 7));
+		}
 }
 
 uint16_t mapgen_filled(void) __banked
