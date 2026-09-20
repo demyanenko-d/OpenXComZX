@@ -24,6 +24,7 @@
 #include "dbg.h"
 #include "mapgen.h"
 #include "pathfind.h"
+#include "globe.h"
 #include "music.h"
 #include "text.h"
 
@@ -885,11 +886,26 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	case EVT_DRAW:
 		draw_all();
 		break;
-	case EVT_CLOSE:                      // следующий бой — на следующей карте (генератора ещё нет)
+	case EVT_CLOSE:
+		// Бой отдаёт всю свою память: карту, наборы тайлов, лист юнитов, список вида и
+		// рабочую память поиска пути. Иначе геоскейпу не из чего заводить слоты кэша, и он
+		// перечитывает каждый фон с карты — экран залипает (14 §todo).
 		split_stop();
+		gen_free();
+		if (unit_page != PG_NONE) { pg_free(unit_page, unit_np); unit_page = PG_NONE; }
+		mapgen_free();
+		gen_mode = 0;
+		loaded = 0;
+		nunits = 0;
 		if (dl_page != PG_NONE) { pg_free(dl_page, 2); dl_page = PG_NONE; dl_ok = 0; }
 		if (pf_page != PG_NONE) { pg_free(pf_page, 1); pf_page = PG_NONE; }
 		path_n = 0;
+		// Карта боя рисуется в строки холста 200.., а там же задний буфер глобуса (globe.s,
+		// BACK_Y 280): после боя геоскейп обязан нарисовать планету заново, иначе на экране
+		// остаются тайлы поля боя.
+		globe_invalidate();
+		gview_reset();
+		globe_prepare();                 // собрать планету в задний буфер целиком, поверх следов боя
 		cur_map = cur_map + 1 < NMAPS ? cur_map + 1 : 0;
 		break;
 	case EVT_BUTTON:

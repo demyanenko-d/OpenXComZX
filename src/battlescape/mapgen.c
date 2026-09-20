@@ -582,6 +582,16 @@ uint8_t mapgen_run(uint16_t terrain, uint8_t mods, uint8_t levels) __banked
 }
 
 // Сколько клеток непусто (пол есть) — грубая проверка, что укладка сработала
+// Отдать память карты: после боя она никому не нужна, а геоскейпу страницы нужны
+// (иначе ему нечем грузить фоны окон и он читает их с карты каждый кадр).
+void mapgen_free(void) __banked
+{
+	if (G.page != PG_NONE && G.pages) pg_free(G.page, G.pages);
+	G.page = PG_NONE;
+	G.pages = 0;
+	G.cells = 0;
+}
+
 // Где встал корабль отряда (в клетках): 0 в ширине — корабля на карте нет
 void mapgen_craft(uint8_t *x, uint8_t *y, uint8_t *w, uint8_t *l) __banked
 {
