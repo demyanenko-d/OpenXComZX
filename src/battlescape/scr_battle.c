@@ -23,6 +23,7 @@
 #include "scrdef.h"
 #include "dbg.h"
 #include "mapgen.h"
+#include "pathfind.h"
 #include "music.h"
 #include "text.h"
 
@@ -264,7 +265,9 @@ static void dl_tile(uint8_t t, int16_t x, int16_t y)
 }
 
 static const wdef_t w_battle[] = {
-	CUS(0, 0, 320, 200, DYN(0), A_NONE, 0),        // всё рисует экран (EVT_DRAW)
+	// Виджет карты: рисует экран (EVT_DRAW) и отдаёт клики экрану (EVT_BUTTON, arg 0) —
+	// по ним боец идёт в клетку. Панель ниже перекрыта своими кнопками.
+	CUS(0, 0, 320, VIEW_H, DYN(0), A_CUSTOM, 0),
 	// Панель ICONS: кнопки на тех же местах, что в оригинале (BattlescapeState.cpp:100-115).
 	HOT(48, 144, 32, 16, A_NONE, 1, 0),            // боец выше по списку
 	HOT(48, 160, 32, 16, A_NONE, 2, 0),            // боец ниже
@@ -563,6 +566,53 @@ static void place_squad(uint8_t n)
 	}
 }
 
+
+// ---------------------------------------------------------------- ход бойца
+// Поиск пути — волна по клеткам текущего этажа (Pathfinding оригинала считает ещё и
+// подъёмы, стоимость частей и приседание; здесь пока ровная цена шага). Рабочие массивы
+// лежат в своей странице пула и видны через Win3: стоимость и откуда пришли, по байту
+// на клетку карты (до 64x64).
+#define STEP_TU        4                 // единиц времени за шаг (в оригинале зависит от пола)
+#define PATH_MAX       24
+
+static uint8_t pf_page = PG_NONE;                // страница под рабочие массивы поиска пути
+static uint8_t path[PATH_MAX], path_n, path_i;   // направления шагов
+static uint8_t move_wait;                        // кадров до следующего шага
+
+// Смещения восьми направлений (0 — север, дальше по часовой, как в оригинале)
+// Своя копия: таблицы из банка поиска пути видны только при подключённом том банке
+static const int8_t dir_dx[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
+static const int8_t dir_dy[8] = { -1, -1, 0, 1, 1, 1, 0, -1 };
+
+// Экранная точка -> клетка карты (обратное к Camera::convertMapToScreen)
+static uint8_t screen_to_cell(int16_t mx, int16_t my, uint8_t *ox, uint8_t *oy)
+{
+	int16_t a = mx - cam_x - TILE_W / 2;                 // (x - y) * 16
+	int16_t b = my - cam_y + (int16_t)level * 24 - TILE_H / 2 + 8;   // (x + y) * 8
+	int16_t x = (a + 2 * b) / 32, y = (2 * b - a) / 32;
+	if (x < 0 || y < 0 || x >= m_sx || y >= m_sy) return 0;
+	*ox = (uint8_t)x; *oy = (uint8_t)y;
+	return 1;
+}
+
+// Один шаг по пути: поворот, перенос в клетку и расход времени
+static void step_unit(void)
+{
+	if (!nunits || path_i >= path_n) { path_n = 0; return; }
+	unit_t *u = &units[sel < nunits ? sel : 0];
+	uint8_t d = path[path_i];
+	int16_t nx = (int16_t)u->x + dir_dx[d], ny = (int16_t)u->y + dir_dy[d];
+	if (u->tu < STEP_TU || nx < 0 || ny < 0 || nx >= m_sx || ny >= m_sy) { path_n = 0; return; }
+	u->dir = d;
+	u->x = (uint8_t)nx; u->y = (uint8_t)ny;
+	u->tu -= STEP_TU;
+	if (u->en > 1) u->en--;              // энергия тратится медленнее времени
+	path_i++;
+	if (path_i >= path_n) path_n = 0;
+	dl_ok = 0;                           // вид пересобирается: боец переехал
+	ui_dirty(0);
+}
+
 // ---------------------------------------------------------------- сгенерированная карта
 // Генератор (mapgen.c, банк 29) собирает поле из блоков террейна, а здесь собирается всё,
 // что нужно для показа: таблица частей (tile_tab) и тайлсеты наборов в своих страницах.
@@ -785,8 +835,15 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	}
 	case EVT_OPEN:
 		if (dl_page == PG_NONE) dl_page = pg_alloc(1, 1);
+		if (pf_page == PG_NONE) pf_page = pg_alloc(1, 1);   // рабочая память поиска пути
 		if (!load_map() && cur_map) { cur_map = 0; load_map(); }
 		split_start();
+		break;
+	case EVT_TICK:
+		if (path_n) {                        // идём по пути: шаг раз в несколько кадров
+			if (move_wait) move_wait--;
+			else { step_unit(); move_wait = 3; }
+		}
 		break;
 	case EVT_DRAW:
 		draw_all();
@@ -794,10 +851,24 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	case EVT_CLOSE:                      // следующий бой — на следующей карте (генератора ещё нет)
 		split_stop();
 		if (dl_page != PG_NONE) { pg_free(dl_page, 1); dl_page = PG_NONE; dl_ok = 0; }
+		if (pf_page != PG_NONE) { pg_free(pf_page, 1); pf_page = PG_NONE; }
+		path_n = 0;
 		cur_map = cur_map + 1 < NMAPS ? cur_map + 1 : 0;
 		break;
 	case EVT_BUTTON:
 		switch (arg) {
+		case 0: {                            // клик по карте: вести выбранного бойца
+			if (!gen_mode || !nunits || cursor_y >= VIEW_H) break;
+			uint8_t tx, ty;
+			if (!screen_to_cell(cursor_x, cursor_y, &tx, &ty)) break;
+			const unit_t *u = &units[sel < nunits ? sel : 0];
+			pf_req_t q = { cells, m_sx, m_sy, u->z, u->x, u->y, tx, ty, u->tu, STEP_TU, pf_page };
+			path_n = pf_find(&q, path, PATH_MAX);
+			path_i = 0;
+
+			move_wait = 0;
+			break;
+		}
 		case 1: if (sel) sel--; ui_dirty(0); break;
 		case 2: if (sel + 1 < nunits) sel++; ui_dirty(0); break;
 		case 3: if (level + 1 < m_sz) { level++; center(); ui_dirty(0); } break;
