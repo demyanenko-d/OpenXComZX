@@ -15,6 +15,7 @@
 	.globl	_far_copy
 	.globl	_dbg_puts
 	.globl	_dbg_dec
+	.globl	_dbg_hex8
 	.globl	_near_phys
 	.globl	_pg_win3
 	.globl	win3_real
@@ -239,8 +240,8 @@ _far_copy::
 	ld	(fc_len + 2), hl
 	;; Страховка: столько за раз мы не копируем никогда (в игре — от 200 байт до страницы).
 	;; Длина больше #FFFF означает испорченные аргументы, а такая передача DMA идёт по всей
-	;; памяти и затирает ядро под собой — машина умирает целиком. Лучше не сделать ничего
-	;; и сказать об этом в консоль: в отчёте адрес возврата (кто позвал) и сама длина.
+	;; памяти и затирает ядро под собой — машина умирает целиком. Ничего не делаем и пишем
+	;; в консоль всё, что пришло: кто звал, приёмник, источник, длину и верх стека.
 	ld	a, h
 	or	a, l
 	jr	z, fc_ok
@@ -249,19 +250,71 @@ _far_copy::
 	call	_dbg_puts
 	pop	hl
 	push	hl
-	ld	e, l
-	ld	d, h
-	ld	hl, #0
-	call	_dbg_dec
+	call	pr_hl
+	ld	hl, #s_fcdst
+	call	_dbg_puts
+	ld	hl, #fc_dst
+	call	pr_far
+	ld	hl, #s_fcsrc
+	call	_dbg_puts
+	ld	hl, #fc_src
+	call	pr_far
 	ld	hl, #s_fclen
 	call	_dbg_puts
-	ld	de, (fc_len)
-	ld	hl, (fc_len + 2)
-	call	_dbg_dec
+	ld	hl, #fc_len
+	call	pr_far
+	ld	hl, #s_fcsp
+	call	_dbg_puts
+	ld	hl, #0
+	add	hl, sp
+	inc	hl
+	inc	hl			; за сохранённым адресом возврата
+	ld	b, #6			; шесть слов стека вызывающего
+fc_spl:	push	bc
+	push	hl
+	ld	e, (hl)
+	inc	hl
+	ld	d, (hl)
+	ex	de, hl
+	call	pr_hl
+	pop	hl
+	inc	hl
+	inc	hl
+	pop	bc
+	djnz	fc_spl
 	ld	hl, #s_nl
 	call	_dbg_puts
 	pop	iy
 	jp	(iy)
+
+;; HL как четыре шестнадцатеричные цифры и пробел
+pr_hl:
+	ld	a, h
+	call	_dbg_hex8
+	ld	a, l
+	call	_dbg_hex8
+	ld	a, #32
+	ld	bc, #0xF8AF
+	out	(c), a
+	ret
+
+;; Четыре байта по (HL) — дальний указатель / длина, старшим байтом вперёд
+pr_far:
+	push	hl
+	inc	hl
+	inc	hl
+	ld	e, (hl)
+	inc	hl
+	ld	d, (hl)
+	ex	de, hl
+	call	pr_hl
+	pop	hl
+	ld	e, (hl)
+	inc	hl
+	ld	d, (hl)
+	ex	de, hl
+	jp	pr_hl
+
 fc_ok:
 fc_loop:
 	ld	hl, (fc_len)
@@ -402,9 +455,15 @@ page_of:
 	or	e
 	ret
 
-s_fcbad:	.ascii	"far_copy: bad len, caller "
+s_fcbad:	.ascii	"far_copy: bad args, caller "
 	.db	0
-s_fclen:	.ascii	" len "
+s_fcdst:	.ascii	"dst "
+	.db	0
+s_fcsrc:	.ascii	"src "
+	.db	0
+s_fclen:	.ascii	"len "
+	.db	0
+s_fcsp:		.ascii	"sp: "
 	.db	0
 s_nl:		.db	10, 0
 
