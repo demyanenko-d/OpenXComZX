@@ -72,6 +72,7 @@ typedef struct {
 	uint16_t sx, sy;                   // размер карты в клетках
 	uint8_t label_ok[16];              // успех команд с метками (conditionals)
 	uint8_t craft_x, craft_y, craft_w, craft_l;   // где встал корабль отряда (в клетках)
+	uint8_t craft_base;                // с какого номера идут части корабля (высадка — внутрь него)
 } gen_t;
 
 static gen_t __at(0xB000) G;
@@ -168,6 +169,11 @@ static void put_block(uint8_t x, uint8_t y, uint8_t b)
 	G.uses[b]++;
 }
 
+// Поставить выбранный блок: место ищется под его настоящий размер. Оригинал так и делает
+// (MSC_ADDBLOCK -> selectPosition по размерам самого блока), а по размеру из команды выходило,
+// что блок в два модуля вставал в один свободный и затирал соседа — в том числе корабль.
+static uint8_t place_block(int16_t b, const int16_t *rects, uint8_t nrects);
+
 // Место под блок: в пределах прямоугольников команды (в модулях) или по всей карте
 static uint8_t find_place(const int16_t *rects, uint8_t nrects, uint8_t size, uint8_t *ox, uint8_t *oy)
 {
@@ -208,7 +214,24 @@ static void shift_row(uint8_t *row, uint16_t len, uint8_t offset)
 
 // offset — сдвиг номеров частей: у блока чужого террейна (корабль, НЛО) его наборы MCD
 // добавлены к наборам миссии после основных, как mapDataSetOffset в loadMAP.
-static void lay_res(uint8_t mx, uint8_t my, uint16_t res, uint8_t offset)
+// Ряд поверх уже уложенного: пустые части берутся из карты (их оригинал просто не пишет),
+// а клетка с любой непустой частью теряет свой объект. Вынесено из lay_res отдельно —
+// SDCC 4.5 роняет внутренняя ошибка на таком цикле внутри двух других (CLAUDE.md).
+static void merge_row(uint8_t *row, far_t dst, uint16_t len)
+{
+	uint8_t old[MOD_W * 4 * 4];
+	far_read(dst, old, len);
+	for (uint16_t i = 0; i < len; i += 4) {
+		if (row[i] || row[i + 1] || row[i + 2] || row[i + 3]) old[i + 3] = 0;
+		for (uint8_t k = 0; k < 4; k++)
+			if (!row[i + k]) row[i + k] = old[i + k];
+	}
+}
+
+// merge — класть поверх уже уложенного, не затирая пустыми частями: так оригинал грузит
+// карты корабля и НЛО поверх посадочной площадки (loadMAP: часть с нулём не пишется вовсе,
+// а непустая часть чужого террейна ещё и убирает объект клетки, :1630-1642).
+static void lay_res(uint8_t mx, uint8_t my, uint16_t res, uint8_t offset, uint8_t merge)
 {
 	res_t r;
 	if (!res_find(res, &r)) return;
@@ -227,13 +250,26 @@ static void lay_res(uint8_t mx, uint8_t my, uint16_t res, uint8_t offset)
 			far_t dst = G.cells + ((uint32_t)(z * G.sy + wy) * G.sx + mx * MOD_W) * 4;
 			uint16_t len = rowlen;
 			if (mx * MOD_W + bx > G.sx) len = (uint16_t)(G.sx - mx * MOD_W) * 4;
+			if (merge) merge_row(row, dst, len);
 			far_write(dst, row, len);
 		}
 }
 
+static uint8_t place_block(int16_t b, const int16_t *rects, uint8_t nrects)
+{
+	if (b < 0) return 0;
+	uint8_t sw = G.blk[b].w / MOD_W, sl = G.blk[b].l / MOD_W;
+	if (!sw) sw = 1;
+	if (!sl) sl = 1;
+	uint8_t x, y;
+	if (!find_place(rects, nrects, sw > sl ? sw : sl, &x, &y)) return 0;
+	put_block(x, y, (uint8_t)b);
+	return 1;
+}
+
 static void lay_block(uint8_t mx, uint8_t my, uint8_t b)
 {
-	lay_res(mx, my, G.blk[b].res, 0);
+	lay_res(mx, my, G.blk[b].res, 0, 0);
 }
 
 // ------------------------------------------------------------------ корабль, НЛО, тоннели
@@ -277,16 +313,26 @@ static uint8_t place_extra(uint16_t terr, const int16_t *rects, uint8_t nrects, 
 	if (!sl) sl = 1;
 	uint8_t x, y;
 	if (!find_place(rects, nrects, sw > sl ? sw : sl, &x, &y)) return 0;
+	// Земля под кораблём и НЛО: оригинал кладёт в занятые модули блоки группы 1 (посадочная
+	// площадка), а карту корабля — поверх (addCraft, :2609-2640 и :2119-2126). Без этого
+	// вокруг корпуса оставалась дыра — пустые клетки карты.
 	for (uint8_t j = 0; j < sl; j++)
 		for (uint8_t i = 0; i < sw; i++) {
-			G.grid[(y + j) * MAX_MOD + x + i] = 0xFF;        // место занято, кладём сами
-			G.head[(y + j) * MAX_MOD + x + i] = 0;
+			uint8_t mx = x + i, my = y + j;
+			if (!G.grid[my * MAX_MOD + mx]) {
+				int16_t lz = pick_block(G_LANDING, 0, 0, 0, 1);
+				if (lz < 0) lz = pick_block(G_DEFAULT, 0, 0, 0, 1);
+				if (lz >= 0) { put_block(mx, my, (uint8_t)lz); lay_block(mx, my, (uint8_t)lz); }
+			}
+			G.grid[my * MAX_MOD + mx] = 0xFF;        // место занято, дальше кладём сами
+			G.head[my * MAX_MOD + mx] = 0;
 		}
-	lay_res(x, y, res, base);
+	lay_res(x, y, res, base, 1);
 	G.nsets += added;
 	if (is_craft) {                                   // запомнить, куда высаживать отряд
 		G.craft_x = x * MOD_W; G.craft_y = y * MOD_W;
 		G.craft_w = b[2]; G.craft_l = b[3];
+		G.craft_base = base;                      // пол корабля — части от этого номера
 	}
 	return 1;
 }
@@ -509,10 +555,7 @@ uint8_t mapgen_run(uint16_t terrain, uint8_t mods, uint8_t levels) __banked
 					case C_ADD_BLOCK:
 						b = pick_block(c.ngroups ? c.groups[0] : G_DEFAULT, c.nblocks ? c.blocks : 0,
 							       c.nblocks, c.nmaxuses ? c.maxuses : 0, (uint8_t)c.size);
-						if (b >= 0 && find_place(c.rects, c.nrects, c.size ? (uint8_t)c.size : 1, &x, &y)) {
-							put_block(x, y, (uint8_t)b);
-							ok = 1;
-						}
+						ok |= place_block(b, c.rects, c.nrects);
 						break;
 					case C_ADD_LINE:
 						ok |= add_line(&c);
@@ -521,8 +564,7 @@ uint8_t mapgen_run(uint16_t terrain, uint8_t mods, uint8_t levels) __banked
 						for (;;) {
 							b = pick_block(c.ngroups ? c.groups[0] : G_DEFAULT, c.nblocks ? c.blocks : 0,
 								       c.nblocks, c.nmaxuses ? c.maxuses : 0, 0);
-							if (b < 0 || !find_place(c.rects, c.nrects, 1, &x, &y)) break;
-							put_block(x, y, (uint8_t)b);
+							if (!place_block(b, c.rects, c.nrects)) break;
 							ok = 1;
 						}
 						break;
@@ -567,8 +609,13 @@ uint8_t mapgen_run(uint16_t terrain, uint8_t mods, uint8_t levels) __banked
 	for (uint8_t y = 0; y < G.my; y++)
 		for (uint8_t x = 0; x < G.mx; x++) {
 			if (G.grid[y * MAX_MOD + x]) continue;
-			int16_t b = pick_block(G_DEFAULT, 0, 0, 0, 0);
-			if (b < 0) b = 0;
+			int16_t b = pick_block(G_DEFAULT, 0, 0, 0, 1);   // в один модуль: сосед занят
+			if (b < 0) b = pick_block(G_DEFAULT, 0, 0, 0, 0);
+			if (b < 0) continue;
+			uint8_t sw = G.blk[b].w / MOD_W, sl = G.blk[b].l / MOD_W;
+			if (!sw) sw = 1;
+			if (!sl) sl = 1;
+			if (!area_free(x, y, sw > sl ? sw : sl)) continue;
 			put_block(x, y, (uint8_t)b);
 		}
 
@@ -592,9 +639,12 @@ void mapgen_free(void) __banked
 	G.cells = 0;
 }
 
-// Где встал корабль отряда (в клетках): 0 в ширине — корабля на карте нет
-void mapgen_craft(uint8_t *x, uint8_t *y, uint8_t *w, uint8_t *l) __banked
+// Где встал корабль отряда (в клетках): 0 в ширине — корабля на карте нет.
+// base — с какого номера идут его части: по полу из них видно, где внутри корабля стоять
+// отряду (в оригинале места высадки задают узлы RMP его карты — их мы ещё не грузим).
+void mapgen_craft(uint8_t *x, uint8_t *y, uint8_t *w, uint8_t *l, uint8_t *base) __banked
 {
+	*base = G.craft_base;
 	*x = G.craft_x; *y = G.craft_y; *w = G.craft_w; *l = G.craft_l;
 }
 

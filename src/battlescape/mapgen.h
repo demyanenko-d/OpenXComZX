@@ -15,7 +15,7 @@ void mapgen_set_extra(uint16_t craft, uint16_t ufo) __banked;
 uint16_t mapgen_deploy(uint16_t dep, uint8_t *mods, uint8_t *levels) __banked;
 uint16_t mapgen_find_kind(uint8_t kind) __banked;
 uint16_t mapgen_kind_nth(uint8_t kind, uint8_t n) __banked;   // n-я карта этого вида   // 1 — корабль X-COM, 2 — НЛО (#FFFF нет)
-void mapgen_craft(uint8_t *x, uint8_t *y, uint8_t *w, uint8_t *l) __banked;   // место корабля
+void mapgen_craft(uint8_t *x, uint8_t *y, uint8_t *w, uint8_t *l, uint8_t *base) __banked;   // место корабля
 void mapgen_free(void) __banked;         // отдать страницы карты обратно в пул
 void mapgen_used(uint8_t *mask) __banked;   // 32 байта: какие части попали на карту
 

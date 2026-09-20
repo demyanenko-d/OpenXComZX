@@ -197,7 +197,7 @@ void bat_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked;
 uint8_t bat_rows(uint8_t id, uint8_t slot) __banked;
 uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked;
 // Параметры начинающейся миссии: развёртывание, террейн НЛО, террейн корабля (#FFFF — нет)
-void bat_mission(uint16_t deploy, uint16_t ufo, uint16_t craft) __banked;
+void bat_mission(uint16_t deploy, uint16_t ufo, uint16_t craft_map, uint16_t crew) __banked;
 // n-я карта нужного вида в таблице террейнов (1 — корабль X-COM, 2 — НЛО): у НЛО карты идут
 // в том же порядке, что в правилах, поэтому тип НЛО прямо даёт номер карты (mapgen.c)
 uint16_t mapgen_kind_nth(uint8_t kind, uint8_t n) __banked;

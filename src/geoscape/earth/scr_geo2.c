@@ -540,7 +540,8 @@ uint8_t geo2_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 					uint8_t u = cr->dest;
 					if (u < MAX_UFOS && ST->ufo[u].id) ufo = mapgen_kind_nth(2, ST->ufo[u].type);
 				}
-				bat_mission(dep, ufo, 0xFFFF);
+				// Карта корабля отряда — по его типу (как карта НЛО по типу НЛО), отряд — его экипаж
+				bat_mission(dep, ufo, mapgen_kind_nth(1, cr->type), ctx.craft);
 				UI_GO(A_POP_PUSH, SCR_BATTLE);
 			}
 		}

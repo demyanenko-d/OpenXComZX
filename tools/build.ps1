@@ -55,7 +55,7 @@ $banks = @(
     @{ n = 27; page = 0x4A; files = @('geoscape\base\scr_inv') }   # инвентарь бойца (экипировка перед вылетом)
     @{ n = 28; page = 0x4B; files = @('battlescape\scr_battle'); ram = 0xB000 }   # наземный бой: отрисовка карты (этап Б1)
     @{ n = 29; page = 0x4C; files = @('battlescape\mapgen'); ram = 0xB000 }   # генератор миссии: карта из блоков по mapScript (16 §3)
-    @{ n = 30; page = 0x4D; files = @('battlescape\pathfind') }   # поиск пути бойца (16 §5.4)
+    @{ n = 30; page = 0x4D; files = @('battlescape\pathfind', 'battlescape\units') }   # поиск пути бойца (16 §5.4) и бойцы миссии из состояния кампании
 )
 
 # Пакеты данных игры: выход конвертера OxzConv (tmp\sd\OXZ\<игра>), вшиваются в SPG.

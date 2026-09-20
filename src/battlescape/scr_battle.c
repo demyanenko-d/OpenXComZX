@@ -27,6 +27,7 @@
 #include "globe.h"
 #include "music.h"
 #include "text.h"
+#include "units.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 #define TILE_W     32
@@ -36,9 +37,10 @@
 
 static uint8_t cur_map;
 static uint16_t gen_terrain;             // какой террейн пробует генератор (клавиша G)
-// Параметры миссии, которые приносит геоскейп (bat_mission): развёртывание, тип НЛО и
-// корабль отряда. #FFFF — «не задано», тогда бой отладочный и всё берётся по умолчанию.
-static uint16_t mis_deploy = 0xFFFF, mis_ufo = 0xFFFF, mis_craft = 0xFFFF;
+// Параметры миссии, которые приносит геоскейп (bat_mission): развёртывание, карта НЛО,
+// карта корабля отряда (всё — номера записей террейнов) и сам корабль в пуле кампании —
+// от него берётся экипаж. #FFFF — «не задано»: бой отладочный, всё по умолчанию.
+static uint16_t mis_deploy = 0xFFFF, mis_ufo = 0xFFFF, mis_craft = 0xFFFF, mis_crew = 0xFFFF;
 static uint8_t m_sx, m_sy, m_sz, m_nt;
 static uint16_t tiles_res;           // SPRSET тайлов этой карты
 static uint8_t level;                // этаж камеры
@@ -74,7 +76,10 @@ static unit_t __at(0xBE00) units[MAX_UNITS];
 static uint8_t nunits;
 static uint8_t sel;                      // выбранный боец (панель показывает его состояние)
 static uint8_t unit_page = PG_NONE, unit_np;
-static uint8_t __at(0xBE40) unit_tab[32 * TE_SIZE];   // кадры листа в виде для блита
+// Память банка (08 §4): units до #BE84, поэтому лист кадров начинается с #BF00 и занимает
+// страницу до конца (#BFFF). Раньше он стоял с #BE40 и при семи и больше бойцах затирался
+// ими — кадры блитились из случайной памяти, и отряд выглядел цветным мусором.
+static uint8_t __at(0xBF00) unit_tab[32 * TE_SIZE];   // кадры листа в виде для блита
 
 // Дисплей-лист (17_battle_render.md §2): вид раскладывается в список готовых команд DMA —
 // по 8 байт, ровно то, что выгружается в регистры. Строится при смене камеры, этажа или карты,
@@ -551,39 +556,25 @@ static void center_on_unit(void)
 	clamp_cam();
 }
 
-// Расставить отряд: пока это отладка генератора — бойцы просто занимают свободные клетки
-// (пол есть, объекта нет) ближе к южному краю карты, как высадка без корабля.
-static void place_squad(uint8_t n)
+// Высадка отряда: экипаж корабля миссии и его места на карте считает units.c (банк 30) —
+// в банке боя для этого уже нет места. Здесь только перенос в таблицу бойцов вида.
+static void place_squad(uint8_t debug_n)
 {
-	uint8_t cx, cy, cw, cl;
+	crew_req_t q;
+	cunit_t cu[MAX_UNITS];
 	nunits = 0;
-	if (n > MAX_UNITS) n = MAX_UNITS;
-	mapgen_craft(&cx, &cy, &cw, &cl);
-	// Бойцы высаживаются в корабле, если он на карте (у оригинала места задают узлы RMP —
-	// их мы ещё не грузим), иначе просто у середины поля.
-	uint8_t y0 = cw ? cy : (uint8_t)(m_sy / 2), y1 = cw ? (uint8_t)(cy + cl) : m_sy;
-	uint8_t x0 = cw ? cx : 0, x1 = cw ? (uint8_t)(cx + cw) : m_sx;
-	if (y1 > m_sy) y1 = m_sy;
-	if (x1 > m_sx) x1 = m_sx;
-	uint8_t z = 0;
-	for (uint8_t y = y0; y < y1 && nunits < n; y++) {
-		uint8_t line[MAP_MAXX * 4];
-		uint16_t len = (uint16_t)m_sx * 4;
-		if (len > sizeof line) len = sizeof line;
-		far_read(cells + (uint32_t)((uint32_t)z * m_sy + y) * m_sx * 4, line, len);
-		for (uint8_t x = x0; x < x1 && nunits < n; x++) {
-			const uint8_t *c = line + (uint16_t)x * 4;
-			if (!c[0] || c[3]) continue;          // нужен пол и пустой объект
-			units[nunits].x = x; units[nunits].y = y; units[nunits].z = z;
-			units[nunits].dir = 0; units[nunits].alive = 1;
-			// показатели пока отладочные: настоящие придут с бойцами базы (deployXCOM)
-			units[nunits].tu = units[nunits].tu_max = 60;
-			units[nunits].hp = units[nunits].hp_max = 40;
-			units[nunits].en = 60; units[nunits].mor = 100;
-			nunits++;
-			x++;                                  // не лепить бойцов вплотную
-		}
+	mapgen_craft(&q.cx, &q.cy, &q.cw, &q.cl, &q.part_min);
+	q.cells = cells; q.sx = m_sx; q.sy = m_sy;
+	q.craft = mis_crew; q.debug_n = debug_n;
+	uint8_t n = crew_deploy(&q, cu, MAX_UNITS);
+	for (uint8_t i = 0; i < n; i++) {
+		units[i].x = cu[i].x; units[i].y = cu[i].y; units[i].z = cu[i].z;
+		units[i].dir = 0; units[i].alive = 1;
+		units[i].tu = units[i].tu_max = cu[i].tu;
+		units[i].hp = units[i].hp_max = cu[i].hp;
+		units[i].en = cu[i].en; units[i].mor = cu[i].mor;
 	}
+	nunits = n;
 }
 
 
@@ -735,7 +726,8 @@ static uint8_t load_gen(uint16_t terrain)
 	level = 0;                           // камера начинается на земле, как в оригинале
 	gen_mode = 1;
 	dl_ok = 0;
-	// отряд: лист брони X-COM (TDXCOM_0 у TFTD, XCOM_0 у UFO)
+	// Отряд: экипаж корабля миссии со своими показателями (units.c), а когда бой отладочный
+	// (корабля нет) — шесть фигур. Лист брони X-COM: TDXCOM_0 у TFTD, XCOM_0 у UFO.
 	if (load_unit_sheet(res_game() == 2 ? RES_UNIT_TDXCOM_0 : RES_UNIT_XCOM_0)) place_squad(6);
 	else nunits = 0;
 	sel = 0;
@@ -825,11 +817,12 @@ static void draw_all(void)
 
 // Геоскейп сообщает, какая миссия начинается: развёртывание (state.h site_t.deployment),
 // террейн НЛО и террейн корабля отряда; #FFFF — не задано.
-void bat_mission(uint16_t deploy, uint16_t ufo, uint16_t craft) __banked
+void bat_mission(uint16_t deploy, uint16_t ufo, uint16_t craft_map, uint16_t crew) __banked
 {
 	mis_deploy = deploy;
 	mis_ufo = ufo;
-	mis_craft = craft;
+	mis_craft = craft_map;
+	mis_crew = crew;
 }
 
 uint8_t bat_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
