@@ -1,14 +1,15 @@
-# Первая отрисовка наземного боя (этап Б1, 16_battlescape_plan.md §8): карта и тайлсет —
-# готовые ресурсы BATMAP0..2 / BATTILE0..2 из BATTLE.PAK (поле замостил конвертер,
-# OxzConv/Core/Battle.cs), рисуется всё подряд без отсева по перекрытию.
-# Проверяется: карта грузится с SD, вид строится, работают этаж, скролл и смена карты.
-# Снимки — tmp/shots/bat/.
+# Отрисовка наземного боя: карта миссии от генератора (16 §3), вид, этажи, скролл.
+# Готовые карты BATMAP0..2 из BATTLE.PAK больше не нужны — их путь убран, место в банке
+# ушло под перерисовку прямоугольником (findings_log 2026-09-20).
+# Проверяется: карта собирается и рисуется, работают этаж, скролл и пересборка другого
+# террейна (клавиша G). Снимки — tmp/shots/bat/.
 # Запуск: powershell -File tools\run.ps1 -Script tests\bat_render.oxs -Headless
 
 waitmark 1 600
 poke _alien_off 1
 poke _ui_request 248
 waitmark 248 900
+wait 150
 shot tmp/shots/bat/00_map0.png
 
 # полная перерисовка вида — сколько тактов уходит (§8.3a: ожидание 2.5–4.5 кадра)
@@ -26,12 +27,13 @@ key CS+6
 wait 20
 shot tmp/shots/bat/02_scroll.png
 
-key M
-wait 45
-shot tmp/shots/bat/03_map1.png
-key M
-wait 45
-shot tmp/shots/bat/04_map2.png
+# следующий террейн — карта собирается заново
+key G
+wait 200
+shot tmp/shots/bat/03_terrain1.png
+key G
+wait 200
+shot tmp/shots/bat/04_terrain2.png
 
 key SPACE
 waitmark 1 300

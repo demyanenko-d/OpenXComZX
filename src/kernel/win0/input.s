@@ -12,7 +12,6 @@
 	.globl	_cursor_x
 	.globl	_cursor_y
 	.globl	_cursor_off
-	.globl	_cell_cur_on
 	.globl	_cur_pal
 	.globl	_mouse_buttons
 	.globl	_cursor_sync
@@ -66,7 +65,6 @@ in_rep:		.ds	1		; кадров до автоповтора удерживаем�
 _cursor_x::	.dw	160		; курсор экрана (сценарии ставят напрямую: pokew _cursor_x)
 _cursor_y::	.dw	100
 _cursor_off::	.ds	1		; 1 — курсор скрыт (заставки)
-_cell_cur_on::	.ds	1		; 1 — в списке есть спрайт 1 (курсор клетки боя)
 _cur_pal::	.ds	1		; группа палитры спрайтов курсора (ставит cursor_color)
 _mouse_buttons::	.ds	1	; кнопки сейчас: бит 0 L, 1 R
 _cur_lock::	.ds	1		; 1 — S-file занят основным кодом (input_init): спрайт не трогать
@@ -240,13 +238,7 @@ cur_spr:
 	and	#1				; y & #1FF, бит 9 — высота 16
 	or	a, #0x02
 	ld	h, a
-	;; Бит 14 (LEAP) — «последний спрайт слоя». Ставим его только когда курсор клетки в бою
-	;; выключен: иначе TSU не дойдёт до спрайта 1 и ромб клетки не появится.
-	ld	a, (_cell_cur_on)
-	or	a, a
-	jr	nz, 0$
-	set	6, h
-0$:
+	set	6, h				; бит 14 — последний спрайт слоя (список кончился)
 	ld	a, (_cursor_off)
 	or	a, a
 	jr	nz, 1$

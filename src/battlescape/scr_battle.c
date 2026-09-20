@@ -33,16 +33,13 @@
 #define TILE_W     32
 #define TILE_H     40
 #define MAP_MAXX   64                // предел ширины карты (буфер ряда)
-#define NMAPS      3
 
-static uint8_t cur_map;
 static uint16_t gen_terrain;             // какой террейн пробует генератор (клавиша G)
 // Параметры миссии, которые приносит геоскейп (bat_mission): развёртывание, карта НЛО,
 // карта корабля отряда (всё — номера записей террейнов) и сам корабль в пуле кампании —
 // от него берётся экипаж. #FFFF — «не задано»: бой отладочный, всё по умолчанию.
 static uint16_t mis_deploy = 0xFFFF, mis_ufo = 0xFFFF, mis_craft = 0xFFFF, mis_crew = 0xFFFF;
 static uint8_t m_sx, m_sy, m_sz, m_nt;
-static uint16_t tiles_res;           // SPRSET тайлов этой карты
 static uint8_t level;                // этаж камеры
 // Показывать все этажи снизу до текущего или только текущий: кнопка «1/2» на панели,
 // в оригинале Camera::toggleShowAllLayers. С одним этажом крыша корабля не мешает смотреть
@@ -63,8 +60,6 @@ static uint8_t __at(0xBD00) row[MAP_MAXX * 4];   // ряд клеток карт
 //   [5] dx, [6] dy (угол кадра в ячейке), [7] ширина
 #define TE_SIZE 8
 static uint8_t __at(0xB400) tile_tab[256 * TE_SIZE];
-static far_t tiles_phys;             // где сейчас лежит тайлсет (слот SD мог смениться)
-static uint16_t tile_frames;
 
 // Юниты на карте (отладка генератора, тумана войны пока нет). Спрайт собирается как в
 // UnitSprite::drawRoutine0 — ноги, торс и руки по направлению; лист UNIT_* даёт 32 кадра
@@ -80,6 +75,16 @@ static uint8_t unit_page = PG_NONE, unit_np;
 // страницу до конца (#BFFF). Раньше он стоял с #BE40 и при семи и больше бойцах затирался
 // ими — кадры блитились из случайной памяти, и отряд выглядел цветным мусором.
 static uint8_t __at(0xBF00) unit_tab[32 * TE_SIZE];   // кадры листа в виде для блита
+
+// Курсор клетки — как в оригинале (Map.cpp:679 и :968): рамка клетки в CURSOR.PCK разрезана
+// на две части. Задняя (кадр 0) рисуется до содержимого клетки, передняя (кадр 3) — после
+// бойца, поэтому рамка охватывает клетку объёмно: боец стоит внутри неё, а не поверх.
+// Аппаратным спрайтом такого не сделать — спрайты TSU всегда поверх графики.
+// Кадры: 0 — задняя половина красной рамки, 1 — жёлтой (на клетке боец), 3 и 4 — передние
+#define CUR_FRAMES 4
+static uint8_t __at(0xBE90) cur_tab[CUR_FRAMES * TE_SIZE];
+static uint8_t cur_page = PG_NONE, cur_np;
+static uint8_t cur_on, cur_cx, cur_cy;   // курсор на клетке (cur_cx, cur_cy) текущего этажа
 
 // Дисплей-лист (17_battle_render.md §2): вид раскладывается в список готовых команд DMA —
 // по 8 байт, ровно то, что выгружается в регистры. Строится при смене камеры, этажа или карты,
@@ -123,6 +128,7 @@ static uint8_t __at(0xB200) row_page[BUF_H];
 
 static void center_on_unit(void);       // определена ниже, вместе с юнитами
 static void draw_strip(int16_t lo, int16_t hi);   // перерисовка полосы вида (ниже)
+static void cell_repaint(uint8_t x, uint8_t y);   // перерисовка одной клетки (ниже)
 
 static void rows_init(void)
 {
@@ -333,60 +339,6 @@ static void center(void)
 	clamp_cam();
 }
 
-static uint8_t load_map(void)
-{
-	res_t r;
-	uint8_t h[8];
-	loaded = 0;
-	if (!res_find((uint16_t)(RES_BATMAP0 + cur_map), &r)) return 0;
-	far_read(r.phys, h, 8);
-	m_sx = h[0]; m_sy = h[1]; m_sz = h[2]; m_nt = h[3];
-	tiles_res = (uint16_t)h[4] | ((uint16_t)h[5] << 8);
-	if (!m_sx || m_sx > MAP_MAXX || !m_sy || !m_sz) return 0;
-	for (uint16_t i = 0; i < m_nt; i++) {
-		uint8_t t[4];
-		far_read(r.phys + 8 + (uint32_t)i * 4, t, 4);
-		tile_y[i] = t[0];
-	}
-	rows_init();
-	map_phys = r.phys;
-	cells = r.phys + 8 + (uint32_t)m_nt * 4;
-	level = 0;                           // камера начинается на земле, как в оригинале
-	center();
-	loaded = 1;
-	return 1;
-}
-
-// Тайлсет карты: записи SPRSET разворачиваются в готовые для блита (см. tile_tab). Делается
-// один раз при загрузке карты и после переезда ресурса в другой слот SD.
-static uint8_t load_tiles(void)
-{
-	res_t rs;
-	if (!res_find(tiles_res, &rs)) return 0;
-	if (rs.phys == tiles_phys) return 1;
-	dl_ok = 0;
-	uint8_t hh[4];
-	far_read(rs.phys, hh, 4);
-	tile_frames = (uint16_t)hh[0] | ((uint16_t)hh[1] << 8);
-	uint16_t n = tile_frames > 256 ? 256 : tile_frames;
-	far_t data = rs.phys + 4 + (uint32_t)tile_frames * 6;   // данные кадров за таблицей
-	for (uint16_t i = 0; i < n; i++) {
-		uint8_t e[6];
-		far_read(rs.phys + 4 + (uint32_t)i * 6, e, 6);
-		far_t src = data + ((uint32_t)((uint16_t)e[4] | ((uint16_t)e[5] << 8)) << 1);
-		uint8_t *p = tile_tab + i * TE_SIZE;
-		uint16_t so = FAR_OFFS(src);
-		p[0] = FAR_PAGE(src);
-		p[1] = (uint8_t)so; p[2] = (uint8_t)(so >> 8);
-		p[3] = e[2] ? (uint8_t)(e[2] / 2 - 1) : 0;
-		p[4] = e[3];
-		p[5] = e[0]; p[6] = e[1];
-		p[7] = e[2];
-	}
-	tiles_phys = rs.phys;
-	return 1;
-}
-
 // Разложить вид в дисплей-лист: уровни снизу вверх, ряды Y, внутри ряда X, внутри клетки —
 // пол, западная стена, северная стена, объект (порядок художника, Map.cpp:626-966)
 // Разложить в список клетки, чья мировая экранная координата X попадает в [lo, hi]. Мировая X
@@ -400,6 +352,17 @@ static void dl_unit_frame(uint8_t fr, int16_t x, int16_t y)
 	const uint8_t *e = unit_tab + (uint16_t)fr * TE_SIZE;
 	if (!e[7]) return;
 	dl_blit(e, x, y);
+}
+
+// Стоит ли в клетке живой боец (цвет рамки курсора)
+static uint8_t unit_at(uint8_t z, uint8_t y, uint8_t x)
+{
+	for (uint8_t i = 0; i < nunits; i++) {
+		const unit_t *u = &units[i];
+		uint8_t uz = u->z, uy = u->y, ux = u->x;
+		if (u->alive && uz == z && uy == y && ux == x) return 1;
+	}
+	return 0;
 }
 
 // Боец в этой клетке (если он тут есть): ноги, торс, руки по направлению
@@ -418,6 +381,11 @@ static void draw_unit_at(uint8_t z, uint8_t y, uint8_t x, int16_t px, int16_t py
 	}
 }
 
+// Окно буфера по Y для сборки списка: перерисовка клетки (курсор, шаг бойца) трогает
+// полосу не на всю высоту, а только вокруг себя — иначе на каждое движение мыши
+// пересобирался бы весь столбец карты.
+static int16_t clip_y0, clip_y1 = BUF_H - 1;
+
 static void build_range(int16_t lo, int16_t hi)
 {
 	dl_n = 0;
@@ -426,8 +394,8 @@ static void build_range(int16_t lo, int16_t hi)
 		// Какие ряды вообще могут попасть в буфер: по X полоса задаёт x - y = d из [dlo, dhi],
 		// значит by = (2y + d) * 8 - z * 24 + B, и из -40 < by < BUF_H выводятся границы y.
 		int16_t b = base_y + PAD_Y - (int16_t)z * 24;
-		int16_t ylo = (-TILE_H + 1 - 8 * dhi - b + 15) >> 4;
-		int16_t yhi = (BUF_H - 1 - 8 * dlo - b) >> 4;
+		int16_t ylo = (clip_y0 - TILE_H + 1 - 8 * dhi - b + 15) >> 4;
+		int16_t yhi = (clip_y1 - 8 * dlo - b) >> 4;
 		if (ylo < 0) ylo = 0;
 		if (yhi >= m_sy) yhi = m_sy - 1;
 		// Адрес ряда ведётся сложением: 32-битное умножение на каждый ряд стоило дороже,
@@ -439,7 +407,7 @@ static void build_range(int16_t lo, int16_t hi)
 			int16_t rx = -(int16_t)y * 16;   // мировая X клетки x этого ряда: rx + x*16
 			// Отрезок ряда: из lo-32 < wx <= hi и -40 < py < BUF_H получаем границы x
 			int16_t x0 = (lo - TILE_W + 1 - rx + 15) >> 4, x1 = (hi - rx) >> 4;
-			int16_t t0 = (-TILE_H + 1 - ry + 7) >> 3, t1 = (BUF_H - 1 - ry) >> 3;
+			int16_t t0 = (clip_y0 - TILE_H + 1 - ry + 7) >> 3, t1 = (clip_y1 - ry) >> 3;
 			if (t0 > x0) x0 = t0;
 			if (t1 < x1) x1 = t1;
 			if (x0 < 0) x0 = 0;
@@ -451,6 +419,11 @@ static void build_range(int16_t lo, int16_t hi)
 			const uint8_t *p = row;
 			int16_t px = rx + x0 * 16, py = ry + x0 * 8;
 			for (int16_t x = x0; x <= x1; x++, p += 4, px += 16, py += 8) {
+				uint8_t cx = cur_cx, cy = cur_cy;   // сравнения байтов — с копиями (SDCC 4.5)
+				uint8_t here = cur_on && z == level && (uint8_t)x == cx && (uint8_t)y == cy;
+				// на клетке боец — рамка жёлтая, пустая клетка — красная (как в оригинале)
+				uint8_t cf = here && unit_at(z, (uint8_t)y, (uint8_t)x) ? 1 : 0;
+				if (here) dl_blit(cur_tab + cf * TE_SIZE, px, py);          // задняя половина
 				for (uint8_t k = 0; k < 4; k++) {
 					uint8_t t = p[k];
 					if (!t) continue;
@@ -459,6 +432,7 @@ static void build_range(int16_t lo, int16_t hi)
 				// Боец идёт сразу за своей клеткой: клетки правее и ниже рисуются позже и
 				// закрывают его — иначе он виден сквозь стены и закрытые двери.
 				draw_unit_at(z, (uint8_t)y, (uint8_t)x, px, py);
+				if (here) dl_blit(cur_tab + (2 + cf) * TE_SIZE, px, py);    // передняя половина
 			}
 			pg_map3(old);
 		}
@@ -482,9 +456,9 @@ static void show_cam(void)
 	map_gy = (uint16_t)(BUF_Y + PAD_Y - (cam_y - base_y) - SPLIT_LEAD) & 511;
 }
 
-// Очистить колонки кольца, отвечающие мировому диапазону [lo, hi] (полоса на всю высоту буфера).
-// На завороте кольца получается два куска.
-static void fill_cols(int16_t lo, int16_t hi)
+// Очистить в кольце прямоугольник: мировой диапазон [lo, hi] по X, строки буфера
+// [y0, y1] по Y. На завороте кольца получается два куска.
+static void fill_cols(int16_t lo, int16_t hi, int16_t y0, int16_t y1)
 {
 	uint16_t c0 = (uint16_t)(lo + BIAS) & (BUF_W - 1);
 	uint16_t n = (uint16_t)(hi - lo + 1);
@@ -493,7 +467,7 @@ static void fill_cols(int16_t lo, int16_t hi)
 		uint16_t part = BUF_W - c0;      // до конца строки буфера
 		if (part > n) part = n;
 		uint16_t w = (part + 1) & ~1;
-		far_t base = FAR(row_page[0], row_ofs[0] + c0);
+		far_t base = FAR(row_page[y0], row_ofs[y0] + c0);
 		uint16_t zero = 0;
 		far_write(base, &zero, 2);
 		dma_wait();
@@ -502,7 +476,7 @@ static void fill_cols(int16_t lo, int16_t hi)
 		TS_DMADAL = (uint8_t)FAR_OFFS(base); TS_DMADAH = (uint8_t)(FAR_OFFS(base) >> 8);
 		TS_DMADAX = FAR_PAGE(base);
 		TS_DMALEN = (uint8_t)(w / 2 - 1);
-		TS_DMANUM = BUF_H - 1;
+		TS_DMANUM = (uint8_t)(y1 - y0);
 		TS_DMACTRL = DMA_FILL | DMA_D_ALGN | DMA_ASZ;
 		dma_wait();
 		n -= part;
@@ -533,6 +507,38 @@ static uint8_t load_unit_sheet(uint16_t id)
 		if (i >= nfr) { p[7] = 0; continue; }
 		uint8_t e[6];
 		far_read(rt.phys + 4 + (uint32_t)i * 6, e, 6);
+		far_t src = fdata + ((uint32_t)((uint16_t)e[4] | ((uint16_t)e[5] << 8)) << 1);
+		uint16_t so = FAR_OFFS(src);
+		p[0] = FAR_PAGE(src);
+		p[1] = (uint8_t)so; p[2] = (uint8_t)(so >> 8);
+		p[3] = e[2] ? (uint8_t)(e[2] / 2 - 1) : 0;
+		p[4] = e[3];
+		p[5] = e[0]; p[6] = e[1];
+		p[7] = e[2];
+	}
+	return 1;
+}
+
+// Лист курсора клетки: из CURSOR.PCK берутся два кадра — задняя и передняя половины рамки
+static uint8_t load_cursor(void)
+{
+	res_t rt;
+	if (cur_page == PG_NONE) {
+		uint32_t sz = sdres_size(RES_CURSOR_PCK);
+		if (!sz) return 0;
+		cur_np = (uint8_t)((sz + 16383) >> 14);
+		cur_page = pg_alloc(cur_np, 1);
+		if (cur_page == PG_NONE) return 0;
+	}
+	if (!sdres_load(RES_CURSOR_PCK, cur_page, &rt)) return 0;
+	uint16_t nfr = rt.a;
+	far_t fdata = rt.phys + 4 + (uint32_t)nfr * 6;
+	static const uint8_t want[CUR_FRAMES] = { 0, 1, 3, 4 };
+	for (uint8_t i = 0; i < CUR_FRAMES; i++) {
+		uint8_t *p = cur_tab + i * TE_SIZE;
+		if (want[i] >= nfr) { p[7] = 0; continue; }
+		uint8_t e[6];
+		far_read(rt.phys + 4 + (uint32_t)want[i] * 6, e, 6);
 		far_t src = fdata + ((uint32_t)((uint16_t)e[4] | ((uint16_t)e[5] << 8)) << 1);
 		uint16_t so = FAR_OFFS(src);
 		p[0] = FAR_PAGE(src);
@@ -623,20 +629,11 @@ static void step_unit(void)
 	if (u->en > 1) u->en--;              // энергия тратится медленнее времени
 	path_i++;
 	if (path_i >= path_n) path_n = 0;
-	// Перерисовываем не весь вид, а полосу, в которой боец был и оказался: тот же приём,
-	// что при скролле камеры (17 §2). Полная пересборка занимала несколько кадров, и шаги
-	// шли рывками.
-	if (dl_ok && dl_page != PG_NONE) {
-		int16_t wx0 = ((int16_t)ox - (int16_t)oy) * 16, wx1 = ((int16_t)u->x - (int16_t)u->y) * 16;
-		int16_t lo = wx0 < wx1 ? wx0 : wx1, hi = wx0 < wx1 ? wx1 : wx0;
-		lo -= TILE_W; hi += TILE_W;
-		if (lo < vx_lo) lo = vx_lo;
-		if (hi > vx_hi) hi = vx_hi;
-		if (lo <= hi) draw_strip(lo, hi);
-	} else {
-		dl_ok = 0;
-		ui_dirty(0);
-	}
+	// Перерисовываем не весь вид и даже не полосу, а две клетки — ту, откуда боец ушёл, и
+	// ту, где оказался (17 §2). Гасится и собирается заново только их прямоугольник.
+	uint8_t nxx = u->x, nyy = u->y;
+	cell_repaint(ox, oy);
+	cell_repaint(nxx, nyy);
 }
 
 // ---------------------------------------------------------------- сгенерированная карта
@@ -721,7 +718,6 @@ static uint8_t load_gen(uint16_t terrain)
 	m_nt = part;
 	cells = mapgen_cells();
 	map_phys = cells;
-	tiles_phys = 0;
 	rows_init();
 	level = 0;                           // камера начинается на земле, как в оригинале
 	gen_mode = 1;
@@ -737,23 +733,46 @@ static uint8_t load_gen(uint16_t terrain)
 	return 1;
 }
 
-static void draw_strip(int16_t lo, int16_t hi)
+// Перерисовать кусок вида: гасим прямоугольник кольца и собираем в него заново все клетки,
+// которые его задевают. Гасить приходится потому, что тайлы кладутся прозрачным блитом
+// (BLT1 пропускает цвет 0) — без гашения под новой картинкой остаётся старая.
+// Полоса на всю высоту (скролл камеры) — это тот же прямоугольник с y0 = 0.
+static void draw_rect(int16_t lo, int16_t hi, int16_t y0, int16_t y1)
 {
-	fill_cols(lo, hi);
+	if (y0 < 0) y0 = 0;
+	if (y1 > BUF_H - 1) y1 = BUF_H - 1;
+	if (y0 > y1) return;
+	fill_cols(lo, hi, y0, y1);
+	// Сборка берёт клетки чуть шире прямоугольника: соседи заезжают в него своими спрайтами,
+	// а части с P_Level подняты вверх (до 24 точек), поэтому клетки ниже прямоугольника тоже
+	// могут в него нарисовать — их и добираем снизу.
+	clip_y0 = y0;
+	clip_y1 = y1 + 24;
 	build_range(lo - TILE_W, hi + TILE_W);
+	clip_y0 = 0;
+	clip_y1 = BUF_H - 1;
 	dl_run();
 	dma_wait();
+}
+
+static void draw_strip(int16_t lo, int16_t hi)
+{
+	draw_rect(lo, hi, 0, BUF_H - 1);
+}
+
+// Перерисовать клетку (её спрайт 32x40) — столько и трогаем при переезде курсора и шаге бойца
+static void cell_repaint(uint8_t x, uint8_t y)
+{
+	if (!dl_ok || dl_page == PG_NONE) { ui_dirty(0); return; }
+	int16_t wx = ((int16_t)x - (int16_t)y) * 16;
+	int16_t by = ((int16_t)x + (int16_t)y) * 8 - (int16_t)level * 24 + base_y + PAD_Y;
+	draw_rect(wx, wx + TILE_W - 1, by, by + TILE_H - 1);
 }
 
 static void draw_map(void)
 {
 	res_t r;
 	if (!loaded || dl_page == PG_NONE) return;
-	if (!gen_mode) {                     // готовая карта из пакета: слот SD мог смениться
-		if (!res_find((uint16_t)(RES_BATMAP0 + cur_map), &r)) return;
-		if (!load_tiles()) return;
-		if (r.phys != map_phys) { map_phys = r.phys; cells = r.phys + 8 + (uint32_t)m_nt * 4; dl_ok = 0; }
-	}
 	if (dl_ok) {
 		// Вид уже в буфере: если камера ушла по горизонтали, дорисовать въехавшую полосу —
 		// буфер кольцевой, поэтому переезжать ничему не нужно.
@@ -857,23 +876,27 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		if (pf_page == PG_NONE) pf_page = pg_alloc(1, 1);   // рабочая память поиска пути
 		// Карта миссии собирается генератором (16 §3). Пока миссии нет, террейн берётся
 		// по очереди — клавиша G дальше пересобирает карту следующего террейна.
-		if (!load_gen(gen_terrain) && !load_map() && cur_map) { cur_map = 0; load_map(); }
+		load_gen(gen_terrain);               // карта миссии: генератор (16 §3)
 		split_start();
 		// У боя своя палитра: цвета #F0..#FF в ней тёмные, и курсор в них не виден.
 		// В оригинале у боя свой цвет курсора (Mod::BATTLESCAPE_CURSOR = 144).
 		cursor_color(CURSOR_BATTLESCAPE);
-		cell_cursor_init(1);             // ромб клетки — тот же жёлтый набор, что у стрелки
+		load_cursor();                   // рамка клетки из CURSOR.PCK (рисуется вместе с картой)
+		cur_on = 0;
 		break;
 	case EVT_TICK:
-		// Курсор клетки: ромб на клетке под мышью — аппаратный спрайт, поэтому карту
-		// перерисовывать не нужно (в оригинале это CURSOR.PCK поверх карты).
+		// Курсор клетки: рамка вокруг клетки под мышью. Она часть картинки карты (задняя
+		// половина под содержимым клетки, передняя поверх), поэтому при переезде на другую
+		// клетку перерисовываются только две клетки — прежняя и новая.
 		if (gen_mode && loaded) {
-			uint8_t cx, cy;
-			if (cursor_y < VIEW_H && screen_to_cell(cursor_x, cursor_y, &cx, &cy)) {
-				int16_t sx = ((int16_t)cx - (int16_t)cy) * 16 + cam_x;
-				int16_t sy = ((int16_t)cx + (int16_t)cy) * 8 - (int16_t)level * 24 + cam_y;
-				cell_cursor(sx, sy + TILE_H - 16, 1);   // ромб пола — нижние 16 строк тайла
-			} else cell_cursor(0, 0, 0);
+			uint8_t cx = 0, cy = 0, on = 0;
+			if (cursor_y < VIEW_H && screen_to_cell(cursor_x, cursor_y, &cx, &cy)) on = 1;
+			uint8_t ox = cur_cx, oy = cur_cy, oon = cur_on;
+			if (on != oon || (on && (cx != ox || cy != oy))) {
+				cur_cx = cx; cur_cy = cy; cur_on = on;
+				if (oon) cell_repaint(ox, oy);
+				if (on) cell_repaint(cx, cy);
+			}
 		}
 		if (path_n) {                        // идём по пути: шаг раз в несколько кадров
 			if (move_wait) move_wait--;
@@ -888,7 +911,8 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		// рабочую память поиска пути. Иначе геоскейпу не из чего заводить слоты кэша, и он
 		// перечитывает каждый фон с карты — экран залипает (14 §todo).
 		split_stop();
-		cell_cursor(0, 0, 0);            // убрать курсор клетки из списка спрайтов
+		cur_on = 0;
+		if (cur_page != PG_NONE) { pg_free(cur_page, cur_np); cur_page = PG_NONE; }
 		cursor_color(CURSOR_GEOSCAPE);   // вернуть цвет курсора геоскейпа
 		gen_free();
 		if (unit_page != PG_NONE) { pg_free(unit_page, unit_np); unit_page = PG_NONE; }
@@ -905,7 +929,6 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		globe_invalidate();
 		gview_reset();
 		globe_prepare();                 // собрать планету в задний буфер целиком, поверх следов боя
-		cur_map = cur_map + 1 < NMAPS ? cur_map + 1 : 0;
 		break;
 	case EVT_BUTTON:
 		switch (arg) {
@@ -963,12 +986,6 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			ui_dirty(0);
 			break;
 		}
-		case 'm': case 'M':
-			gen_free(); gen_mode = 0;
-			cur_map = cur_map + 1 < NMAPS ? cur_map + 1 : 0;
-			if (!load_map()) { cur_map = 0; load_map(); }
-			ui_dirty(0);
-			break;
 		default: return 0;
 		}
 		if (cam_x == ox && cam_y == oy && (arg == KEY_LEFT || arg == KEY_RIGHT || arg == KEY_UP || arg == KEY_DOWN))

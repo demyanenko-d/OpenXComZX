@@ -9,8 +9,7 @@
 
 extern uint8_t in_prev_btn;
 extern uint8_t cur_lock;
-extern uint8_t cell_cur_on;              // 1 — в списке спрайтов есть курсор клетки (input.s)
-extern uint8_t cur_pal;                  // группа палитры спрайтов курсора (input.s)                 // 1 — S-file занят: прерывание не трогает спрайт курсора
+extern uint8_t cur_pal;                  // группа палитры спрайтов курсора (input.s)
 void cursor_sync(void);                  // input.s: запомнить показания мыши, не двигая курсор
 extern volatile uint8_t in_btn_latch, in_key_latch, in_key_rep, in_key_reps, in_prev_keys;
 uint8_t in_reps;                     // нажатий за один опрос (поворот глобуса делает столько шагов)
@@ -50,53 +49,6 @@ void cursor_color(uint8_t color) __banked
 			*p |= (x & 1) ? c : (uint8_t)(c << 4);
 		}
 	pg_map3(old);
-}
-
-// Курсор клетки для наземного боя: ромб 32x16 в листе спрайтов, спрайт 1 в S-file
-// (спрайт 0 занят стрелкой мыши и ведётся прерыванием). Рисуется рядом со стрелкой —
-// с x = 8, тайлы 1..4 и 65..68. color — пиксель внутри группы палитры курсора (не 0).
-void cell_cursor_init(uint8_t color) __banked
-{
-	uint8_t old = pg_win3();
-	pg_map3(TSU_PAGE);
-	uint8_t *sheet = (uint8_t *)0xC000;
-	for (uint8_t y = 0; y < 16; y++)
-		for (uint8_t x = 8; x < 40; x++) sheet[y * 256 + x / 2] = 0;
-	// Ромб клетки: верхняя и нижняя грани. Клетка 32x16, грань идёт на полпикселя по Y.
-	for (uint8_t i = 0; i < 32; i++) {
-		uint8_t c = color & 15;
-		uint8_t yt = (uint8_t)(i < 16 ? (15 - i) / 2 : (i - 16) / 2);
-		uint8_t yb = (uint8_t)(15 - yt);
-		uint8_t x = (uint8_t)(8 + i);
-		for (uint8_t k = 0; k < 2; k++) {
-			uint8_t y = k ? yb : yt;
-			uint8_t *p = sheet + (uint16_t)y * 256 + x / 2;
-			*p = (uint8_t)((x & 1) ? ((*p & 0xF0) | c) : ((*p & 0x0F) | (uint8_t)(c << 4)));
-		}
-	}
-	pg_map3(old);
-}
-
-// Поставить курсор клетки в экранную точку (левый верхний угол ромба) или убрать его.
-void cell_cursor(int16_t x, int16_t y, uint8_t on) __banked
-{
-	uint8_t old = pg_win3();
-	cur_lock = 1;                      // прерывание не должно трогать список, пока пишем
-	pg_map3(SCRATCH_PAGE);
-	TS_FMADDR = FMADDR_EN | 0x0C;
-	if (on && x > -32 && y > -16 && x < 320 && y < 200) {
-		// бит 14 — последний спрайт слоя: теперь это курсор клетки, а не стрелка
-		sfile_write(3, (uint16_t)((y & 0x1FF) | (1 << 9) | (1 << 13) | (1 << 14)));
-		sfile_write(4, (uint16_t)((x & 0x1FF) | (3 << 9)));               // ширина 32
-		sfile_write(5, (uint16_t)(1 | ((uint16_t)cur_pal << 12)));        // тайл 1, группа палитры
-		cell_cur_on = 1;
-	} else {
-		sfile_write(3, 0);
-		cell_cur_on = 0;
-	}
-	TS_FMADDR = 0;
-	pg_map3(old);
-	cur_lock = 0;
 }
 
 void input_init(void) __banked
