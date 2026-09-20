@@ -91,7 +91,7 @@ static uint8_t load_terrain(uint16_t idx, int16_t *script)
 	if (G.nsets > 8) G.nsets = 8;
 	if (G.nblk > MAX_BLOCKS) G.nblk = MAX_BLOCKS;
 	p += 4;
-	for (uint8_t i = 0; i < G.nsets; i++) { G.set[i] = far_word(p); p += 2; }
+	for (uint8_t i = 0; i < G.nsets; i++) { G.set[i] = far_word(p); G.tset[i] = far_word(p + 2); p += 4; }
 	for (uint8_t i = 0; i < G.nblk; i++) {
 		uint8_t b[6];
 		far_read(p, b, 6);
@@ -433,9 +433,11 @@ uint16_t mapgen_sx(void) __banked { return G.sx; }
 uint16_t mapgen_sy(void) __banked { return G.sy; }
 uint8_t mapgen_sz(void) __banked { return G.sz; }
 far_t mapgen_cells(void) __banked { return G.cells; }
-uint8_t mapgen_sets(uint16_t *set, uint8_t *count) __banked
+// Наборы миссии: MCDSET (части) и TILESET (кадры) по порядку — из них экран боя собирает
+// таблицу частей и загружает тайлсеты в страницы.
+uint8_t mapgen_sets(uint16_t *set, uint16_t *tset, uint8_t *count) __banked
 {
-	for (uint8_t i = 0; i < G.nsets; i++) set[i] = G.set[i];
+	for (uint8_t i = 0; i < G.nsets; i++) { set[i] = G.set[i]; tset[i] = G.tset[i]; }
 	*count = G.nsets;
 	return G.nsets;
 }

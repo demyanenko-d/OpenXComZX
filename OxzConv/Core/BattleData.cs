@@ -210,7 +210,7 @@ namespace OxzConv
 
 		// ---------------------------------------------------------------- таблицы для движка
 		// TERRAINS (Blob, a = число террейнов): u16 n, n x u16 смещение записи; запись:
-		//   i16 script (-1 нет), u8 nSets, u8 nBlocks, nSets x u16 ресурс MCDSET,
+		//   i16 script (-1 нет), u8 nSets, u8 nBlocks, nSets x { u16 MCDSET, u16 TILESET },
 		//   nBlocks x { u16 ресурс MAPBLK, u8 w, u8 l, u8 sz, u8 groups } — размеры в клетках,
 		//   groups — маска групп блока (бит 0 — обычный, 1 — посадочная площадка, …).
 		byte[] EncodeTerrains()
@@ -225,7 +225,7 @@ namespace OxzConv
 				U16(head, tableEnd + body.Count);
 				U16(body, t.Script == null ? 0xFFFF : (ScriptIndex(t.Script) < 0 ? 0xFFFF : ScriptIndex(t.Script)));
 				body.Add((byte)t.Sets.Count); body.Add((byte)t.Blocks.Count);
-				foreach (var s in t.Sets) U16(body, ids.Id($"MCDSET_{s}"));
+				foreach (var s in t.Sets) { U16(body, ids.Id($"MCDSET_{s}")); U16(body, ids.Id($"TILESET_{s}")); }
 				foreach (var b in t.Blocks)
 				{
 					U16(body, ids.Id($"MAPBLK_{b.Name}"));

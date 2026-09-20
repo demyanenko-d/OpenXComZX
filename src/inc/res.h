@@ -26,6 +26,11 @@ typedef struct {
 uint8_t res_find(uint16_t id, res_t *r);   // 1 — найден
 uint8_t res_game(void);                    // 1 — UFO, 2 — TFTD (заголовок пакета)
 
+// Ресурсы с SD мимо кэша слотов (банк 12, sdres.c): для боя — наборы тайлов миссии,
+// которые не влезают в слот и должны лежать до конца боя (16 §2.4).
+uint32_t sdres_size(uint16_t id) __banked;
+uint8_t sdres_load(uint16_t id, uint8_t page, res_t *r) __banked;
+
 // Таблицы правил (rules.h: rtable_t + записи): открыть, прочитать запись целиком
 // в ближнюю память (dst не меньше size) или слово по смещению в записи.
 typedef struct { far_t base; uint16_t n, size, tail; } rtab_t;

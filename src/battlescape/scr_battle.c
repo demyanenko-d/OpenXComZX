@@ -428,6 +428,77 @@ static void fill_cols(int16_t lo, int16_t hi)
 // Дорисовать полосу мирового диапазона [lo, hi]: очистить её и перерисовать все клетки, чьи
 // спрайты её задевают (на TILE_W шире с каждой стороны — соседи заезжают в полосу; поверх уже
 // нарисованного они лягут теми же пикселями, поэтому шов не портится).
+
+// ---------------------------------------------------------------- сгенерированная карта
+// Генератор (mapgen.c, банк 29) собирает поле из блоков террейна, а здесь собирается всё,
+// что нужно для показа: таблица частей (tile_tab) и тайлсеты наборов в своих страницах.
+// Номер части в клетке — как в MAP оригинала: 0 пусто, иначе номер части миссии; рендер
+// берёт tile_tab[t - 1], поэтому часть t кладётся в строку t - 1.
+#define GEN_SETS 8
+static uint8_t gen_mode;                 // 1 — показывается сгенерированная карта
+static uint8_t gen_page[GEN_SETS], gen_np[GEN_SETS], gen_ns;
+
+static void gen_free(void)
+{
+	for (uint8_t i = 0; i < gen_ns; i++)
+		if (gen_page[i] != PG_NONE) pg_free(gen_page[i], gen_np[i]);
+	gen_ns = 0;
+}
+
+static uint8_t load_gen(uint16_t terrain)
+{
+	uint16_t set[GEN_SETS], tset[GEN_SETS];
+	uint8_t ns = 0;
+	gen_free();
+	loaded = 0;
+	if (!mapgen_run(terrain, 4, 4)) return 0;
+	mapgen_sets(set, tset, &ns);
+	if (ns > GEN_SETS) ns = GEN_SETS;
+	uint16_t part = 0;                   // сквозной номер части миссии
+	for (uint8_t s = 0; s < ns && part < 256; s++) {
+		res_t rm, rt;
+		if (!res_find(set[s], &rm)) continue;
+		uint32_t tsz = sdres_size(tset[s]);
+		uint8_t np = (uint8_t)((tsz + 16383) >> 14);
+		uint8_t pg = np ? pg_alloc(np, 1) : PG_NONE;
+		if (pg == PG_NONE) break;
+		if (!sdres_load(tset[s], pg, &rt)) { pg_free(pg, np); break; }
+		gen_page[gen_ns] = pg; gen_np[gen_ns] = np; gen_ns++;
+		uint16_t nfr = rt.a;
+		far_t fdata = rt.phys + 4 + (uint32_t)nfr * 6;
+		for (uint16_t i = 0; i < rm.a && part < 256; i++, part++) {
+			uint8_t mc[8], e[6];
+			far_read(rm.phys + (uint32_t)i * 8, mc, 8);
+			uint16_t fr = (uint16_t)mc[0] | ((uint16_t)mc[1] << 8);
+			if (!part || fr >= nfr) continue;        // часть 0 в клетках не встречается
+			far_read(rt.phys + 4 + (uint32_t)fr * 6, e, 6);
+			far_t src = fdata + ((uint32_t)((uint16_t)e[4] | ((uint16_t)e[5] << 8)) << 1);
+			uint8_t *p = tile_tab + (part - 1) * TE_SIZE;
+			uint16_t so = FAR_OFFS(src);
+			p[0] = FAR_PAGE(src);
+			p[1] = (uint8_t)so; p[2] = (uint8_t)(so >> 8);
+			p[3] = e[2] ? (uint8_t)(e[2] / 2 - 1) : 0;
+			p[4] = e[3];
+			p[5] = e[0]; p[6] = e[1];
+			p[7] = e[2];
+			tile_y[part - 1] = mc[2];
+		}
+	}
+	if (!gen_ns) return 0;
+	m_sx = (uint8_t)mapgen_sx(); m_sy = (uint8_t)mapgen_sy(); m_sz = mapgen_sz();
+	m_nt = part;
+	cells = mapgen_cells();
+	map_phys = cells;
+	tiles_phys = 0;
+	rows_init();
+	level = m_sz > 1 ? 1 : 0;
+	gen_mode = 1;
+	dl_ok = 0;
+	center();
+	loaded = 1;
+	return 1;
+}
+
 static void draw_strip(int16_t lo, int16_t hi)
 {
 	fill_cols(lo, hi);
@@ -440,9 +511,11 @@ static void draw_map(void)
 {
 	res_t r;
 	if (!loaded || dl_page == PG_NONE) return;
-	if (!res_find((uint16_t)(RES_BATMAP0 + cur_map), &r)) return;   // слот мог смениться
-	if (!load_tiles()) return;
-	if (r.phys != map_phys) { map_phys = r.phys; cells = r.phys + 8 + (uint32_t)m_nt * 4; dl_ok = 0; }
+	if (!gen_mode) {                     // готовая карта из пакета: слот SD мог смениться
+		if (!res_find((uint16_t)(RES_BATMAP0 + cur_map), &r)) return;
+		if (!load_tiles()) return;
+		if (r.phys != map_phys) { map_phys = r.phys; cells = r.phys + 8 + (uint32_t)m_nt * 4; dl_ok = 0; }
+	}
 	if (dl_ok) {
 		// Вид уже в буфере: если камера ушла по горизонтали, дорисовать въехавшую полосу —
 		// буфер кольцевой, поэтому переезжать ничему не нужно.
@@ -562,23 +635,22 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		case 'n': case 'N': bench_tile(); return 0;    // ... по 256 байт (размер части клетки)
 		case 'v': case 'V': bench_big(); return 0;     // ... по 1024 байта
 		case 'g': case 'G': {
-			// Отладка генератора миссии (16 §3): собрать карту террейна gen_terrain и
-			// доложить в журнал, что получилось. Отрисовка сгенерированного — следующий шаг.
-			uint8_t ok = mapgen_run(gen_terrain, 4, 4);
+			// Собрать карту очередного террейна генератором и показать её (16 §3)
+			uint8_t ok = load_gen(gen_terrain);
 			dbg_puts("mapgen: terrain ");
 			dbg_dec(gen_terrain);
 			dbg_puts(ok ? " ok " : " FAIL ");
-			if (ok) {
-				dbg_dec(mapgen_sx()); dbg_puts("x"); dbg_dec(mapgen_sy());
-				dbg_puts(" cells "); dbg_dec(mapgen_filled());
-			}
+			if (ok) { dbg_dec(m_sx); dbg_puts("x"); dbg_dec(m_sy); dbg_puts(" parts "); dbg_dec(m_nt); }
 			dbg_puts("\n");
 			gen_terrain++;
-			return 0;
+			ui_dirty(0);
+			break;
 		}
 		case 'm': case 'M':
+			gen_free(); gen_mode = 0;
 			cur_map = cur_map + 1 < NMAPS ? cur_map + 1 : 0;
 			if (!load_map()) { cur_map = 0; load_map(); }
+			ui_dirty(0);
 			break;
 		default: return 0;
 		}

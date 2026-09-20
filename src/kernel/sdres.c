@@ -92,6 +92,23 @@ static uint8_t packs_open(void)
 	return any;
 }
 
+// Размер ресурса, не загружая его: нужно, чтобы выделить под него страницы (sdres_load).
+// 0 — ресурса нет.
+uint32_t sdres_size(uint16_t id) __banked
+{
+	uint8_t e[16];
+	const uint16_t want = id;   // сравнение байта с параметром SDCC 4.5 портит (CLAUDE.md)
+	if (!sd_state) sd_state = packs_open() ? 1 : 2;
+	if (sd_state != 1 || !id) return 0;
+	for (uint8_t p = 0; p < NPACKS; p++)
+		for (uint16_t i = 0; i < pk_n[p]; i++) {
+			far_read(FAR(idx_page, 0) + ((uint32_t)idx_off[p] + 1 + i) * 16, e, 16);
+			if ((e[0] | (e[1] << 8)) != want) continue;
+			return e[6] | ((uint32_t)e[7] << 8) | ((uint32_t)e[8] << 16) | ((uint32_t)e[9] << 24);
+		}
+	return 0;
+}
+
 // Ресурс целиком в свои страницы, минуя кэш слотов: наборы тайлов миссии занимают десятки
 // страниц и должны лежать до конца боя (16 §2.4). Страницы выделяет вызывающий (pg_alloc),
 // page — первая из них; возвращает 1 и заполняет r, как sdres_find.

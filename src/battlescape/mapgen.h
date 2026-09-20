@@ -15,6 +15,6 @@ uint16_t mapgen_sy(void) __banked;
 uint8_t mapgen_sz(void) __banked;
 far_t mapgen_cells(void) __banked;
 // Наборы MCD террейна по порядку (нужны, чтобы собрать таблицу частей и тайлсет)
-uint8_t mapgen_sets(uint16_t *set, uint8_t *count) __banked;
+uint8_t mapgen_sets(uint16_t *set, uint16_t *tset, uint8_t *count) __banked;
 
 #endif
