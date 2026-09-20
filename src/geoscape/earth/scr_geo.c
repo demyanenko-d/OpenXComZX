@@ -34,6 +34,7 @@ static uint8_t dz_state, dz_old;
 #define DZ_OUT         3
 #define DOGFIGHT_ZOOM  3
 uint8_t geo_dbg_attack;                  // сценарии: poke _geo_dbg_attack <база + 1> — штурм подставным НЛО
+uint8_t geo_dbg_fly;                     // сценарии: poke _geo_dbg_fly <сколько> — корабли базы 0 на ufo[0]
 extern uint8_t df_dbg_type;              // dogfight.c: тип подставного НЛО
 extern volatile uint16_t frames;         // crt0.s
 // Удержание кнопок поворота и зума (GEOBORD) мышью — повтор, как в OpenXcom (btnRotate*Press):
@@ -919,6 +920,15 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				dz_state = 0;
 			}
 			if (geo_dbg_attack) { dbg_attack(geo_dbg_attack - 1); geo_dbg_attack = 0; }
+			if (geo_dbg_fly) {                       // перехват без окон: сценарии (07 §4)
+				uint8_t n = geo_dbg_fly, k = 0;
+				geo_dbg_fly = 0;
+				for (uint8_t c = 0; c < MAX_CRAFTS && k < n; c++)
+					if (ST->craft[c].type != NONE8 && !ST->craft[c].base && !ST->craft[c].transit) {
+						craft_launch(c, DK_UFO, 0);
+						k++;
+					}
+			}
 			if (gev_n) { show_event(); break; }     // сначала — непоказанные события
 			if (df_count) {                          // бои: развёрнутый — окна, время стоит
 				if (!df_nmax && df_run()) ui_dirty(10);   // свёрнутые: конец боя или разворот — значки

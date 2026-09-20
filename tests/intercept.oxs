@@ -1,0 +1,52 @@
+# Перехват: НЛО село у базы, к нему идут корабли, транспорт спрашивает про высадку,
+# НЛО взлетает — начинается воздушный бой (жалоба 2026-09-20: геоскейп люто тормозил).
+# Суть проверки — время: такт «30 минут» с зависшим у цели кораблём раньше занимал
+# 547 кадров (краш-тест макрошага, craft_limit), теперь — полсотни.
+# Корабли отправляет отладочный ключ poke _geo_dbg_fly <сколько> (07 §4).
+# Запуск: powershell -File tools\run.ps1 -Script tests\intercept.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 600
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 300
+type land
+key ENTER
+waitmark 32 300
+
+# подставное НЛО (его создаёт окно «обнаружено»), посадить: ufo[0].status = US_LANDED
+poke _ui_request 36
+waitmark 36 300
+key SPACE
+waitmark 32 300
+poke 06:26CE 1
+
+# три корабля базы на него, время 30 минут
+poke _geo_dbg_fly 3
+key 4
+# транспорт долетает первым: окно высадки — «Нет», он возвращается домой
+waitmark 72 900
+shot tmp/shots/geo/95_landing.png
+pokew _cursor_x 176
+pokew _cursor_y 160
+click L
+waitmark 32 300
+
+# перехватчики висят над севшим НЛО: время должно идти, а не вставать
+wait 200
+shot tmp/shots/geo/96_hover.png
+
+# НЛО взлетело — начинается бой
+poke 06:26CE 0
+waitmark 216 900
+shot tmp/shots/geo/97_dogfight.png
+exit 0

@@ -268,6 +268,12 @@ void craft_step(void) __banked
 		if (geo_dist(&p, &d) <= geo_speed(ST->craft[c].speed)) {
 			ST->craft[c].pos = d;
 			arrive(c);
+			// Прибыл и остался у цели (висит над севшим НЛО, ждёт подтверждения высадки):
+			// шагов до цели больше нет. Иначе craft_limit режет макрошаг до одного шага в
+			// 5 секунд, и на быстром времени геоскейп встаёт: такт «30 минут» — 360 полных
+			// шагов со всей тригонометрией вместо трёх.
+			cr = &ST->craft[c];
+			if (flying(cr) && cr->dest_kind != DK_NONE) cr->steps = 0xFFFF;
 		} else {
 			caim(c);
 			cr = &ST->craft[c];
