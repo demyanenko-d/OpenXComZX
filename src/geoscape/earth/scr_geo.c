@@ -926,11 +926,13 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			}
 			if (geo_dbg_attack) { dbg_attack(geo_dbg_attack - 1); geo_dbg_attack = 0; }
 			if (geo_dbg_fly) {                       // перехват без окон: сценарии (07 §4)
-				uint8_t n = geo_dbg_fly, k = 0;
+				uint8_t n = geo_dbg_fly, k = 0, u = 0;
 				geo_dbg_fly = 0;
+				for (uint8_t i = 0; i < MAX_UFOS; i++)   // первое замеченное НЛО
+					if (ST->ufo[i].type != NONE8 && (ST->ufo[i].flags & UF_DETECTED)) { u = i; break; }
 				for (uint8_t c = 0; c < MAX_CRAFTS && k < n; c++)
 					if (ST->craft[c].type != NONE8 && !ST->craft[c].base && !ST->craft[c].transit) {
-						craft_launch(c, DK_UFO, 0);
+						craft_launch(c, DK_UFO, u);
 						k++;
 					}
 			}
