@@ -24,6 +24,7 @@
 #include "dbg.h"
 #include "mapgen.h"
 #include "music.h"
+#include "text.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 #define TILE_W     32
@@ -59,9 +60,10 @@ static uint16_t tile_frames;
 // в порядке: 0-7 левая рука, 8-15 правая, 16-23 ноги, 24-31 торс.
 #define MAX_UNITS 12
 #define UNIT_PARTS 4
-typedef struct { uint8_t x, y, z, dir, alive; } unit_t;
+typedef struct { uint8_t x, y, z, dir, alive; uint8_t tu, tu_max, hp, hp_max, en, mor; } unit_t;
 static unit_t __at(0xBE00) units[MAX_UNITS];
 static uint8_t nunits;
+static uint8_t sel;                      // выбранный боец (панель показывает его состояние)
 static uint8_t unit_page = PG_NONE, unit_np;
 static uint8_t __at(0xBE40) unit_tab[32 * TE_SIZE];   // кадры листа в виде для блита
 
@@ -261,7 +263,16 @@ static void dl_tile(uint8_t t, int16_t x, int16_t y)
 
 static const wdef_t w_battle[] = {
 	CUS(0, 0, 320, 200, DYN(0), A_NONE, 0),        // всё рисует экран (EVT_DRAW)
-	HOT(0, 144, 320, 56, A_POP, 0, ESC),           // панель: пока только выход
+	// Панель ICONS: кнопки на тех же местах, что в оригинале (BattlescapeState.cpp:100-115).
+	HOT(48, 144, 32, 16, A_NONE, 1, 0),            // боец выше по списку
+	HOT(48, 160, 32, 16, A_NONE, 2, 0),            // боец ниже
+	HOT(80, 144, 32, 16, A_NONE, 3, 0),            // этаж вверх
+	HOT(80, 160, 32, 16, A_NONE, 4, 0),            // этаж вниз
+	HOT(144, 144, 32, 16, A_NONE, 5, 'i'),         // инвентарь
+	HOT(144, 160, 32, 16, A_NONE, 6, 'c'),         // центрировать на бойце
+	HOT(176, 144, 32, 16, A_NONE, 7, 0),           // следующий боец
+	HOT(240, 144, 32, 16, A_NONE, 8, 0),           // конец хода
+	HOT(240, 160, 32, 16, A_POP, 0, ESC),          // выйти из боя
 };
 
 static const scr_t tab[] = {
@@ -504,6 +515,17 @@ static uint8_t load_unit_sheet(uint16_t id)
 	return 1;
 }
 
+// Навести камеру на выбранного бойца (кнопка «центрировать», как в оригинале)
+static void center_on_unit(void)
+{
+	if (!nunits) return;
+	const unit_t *u = &units[sel < nunits ? sel : 0];
+	cam_x = 160 - ((int16_t)u->x - (int16_t)u->y) * 16;
+	cam_y = VIEW_H / 2 - (((int16_t)u->x + (int16_t)u->y) * 8 - (int16_t)level * 24);
+	dl_ok = 0;
+	clamp_cam();
+}
+
 // Расставить отряд: пока это отладка генератора — бойцы просто занимают свободные клетки
 // (пол есть, объекта нет) ближе к южному краю карты, как высадка без корабля.
 static void place_squad(uint8_t n)
@@ -522,6 +544,10 @@ static void place_squad(uint8_t n)
 			if (!c[0] || c[3]) continue;          // нужен пол и пустой объект
 			units[nunits].x = x; units[nunits].y = (uint8_t)y; units[nunits].z = z;
 			units[nunits].dir = 0; units[nunits].alive = 1;
+			// показатели пока отладочные: настоящие придут с бойцами базы (deployXCOM)
+			units[nunits].tu = units[nunits].tu_max = 60;
+			units[nunits].hp = units[nunits].hp_max = 40;
+			units[nunits].en = 60; units[nunits].mor = 100;
 			nunits++;
 			x += 1;                               // не лепить бойцов вплотную
 		}
@@ -596,6 +622,7 @@ static uint8_t load_gen(uint16_t terrain)
 	// отряд: лист брони X-COM (TDXCOM_0 у TFTD, XCOM_0 у UFO)
 	if (load_unit_sheet(res_game() == 2 ? RES_UNIT_TDXCOM_0 : RES_UNIT_XCOM_0)) place_squad(6);
 	else nunits = 0;
+	sel = 0;
 	center();
 	loaded = 1;
 	return 1;
@@ -681,10 +708,40 @@ static void bench_tile(void)
 	dma_wait();
 }
 
+// Полоска показателя бойца — как Bar в оригинале: 102 пикселя на полную величину
+static void bar(int16_t y, uint8_t v, uint8_t max, uint8_t color)
+{
+	uint8_t w = max ? (uint8_t)((uint16_t)v * 102 / max) : 0;
+	gfx_fill(170, y, 102, 3, 0);
+	if (w) gfx_fill(170, y, w, 3, color);
+}
+
+// Панель: картинка ICONS и показатели выбранного бойца (BattlescapeState.cpp:147-155).
+// Цвета — из палитры боя: время жёлтое, энергия зелёная, здоровье красное, мораль синяя.
+static void draw_panel(void)
+{
+	gfx_blit(RES_ICONS_PCK, 0, VIEW_H, 0, VIEW_H, 320, 200 - VIEW_H);
+	if (!nunits) return;
+	const unit_t *u = &units[sel < nunits ? sel : 0];
+	// цвета полосок — из interfaces.rul боя (battlescape: barTUs 148, barEnergy 160,
+	// barHealth 9, barMorale 157)
+	bar(185, u->tu, u->tu_max, 148);
+	bar(189, u->en, u->tu_max, 160);
+	bar(193, u->hp, u->hp_max, 9);
+	bar(197, u->mor, 100, 157);
+	char b[8];
+	tbox_t t = { 136, 184, 24, 8, 0, 15, 15, 0 };
+	fmt_num(b, u->tu, 0);
+	text_draw(&t, b);                    // осталось единиц времени
+	t.x = 228; t.y = 148;
+	fmt_num(b, level + 1, 0);
+	text_draw(&t, b);                    // этаж камеры
+}
+
 static void draw_all(void)
 {
 	draw_map();                          // гасит экран сам — прямо перед отрисовкой
-	gfx_blit(RES_ICONS_PCK, 0, VIEW_H, 0, VIEW_H, 320, 200 - VIEW_H);
+	draw_panel();
 }
 
 uint8_t bat_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
@@ -726,6 +783,21 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		split_stop();
 		if (dl_page != PG_NONE) { pg_free(dl_page, 1); dl_page = PG_NONE; dl_ok = 0; }
 		cur_map = cur_map + 1 < NMAPS ? cur_map + 1 : 0;
+		break;
+	case EVT_BUTTON:
+		switch (arg) {
+		case 1: if (sel) sel--; ui_dirty(0); break;
+		case 2: if (sel + 1 < nunits) sel++; ui_dirty(0); break;
+		case 3: if (level + 1 < m_sz) { level++; center(); ui_dirty(0); } break;
+		case 4: if (level) { level--; center(); ui_dirty(0); } break;
+		case 5: UI_GO(A_PUSH, SCR_INVENTORY); break;
+		case 6: center_on_unit(); ui_dirty(0); break;
+		case 7: if (nunits) { sel = (uint8_t)((sel + 1) % nunits); center_on_unit(); ui_dirty(0); } break;
+		case 8:                              // конец хода: время и энергия бойцов восстанавливаются
+			for (uint8_t i = 0; i < nunits; i++) { units[i].tu = units[i].tu_max; units[i].en = units[i].tu_max; }
+			ui_dirty(0);
+			break;
+		}
 		break;
 	case EVT_KEY: {
 		// Автоповтор за время долгой перерисовки копится (in_reps) — сдвигать сразу на все
