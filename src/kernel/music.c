@@ -262,8 +262,15 @@ void mus_fill(void) __banked
 			uint8_t can = MUS_LIMIT - ahead;
 			if (!can) break;
 			uint8_t k = M.rest > can ? can : M.rest;
-			if (RING_SIZE - M.wr < 2) { mus_ring[M.wr] = 0x80; M.wr = 0; }
-			mus_ring[M.wr++] = 0x80 + k;
+			// Метка заворота пишется ПОСЛЕ самой записи: прерывание, увидев её, сразу
+			// читает начало кольца, и если там ещё старый байт — играет мусор, а при
+			// старом #80 прерывание зацикливалось и машина вставала целиком.
+			if (RING_SIZE - M.wr < 2) {
+				mus_ring[0] = 0x80 + k;
+				mus_ring[M.wr] = 0x80;
+				M.wr = 1;
+			} else
+				mus_ring[M.wr++] = 0x80 + k;
 			M.rest -= k;
 			mus_pushed += k;
 			continue;
@@ -293,11 +300,13 @@ void mus_fill(void) __banked
 		// секунд музыки.
 		if (M.left < len) { M.left = 0; continue; }
 		if (RING_SIZE - M.wr < len + 1) {   // запись не влезает до конца кольца
-			mus_ring[M.wr] = 0x80;          // метка «читать с начала»
-			M.wr = 0;
+			far_read(p, mus_ring, len);     // сперва сама запись в начало кольца,
+			mus_ring[M.wr] = 0x80;          //   и только потом метка «читать с начала»
+			M.wr = len;
+		} else {
+			far_read(p, mus_ring + M.wr, len);
+			M.wr += len;
 		}
-		far_read(p, mus_ring + M.wr, len);
-		M.wr += len;
 		M.off += len;
 		M.left -= len;
 		M.pos += len;
