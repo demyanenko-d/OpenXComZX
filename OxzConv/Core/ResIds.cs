@@ -51,6 +51,8 @@ namespace OxzConv
 			// генератор миссий (16 §3): таблицы террейнов и скриптов; наборы, блоки и тайлсеты
 			// получают динамические номера по именам MCDSET_/MAPBLK_/TILESET_
 			S("TERRAINS", 0x01D0); S("MAPSCRIPTS", 0x01D1);
+			// листы спрайтов брони X-COM: их движок грузит по имени сам (остальные — по правилам)
+			S("UNIT_XCOM_0", 0x01D8); S("UNIT_TDXCOM_0", 0x01D9);
 			// строить после заполнения: инициализаторы полей выполняются раньше тела конструктора
 			staticMap = Static.ToDictionary(kv => kv.Key.ToUpperInvariant(), kv => kv.Value);
 		}

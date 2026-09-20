@@ -325,6 +325,37 @@ namespace OxzConv
 					if (b.Sz == 0 && gfs.Has($"MAPS/{b.Name}.MAP"))
 						b.Sz = gfs.Read($"MAPS/{b.Name}.MAP")[2];
 
+			// Спрайты юнитов (UNITS/*.PCK): кадры 32x40, из них UnitSprite собирает бойца —
+			// ноги, торс и руки по направлению (16 §…, UnitSprite::drawRoutine0). Кладём целиком,
+			// миссия грузит только нужные листы.
+			var unitPak = new PakWriter(game);
+			int nUnits = 0;
+			long unitBytes = 0;
+			foreach (var file in gfs.List("UNITS", "PCK"))
+			{
+				string name = file.Substring(0, file.Length - 4);
+				if (name == "BIGOBS" || name == "FLOOROB" || name == "HANDOB") continue;   // они в ITEMS.PAK
+				if (!gfs.Has($"UNITS/{name}.TAB")) continue;
+				var all = Formats.DecodePck(gfs.Read($"UNITS/{name}.PCK"), gfs.Read($"UNITS/{name}.TAB"), TileW, TileH);
+				if (all.Count == 0) continue;
+				// Лист целиком (до 300 кадров) в SPRSET не влезает, да и не нужен: берём позу
+				// «стоя» по восьми направлениям — левая рука, правая рука, ноги, торс
+				// (UnitSprite::drawRoutine0: larm 0, rarm 8, legsStand 16, торс 32 у UFO и
+				// 270 у наземных юнитов TFTD). Остальные позы — когда дойдёт до анимации.
+				int torso = game == "TFTD" && all.Count > 277 ? 270 : 32;
+				var idx = new List<int>();
+				for (int i = 0; i < 24; i++) idx.Add(i);
+				for (int i = 0; i < 8; i++) idx.Add(torso + i);
+				var frames = new List<Img>();
+				foreach (var i in idx) frames.Add(i < all.Count ? all[i] : all[0]);
+				var sprset = Sprites.EncodeSprset(frames);
+				unitPak.Add(ids.Id($"UNIT_{name}"), ResType.Sprset, sprset, frames.Count, TileW, TileH);
+				unitBytes += sprset.Length;
+				nUnits++;
+			}
+			var ru = unitPak.Write(Path.Combine(outDir, "UNITS.PAK"));
+			report.Add($"UNITS.PAK: {nUnits} sheets, {(ru.bytes + 512) / 1024} KB");
+
 			mcdPak.Add(ids.Id("TERRAINS"), ResType.Blob, EncodeTerrains(), Terrains.Count);
 			mcdPak.Add(ids.Id("MAPSCRIPTS"), ResType.Blob, EncodeScripts(), Scripts.Count);
 			var rm = mcdPak.Write(Path.Combine(outDir, "MCD.PAK"));

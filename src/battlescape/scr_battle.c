@@ -23,6 +23,7 @@
 #include "scrdef.h"
 #include "dbg.h"
 #include "mapgen.h"
+#include "music.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 #define TILE_W     32
@@ -52,6 +53,17 @@ static uint8_t __at(0xBD00) row[MAP_MAXX * 4];   // ряд клеток карт
 static uint8_t __at(0xB400) tile_tab[256 * TE_SIZE];
 static far_t tiles_phys;             // где сейчас лежит тайлсет (слот SD мог смениться)
 static uint16_t tile_frames;
+
+// Юниты на карте (отладка генератора, тумана войны пока нет). Спрайт собирается как в
+// UnitSprite::drawRoutine0 — ноги, торс и руки по направлению; лист UNIT_* даёт 32 кадра
+// в порядке: 0-7 левая рука, 8-15 правая, 16-23 ноги, 24-31 торс.
+#define MAX_UNITS 12
+#define UNIT_PARTS 4
+typedef struct { uint8_t x, y, z, dir, alive; } unit_t;
+static unit_t __at(0xBE00) units[MAX_UNITS];
+static uint8_t nunits;
+static uint8_t unit_page = PG_NONE, unit_np;
+static uint8_t __at(0xBE40) unit_tab[32 * TE_SIZE];   // кадры листа в виде для блита
 
 // Дисплей-лист (17_battle_render.md §2): вид раскладывается в список готовых команд DMA —
 // по 8 байт, ровно то, что выгружается в регистры. Строится при смене камеры, этажа или карты,
@@ -171,12 +183,12 @@ static uint8_t *dl_put(void)
 	return dl + dl_n++ * DL_SIZE;
 }
 
-// Кадр тайлсета -> команды дисплей-листа: источник лежит подряд (строка = w байт), приёмник
+// Кадр (запись вида tile_tab/unit_tab) -> команды дисплей-листа: источник лежит подряд
+// (строка = w байт), приёмник
 // шагает на 512 (BLT1 | D_ALGN | ASZ, 02 §6). Кадр — всегда одна команда; по краям окна он не
 // обрезается (см. ниже), сверху и снизу обрезается строками.
-static void dl_tile(uint8_t t, int16_t x, int16_t y)
+static void dl_blit(const uint8_t *e, int16_t x, int16_t y)
 {
-	const uint8_t *e = tile_tab + (uint16_t)t * TE_SIZE;
 	int16_t h = e[4];
 	if (!e[7]) return;
 	int16_t bx = (int16_t)((uint16_t)(x + e[5] + BIAS) & (BUF_W - 1)), by = y + e[6];
@@ -239,6 +251,12 @@ static void dl_tile(uint8_t t, int16_t x, int16_t y)
 		by++;
 		h--;
 	}
+}
+
+// Кадр карты по номеру части: вертикальное смещение части (MCD.P_Level) учтено вызывающим
+static void dl_tile(uint8_t t, int16_t x, int16_t y)
+{
+	dl_blit(tile_tab + (uint16_t)t * TE_SIZE, x, y);
 }
 
 static const wdef_t w_battle[] = {
@@ -338,6 +356,31 @@ static uint8_t load_tiles(void)
 // то есть буфер по горизонтали кольцевой и при движении камеры ничего не переезжает — надо лишь
 // дорисовать въехавшую полосу. Полоса берётся с запасом в ширину спрайта: клетка рисуется
 // целиком, поэтому в неё должны попасть и соседи, чьи спрайты в неё заезжают.
+// Кадр юнита в дисплей-лист (как dl_tile, но кадры берутся из своего листа)
+static void dl_unit_frame(uint8_t fr, int16_t x, int16_t y)
+{
+	const uint8_t *e = unit_tab + (uint16_t)fr * TE_SIZE;
+	if (!e[7]) return;
+	dl_blit(e, x, y);
+}
+
+// Юниты этого ряда: рисуются после клетки, в порядке ноги -> торс -> руки
+static void draw_units_row(uint8_t z, int16_t y, int16_t rx, int16_t ry, int16_t x0, int16_t x1)
+{
+	if (!nunits || unit_page == PG_NONE) return;
+	for (uint8_t i = 0; i < nunits; i++) {
+		const unit_t *u = &units[i];
+		if (!u->alive || u->z != z || u->y != (uint8_t)y) continue;
+		if (u->x < (uint8_t)x0 || u->x > (uint8_t)x1) continue;
+		int16_t px = rx + (int16_t)u->x * 16, py = ry + (int16_t)u->x * 8;
+		uint8_t d = u->dir & 7;
+		dl_unit_frame(16 + d, px, py);       // ноги
+		dl_unit_frame(24 + d, px, py);       // торс
+		dl_unit_frame(0 + d, px, py);        // левая рука
+		dl_unit_frame(8 + d, px, py);        // правая рука
+	}
+}
+
 static void build_range(int16_t lo, int16_t hi)
 {
 	dl_n = 0;
@@ -375,6 +418,7 @@ static void build_range(int16_t lo, int16_t hi)
 					if (!t) continue;
 					dl_tile((uint8_t)(t - 1), px, py - (int16_t)tile_y[t - 1]);   // px — мировая X
 				}
+			draw_units_row(z, y, rx, ry, x0, x1);
 			pg_map3(old);
 		}
 	}
@@ -428,6 +472,61 @@ static void fill_cols(int16_t lo, int16_t hi)
 // Дорисовать полосу мирового диапазона [lo, hi]: очистить её и перерисовать все клетки, чьи
 // спрайты её задевают (на TILE_W шире с каждой стороны — соседи заезжают в полосу; поверх уже
 // нарисованного они лягут теми же пикселями, поэтому шов не портится).
+
+
+// Лист юнита в память и в готовые для блита записи (как тайлсет карты)
+static uint8_t load_unit_sheet(uint16_t id)
+{
+	res_t rt;
+	if (unit_page != PG_NONE) { pg_free(unit_page, unit_np); unit_page = PG_NONE; }
+	uint32_t sz = sdres_size(id);
+	if (!sz) return 0;
+	unit_np = (uint8_t)((sz + 16383) >> 14);
+	unit_page = pg_alloc(unit_np, 1);
+	if (unit_page == PG_NONE) return 0;
+	if (!sdres_load(id, unit_page, &rt)) { pg_free(unit_page, unit_np); unit_page = PG_NONE; return 0; }
+	uint16_t nfr = rt.a;
+	far_t fdata = rt.phys + 4 + (uint32_t)nfr * 6;
+	for (uint16_t i = 0; i < 32; i++) {
+		uint8_t *p = unit_tab + i * TE_SIZE;
+		if (i >= nfr) { p[7] = 0; continue; }
+		uint8_t e[6];
+		far_read(rt.phys + 4 + (uint32_t)i * 6, e, 6);
+		far_t src = fdata + ((uint32_t)((uint16_t)e[4] | ((uint16_t)e[5] << 8)) << 1);
+		uint16_t so = FAR_OFFS(src);
+		p[0] = FAR_PAGE(src);
+		p[1] = (uint8_t)so; p[2] = (uint8_t)(so >> 8);
+		p[3] = e[2] ? (uint8_t)(e[2] / 2 - 1) : 0;
+		p[4] = e[3];
+		p[5] = e[0]; p[6] = e[1];
+		p[7] = e[2];
+	}
+	return 1;
+}
+
+// Расставить отряд: пока это отладка генератора — бойцы просто занимают свободные клетки
+// (пол есть, объекта нет) ближе к южному краю карты, как высадка без корабля.
+static void place_squad(uint8_t n)
+{
+	nunits = 0;
+	if (n > MAX_UNITS) n = MAX_UNITS;
+	uint8_t z = 0;
+	// пока это отладка: ставим у середины карты, чтобы отряд попадал в кадр
+	for (int16_t y = m_sy / 2; y < m_sy && nunits < n; y++) {
+		uint8_t line[MAP_MAXX * 4];
+		uint16_t len = (uint16_t)m_sx * 4;
+		if (len > sizeof line) len = sizeof line;
+		far_read(cells + (uint32_t)((uint32_t)z * m_sy + y) * m_sx * 4, line, len);
+		for (uint8_t x = 0; x < m_sx && nunits < n; x++) {
+			const uint8_t *c = line + (uint16_t)x * 4;
+			if (!c[0] || c[3]) continue;          // нужен пол и пустой объект
+			units[nunits].x = x; units[nunits].y = (uint8_t)y; units[nunits].z = z;
+			units[nunits].dir = 0; units[nunits].alive = 1;
+			nunits++;
+			x += 1;                               // не лепить бойцов вплотную
+		}
+	}
+}
 
 // ---------------------------------------------------------------- сгенерированная карта
 // Генератор (mapgen.c, банк 29) собирает поле из блоков террейна, а здесь собирается всё,
@@ -494,6 +593,9 @@ static uint8_t load_gen(uint16_t terrain)
 	level = m_sz > 1 ? 1 : 0;
 	gen_mode = 1;
 	dl_ok = 0;
+	// отряд: лист брони X-COM (TDXCOM_0 у TFTD, XCOM_0 у UFO)
+	if (load_unit_sheet(res_game() == 2 ? RES_UNIT_TDXCOM_0 : RES_UNIT_XCOM_0)) place_squad(6);
+	else nunits = 0;
 	center();
 	loaded = 1;
 	return 1;
@@ -606,6 +708,12 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 {
 	(void)id;
 	switch (ev) {
+	case EVT_MUSIC: {
+		// Тема боя: роль MK_TACTIC из таблицы MUSGRP (22 §1.3), как GMTACTIC в оригинале
+		uint16_t id = mus_kind(MK_TACTIC);
+		if (id) mus_play(id);
+		break;
+	}
 	case EVT_OPEN:
 		if (dl_page == PG_NONE) dl_page = pg_alloc(1, 1);
 		if (!load_map() && cur_map) { cur_map = 0; load_map(); }
