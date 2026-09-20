@@ -13,6 +13,7 @@
 	.globl	_far_byte
 	.globl	_far_word
 	.globl	_far_copy
+	.globl	fc_len, fc_src, fc_dst
 	.globl	_dbg_puts
 	.globl	_dbg_dec
 	.globl	_dbg_hex8
