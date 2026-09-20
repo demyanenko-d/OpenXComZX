@@ -104,6 +104,8 @@ extern uint16_t map_gx, map_gy, split_line, vblank_line;
 static uint16_t __at(0xB000) row_ofs[BUF_H];
 static uint8_t __at(0xB200) row_page[BUF_H];
 
+static void center_on_unit(void);       // определена ниже, вместе с юнитами
+
 static void rows_init(void)
 {
 	for (uint16_t y = 0; y < BUF_H; y++) {
@@ -530,26 +532,33 @@ static void center_on_unit(void)
 // (пол есть, объекта нет) ближе к южному краю карты, как высадка без корабля.
 static void place_squad(uint8_t n)
 {
+	uint8_t cx, cy, cw, cl;
 	nunits = 0;
 	if (n > MAX_UNITS) n = MAX_UNITS;
+	mapgen_craft(&cx, &cy, &cw, &cl);
+	// Бойцы высаживаются в корабле, если он на карте (у оригинала места задают узлы RMP —
+	// их мы ещё не грузим), иначе просто у середины поля.
+	uint8_t y0 = cw ? cy : (uint8_t)(m_sy / 2), y1 = cw ? (uint8_t)(cy + cl) : m_sy;
+	uint8_t x0 = cw ? cx : 0, x1 = cw ? (uint8_t)(cx + cw) : m_sx;
+	if (y1 > m_sy) y1 = m_sy;
+	if (x1 > m_sx) x1 = m_sx;
 	uint8_t z = 0;
-	// пока это отладка: ставим у середины карты, чтобы отряд попадал в кадр
-	for (int16_t y = m_sy / 2; y < m_sy && nunits < n; y++) {
+	for (uint8_t y = y0; y < y1 && nunits < n; y++) {
 		uint8_t line[MAP_MAXX * 4];
 		uint16_t len = (uint16_t)m_sx * 4;
 		if (len > sizeof line) len = sizeof line;
 		far_read(cells + (uint32_t)((uint32_t)z * m_sy + y) * m_sx * 4, line, len);
-		for (uint8_t x = 0; x < m_sx && nunits < n; x++) {
+		for (uint8_t x = x0; x < x1 && nunits < n; x++) {
 			const uint8_t *c = line + (uint16_t)x * 4;
 			if (!c[0] || c[3]) continue;          // нужен пол и пустой объект
-			units[nunits].x = x; units[nunits].y = (uint8_t)y; units[nunits].z = z;
+			units[nunits].x = x; units[nunits].y = y; units[nunits].z = z;
 			units[nunits].dir = 0; units[nunits].alive = 1;
 			// показатели пока отладочные: настоящие придут с бойцами базы (deployXCOM)
 			units[nunits].tu = units[nunits].tu_max = 60;
 			units[nunits].hp = units[nunits].hp_max = 40;
 			units[nunits].en = 60; units[nunits].mor = 100;
 			nunits++;
-			x += 1;                               // не лепить бойцов вплотную
+			x++;                                  // не лепить бойцов вплотную
 		}
 	}
 }
@@ -576,6 +585,8 @@ static uint8_t load_gen(uint16_t terrain)
 	uint8_t ns = 0;
 	gen_free();
 	loaded = 0;
+	// отладка: ставим первый корабль X-COM и первое НЛО, какие есть в данных
+	mapgen_set_extra(mapgen_find_kind(1), mapgen_find_kind(2));
 	if (!mapgen_run(terrain, 4, 4)) return 0;
 	mapgen_sets(set, tset, &ns);
 	if (ns > GEN_SETS) ns = GEN_SETS;
@@ -624,6 +635,7 @@ static uint8_t load_gen(uint16_t terrain)
 	else nunits = 0;
 	sel = 0;
 	center();
+	if (nunits) center_on_unit();        // камера на первого бойца отряда
 	loaded = 1;
 	return 1;
 }
@@ -820,7 +832,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			dbg_puts("mapgen: terrain ");
 			dbg_dec(gen_terrain);
 			dbg_puts(ok ? " ok " : " FAIL ");
-			if (ok) { dbg_dec(m_sx); dbg_puts("x"); dbg_dec(m_sy); dbg_puts(" parts "); dbg_dec(m_nt); }
+			if (ok) { dbg_dec(m_sx); dbg_puts("x"); dbg_dec(m_sy); dbg_puts(" parts "); dbg_dec(m_nt); dbg_puts(" sets "); dbg_dec(gen_ns); dbg_puts(" units "); dbg_dec(nunits); }
 			dbg_puts("\n");
 			gen_terrain++;
 			ui_dirty(0);

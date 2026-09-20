@@ -42,6 +42,7 @@ namespace OxzConv
 		public class Terrain
 		{
 			public string Name, Script;
+			public int Kind;                    // 0 обычный, 1 карта корабля X-COM, 2 карта НЛО
 			public List<string> Sets = new List<string>();
 			public List<Block> Blocks = new List<Block>();
 		}
@@ -84,9 +85,9 @@ namespace OxzConv
 		// у них такая же структура (наборы + блоки), и генератор кладёт их поверх поля.
 		public void LoadRules()
 		{
-			void Add(object o, string nameField)
+			void Add(object o, string nameField, int kind = 0)
 			{
-				var t = new Terrain { Name = Y.Str(Y.Get(o, nameField)), Script = Y.Str(Y.Get(o, "script")) };
+				var t = new Terrain { Name = Y.Str(Y.Get(o, nameField)), Script = Y.Str(Y.Get(o, "script")), Kind = kind };
 				if (t.Name == null) return;
 				foreach (var s in Y.List(Y.Get(o, "mapDataSets")) ?? new List<object>()) t.Sets.Add(Y.Str(s));
 				foreach (var b in Y.List(Y.Get(o, "mapBlocks")) ?? new List<object>())
@@ -112,7 +113,7 @@ namespace OxzConv
 				foreach (var o in list ?? new List<object>())
 				{
 					var d = Y.Get(o, "battlescapeTerrainData");
-					if (d != null) Add(d, "name");
+					if (d != null) Add(d, "name", file == "crafts.rul" ? 1 : 2);
 				}
 			}
 		}
@@ -210,7 +211,8 @@ namespace OxzConv
 
 		// ---------------------------------------------------------------- таблицы для движка
 		// TERRAINS (Blob, a = число террейнов): u16 n, n x u16 смещение записи; запись:
-		//   i16 script (-1 нет), u8 nSets, u8 nBlocks, nSets x { u16 MCDSET, u16 TILESET },
+		//   i16 script (-1 нет), u8 nSets, u8 nBlocks, u8 kind (0 террейн, 1 корабль, 2 НЛО),
+		//   nSets x { u16 MCDSET, u16 TILESET },
 		//   nBlocks x { u16 ресурс MAPBLK, u8 w, u8 l, u8 sz, u8 groups } — размеры в клетках,
 		//   groups — маска групп блока (бит 0 — обычный, 1 — посадочная площадка, …).
 		byte[] EncodeTerrains()
@@ -224,7 +226,7 @@ namespace OxzConv
 			{
 				U16(head, tableEnd + body.Count);
 				U16(body, t.Script == null ? 0xFFFF : (ScriptIndex(t.Script) < 0 ? 0xFFFF : ScriptIndex(t.Script)));
-				body.Add((byte)t.Sets.Count); body.Add((byte)t.Blocks.Count);
+				body.Add((byte)t.Sets.Count); body.Add((byte)t.Blocks.Count); body.Add((byte)t.Kind);
 				foreach (var s in t.Sets) { U16(body, ids.Id($"MCDSET_{s}")); U16(body, ids.Id($"TILESET_{s}")); }
 				foreach (var b in t.Blocks)
 				{

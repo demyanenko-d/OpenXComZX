@@ -71,9 +71,13 @@ typedef struct {
 	uint8_t pages;
 	uint16_t sx, sy;                   // размер карты в клетках
 	uint8_t label_ok[16];              // успех команд с метками (conditionals)
+	uint8_t craft_x, craft_y, craft_w, craft_l;   // где встал корабль отряда (в клетках)
 } gen_t;
 
 static gen_t __at(0xB000) G;
+// Какие корабль и НЛО ставить: номера террейнов из таблицы TERRAINS (#FFFF — не ставить).
+// Пока их задаёт вызывающий (отладка), потом — миссия: корабль отряда и тип НЛО.
+static uint16_t gen_craft = 0xFFFF, gen_ufo = 0xFFFF;
 
 // ------------------------------------------------------------------ чтение правил
 
@@ -90,7 +94,7 @@ static uint8_t load_terrain(uint16_t idx, int16_t *script)
 	G.nblk = far_byte(p + 3);
 	if (G.nsets > 8) G.nsets = 8;
 	if (G.nblk > MAX_BLOCKS) G.nblk = MAX_BLOCKS;
-	p += 4;
+	p += 5;                                 // за nBlocks идёт вид террейна (kind)
 	for (uint8_t i = 0; i < G.nsets; i++) { G.set[i] = far_word(p); G.tset[i] = far_word(p + 2); p += 4; }
 	for (uint8_t i = 0; i < G.nblk; i++) {
 		uint8_t b[6];
@@ -193,10 +197,19 @@ static uint8_t find_place(const int16_t *rects, uint8_t nrects, uint8_t size, ui
 // Номер части блока (как в MAP оригинала — сквозной по наборам террейна) уже годится:
 // наборы миссии идут в том же порядке, поэтому номер остаётся собой. Трансляция нужна
 // только когда добавляются наборы корабля и НЛО — это следующий шаг.
-static void lay_block(uint8_t mx, uint8_t my, uint8_t b)
+// Сдвиг номеров частей в строке клеток (0 — пусто, его не трогаем)
+static void shift_row(uint8_t *row, uint16_t len, uint8_t offset)
+{
+	for (uint16_t i = 0; i < len; i++)
+		if (row[i]) row[i] += offset;
+}
+
+// offset — сдвиг номеров частей: у блока чужого террейна (корабль, НЛО) его наборы MCD
+// добавлены к наборам миссии после основных, как mapDataSetOffset в loadMAP.
+static void lay_res(uint8_t mx, uint8_t my, uint16_t res, uint8_t offset)
 {
 	res_t r;
-	if (!res_find(G.blk[b].res, &r)) return;
+	if (!res_find(res, &r)) return;
 	uint8_t h[4];
 	far_read(r.phys, h, 4);
 	uint8_t bx = h[0], by = h[1], bz = h[2];
@@ -208,10 +221,98 @@ static void lay_block(uint8_t mx, uint8_t my, uint8_t b)
 			uint16_t wy = my * MOD_W + y;
 			if (wy >= G.sy) break;
 			far_read(r.phys + 4 + ((uint32_t)(z * by + y) * bx) * 4, row, rowlen);
+			if (offset) shift_row(row, rowlen, offset);
 			far_t dst = G.cells + ((uint32_t)(z * G.sy + wy) * G.sx + mx * MOD_W) * 4;
 			uint16_t len = rowlen;
 			if (mx * MOD_W + bx > G.sx) len = (uint16_t)(G.sx - mx * MOD_W) * 4;
 			far_write(dst, row, len);
+		}
+}
+
+static void lay_block(uint8_t mx, uint8_t my, uint8_t b)
+{
+	lay_res(mx, my, G.blk[b].res, 0);
+}
+
+// ------------------------------------------------------------------ корабль, НЛО, тоннели
+
+// Блок чужого террейна (корабль X-COM или НЛО): его наборы MCD добавляются к наборам миссии,
+// блок занимает свои модули и больше туда ничего не ставится — так же оригинал держит
+// посадочную площадку (BattlescapeGenerator::addCraft/addUFO, :2609-2640).
+static uint8_t place_extra(uint16_t terr, const int16_t *rects, uint8_t nrects, uint8_t is_craft)
+{
+	res_t r;
+	if (!res_find(RES_TERRAINS, &r)) return 0;
+	uint16_t n = far_word(r.phys);
+	if (terr >= n) return 0;
+	far_t p = r.phys + far_word(r.phys + 2 + (uint32_t)terr * 2);
+	uint8_t nsets = far_byte(p + 2), nblk = far_byte(p + 3);
+	if (!nsets || !nblk || G.nsets + nsets > 8) return 0;
+	p += 5;
+
+	// сдвиг номеров частей — столько их уже занято террейном миссии
+	uint8_t base = 0;
+	for (uint8_t i = 0; i < G.nsets; i++) base += G.setn[i];
+	uint8_t added = 0, parts = 0;
+	for (uint8_t i = 0; i < nsets; i++) {
+		uint16_t ms = far_word(p + (uint32_t)i * 4), ts = far_word(p + (uint32_t)i * 4 + 2);
+		res_t rs;
+		uint8_t cnt = res_find(ms, &rs) ? (uint8_t)rs.a : 0;
+		if ((uint16_t)base + parts + cnt > 255) return 0;   // номер части в клетке — байт
+		G.set[G.nsets + added] = ms;
+		G.tset[G.nsets + added] = ts;
+		G.setn[G.nsets + added] = cnt;
+		parts += cnt;
+		added++;
+	}
+	p += (uint32_t)nsets * 4;
+
+	uint8_t b[6];
+	far_read(p + (uint32_t)(rng_next() % nblk) * 6, b, 6);
+	uint16_t res = (uint16_t)b[0] | ((uint16_t)b[1] << 8);
+	uint8_t sw = b[2] / MOD_W, sl = b[3] / MOD_W;
+	if (!sw) sw = 1;
+	if (!sl) sl = 1;
+	uint8_t x, y;
+	if (!find_place(rects, nrects, sw > sl ? sw : sl, &x, &y)) return 0;
+	for (uint8_t j = 0; j < sl; j++)
+		for (uint8_t i = 0; i < sw; i++) {
+			G.grid[(y + j) * MAX_MOD + x + i] = 0xFF;        // место занято, кладём сами
+			G.head[(y + j) * MAX_MOD + x + i] = 0;
+		}
+	lay_res(x, y, res, base);
+	G.nsets += added;
+	if (is_craft) {                                   // запомнить, куда высаживать отряд
+		G.craft_x = x * MOD_W; G.craft_y = y * MOD_W;
+		G.craft_w = b[2]; G.craft_l = b[3];
+	}
+	return 1;
+}
+
+// Проходы между модулями на уровне level: оригинал заменяет стены по краям модулей на
+// «дверные» части (MCDReplacements), у нас таких замен в данных почти нет — тогда стена
+// просто убирается и проход появляется (drillModules, :2769-2889).
+static void dig_tunnel(uint8_t level, uint8_t dir)
+{
+	uint8_t zero = 0;
+	if (level >= G.sz) return;
+	uint8_t vertical = dir == 1 || dir == 3, horizontal = dir == 2 || dir == 3;
+	for (uint8_t my = 0; my < G.my; my++)
+		for (uint8_t mx = 0; mx < G.mx; mx++) {
+			uint16_t cx = (uint16_t)mx * MOD_W + MOD_W / 2;
+			uint16_t cy = (uint16_t)my * MOD_W + MOD_W / 2;
+			if (vertical && my + 1 < G.my)
+				for (uint8_t k = 0; k < 2; k++) {
+					uint16_t wy = (uint16_t)(my + 1) * MOD_W;
+					far_t c = G.cells + ((uint32_t)(level * G.sy + wy) * G.sx + cx + k) * 4;
+					far_write(c + 2, &zero, 1);              // северная стена
+				}
+			if (horizontal && mx + 1 < G.mx)
+				for (uint8_t k = 0; k < 2; k++) {
+					uint16_t wx = (uint16_t)(mx + 1) * MOD_W;
+					far_t c = G.cells + ((uint32_t)(level * G.sy + cy + k) * G.sx + wx) * 4;
+					far_write(c + 1, &zero, 1);              // западная стена
+				}
 		}
 }
 
@@ -308,6 +409,30 @@ static uint8_t add_line(const cmd_t *c)
 
 // ------------------------------------------------------------------ точка входа
 
+// Первый террейн нужного вида (1 — корабль X-COM, 2 — НЛО): пока миссии нет, отладка
+// берёт первый попавшийся.
+uint16_t mapgen_find_kind(uint8_t kind) __banked
+{
+	res_t r;
+	const uint8_t want = kind;   // сравнение байта с параметром SDCC 4.5 портит (CLAUDE.md)
+	if (!res_find(RES_TERRAINS, &r)) return 0xFFFF;
+	uint16_t n = far_word(r.phys);
+	for (uint16_t i = 0; i < n; i++) {
+		far_t p = r.phys + far_word(r.phys + 2 + (uint32_t)i * 2);
+		// сравнение делаем словами: байтовое SDCC 4.5 собирает так, что checkasm видит
+		// свою известную ловушку (CLAUDE.md)
+		uint16_t k = far_byte(p + 4);
+		if (k == (uint16_t)want) return i;
+	}
+	return 0xFFFF;
+}
+
+void mapgen_set_extra(uint16_t craft, uint16_t ufo) __banked
+{
+	gen_craft = craft;
+	gen_ufo = ufo;
+}
+
 uint8_t mapgen_run(uint16_t terrain, uint8_t mods, uint8_t levels) __banked
 {
 	int16_t script = -1;
@@ -386,8 +511,20 @@ uint8_t mapgen_run(uint16_t terrain, uint8_t mods, uint8_t levels) __banked
 							ok = 1;
 						}
 						break;
+					case C_ADD_CRAFT:
+						// корабль X-COM: его террейн задаётся миссией, здесь — отладочный
+						if (gen_craft != 0xFFFF) ok |= place_extra(gen_craft, c.rects, c.nrects, 1);
+						break;
+					case C_ADD_UFO:
+						// НЛО: террейн назван в самой команде (UFOName), иначе берём заданный
+						if (c.ufo >= 0) ok |= place_extra((uint16_t)c.ufo, c.rects, c.nrects, 0);
+						else if (gen_ufo != 0xFFFF) ok |= place_extra(gen_ufo, c.rects, c.nrects, 0);
+						break;
+					case C_DIG_TUNNEL:
+						if (c.tunnel >= 0) { dig_tunnel((uint8_t)c.tunnel, (uint8_t)c.direction); ok = 1; }
+						break;
 					default:
-						break;                 // addCraft/addUFO/digTunnel — следующий шаг
+						break;
 					}
 				}
 				if (c.label && c.label < 16) G.label_ok[c.label] = ok;
@@ -414,6 +551,12 @@ uint8_t mapgen_run(uint16_t terrain, uint8_t mods, uint8_t levels) __banked
 }
 
 // Сколько клеток непусто (пол есть) — грубая проверка, что укладка сработала
+// Где встал корабль отряда (в клетках): 0 в ширине — корабля на карте нет
+void mapgen_craft(uint8_t *x, uint8_t *y, uint8_t *w, uint8_t *l) __banked
+{
+	*x = G.craft_x; *y = G.craft_y; *w = G.craft_w; *l = G.craft_l;
+}
+
 uint16_t mapgen_filled(void) __banked
 {
 	uint16_t n = 0;
