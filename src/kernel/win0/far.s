@@ -13,6 +13,8 @@
 	.globl	_far_byte
 	.globl	_far_word
 	.globl	_far_copy
+	.globl	_dbg_puts
+	.globl	_dbg_dec
 	.globl	_near_phys
 	.globl	_pg_win3
 	.globl	win3_real
@@ -235,6 +237,32 @@ _far_copy::
 1$:	res	0, e
 	ld	(fc_len), de
 	ld	(fc_len + 2), hl
+	;; Страховка: столько за раз мы не копируем никогда (в игре — от 200 байт до страницы).
+	;; Длина больше #FFFF означает испорченные аргументы, а такая передача DMA идёт по всей
+	;; памяти и затирает ядро под собой — машина умирает целиком. Лучше не сделать ничего
+	;; и сказать об этом в консоль: в отчёте адрес возврата (кто позвал) и сама длина.
+	ld	a, h
+	or	a, l
+	jr	z, fc_ok
+	push	iy
+	ld	hl, #s_fcbad
+	call	_dbg_puts
+	pop	hl
+	push	hl
+	ld	e, l
+	ld	d, h
+	ld	hl, #0
+	call	_dbg_dec
+	ld	hl, #s_fclen
+	call	_dbg_puts
+	ld	de, (fc_len)
+	ld	hl, (fc_len + 2)
+	call	_dbg_dec
+	ld	hl, #s_nl
+	call	_dbg_puts
+	pop	iy
+	jp	(iy)
+fc_ok:
 fc_loop:
 	ld	hl, (fc_len)
 	ld	a, h
@@ -373,6 +401,12 @@ page_of:
 	add	a, a
 	or	e
 	ret
+
+s_fcbad:	.ascii	"far_copy: bad len, caller "
+	.db	0
+s_fclen:	.ascii	" len "
+	.db	0
+s_nl:		.db	10, 0
 
 dma_wait:
 	push	bc
