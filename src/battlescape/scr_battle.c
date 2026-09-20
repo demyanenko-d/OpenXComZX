@@ -35,6 +35,9 @@
 
 static uint8_t cur_map;
 static uint16_t gen_terrain;             // какой террейн пробует генератор (клавиша G)
+// Параметры миссии, которые приносит геоскейп (bat_mission): развёртывание, тип НЛО и
+// корабль отряда. #FFFF — «не задано», тогда бой отладочный и всё берётся по умолчанию.
+static uint16_t mis_deploy = 0xFFFF, mis_ufo = 0xFFFF, mis_craft = 0xFFFF;
 static uint8_t m_sx, m_sy, m_sz, m_nt;
 static uint16_t tiles_res;           // SPRSET тайлов этой карты
 static uint8_t level;                // этаж камеры
@@ -635,9 +638,16 @@ static uint8_t load_gen(uint16_t terrain)
 	uint8_t ns = 0;
 	gen_free();
 	loaded = 0;
-	// отладка: ставим первый корабль X-COM и первое НЛО, какие есть в данных
-	mapgen_set_extra(mapgen_find_kind(1), mapgen_find_kind(2));
-	if (!mapgen_run(terrain, 4, 4)) return 0;
+	// Параметры миссии: размер поля, этажи, скрипт и террейн — из развёртывания, если оно
+	// задано геоскейпом; корабль отряда и НЛО — от цели, иначе первые попавшиеся (отладка).
+	uint8_t mods = 4, levels = 4;
+	if (mis_deploy != 0xFFFF) {
+		uint16_t t = mapgen_deploy(mis_deploy, &mods, &levels);
+		if (t != 0xFFFF) terrain = t;
+	}
+	mapgen_set_extra(mis_craft != 0xFFFF ? mis_craft : mapgen_find_kind(1),
+			 mis_ufo != 0xFFFF ? mis_ufo : mapgen_find_kind(2));
+	if (!mapgen_run(terrain, mods, levels)) return 0;
 	mapgen_sets(set, tset, &ns);
 	if (ns > GEN_SETS) ns = GEN_SETS;
 	uint16_t part = 0;                   // сквозной номер части миссии
@@ -804,6 +814,15 @@ static void draw_all(void)
 {
 	draw_map();                          // гасит экран сам — прямо перед отрисовкой
 	draw_panel();
+}
+
+// Геоскейп сообщает, какая миссия начинается: развёртывание (state.h site_t.deployment),
+// террейн НЛО и террейн корабля отряда; #FFFF — не задано.
+void bat_mission(uint16_t deploy, uint16_t ufo, uint16_t craft) __banked
+{
+	mis_deploy = deploy;
+	mis_ufo = ufo;
+	mis_craft = craft;
 }
 
 uint8_t bat_get(uint8_t id, sdef_t *s, wdef_t *w) __banked

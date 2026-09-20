@@ -78,6 +78,8 @@ static gen_t __at(0xB000) G;
 // Какие корабль и НЛО ставить: номера террейнов из таблицы TERRAINS (#FFFF — не ставить).
 // Пока их задаёт вызывающий (отладка), потом — миссия: корабль отряда и тип НЛО.
 static uint16_t gen_craft = 0xFFFF, gen_ufo = 0xFFFF;
+// Скрипт из развёртывания: у миссии он может быть свой, иначе берётся скрипт террейна
+static uint16_t gen_script = 0xFFFF;
 
 // ------------------------------------------------------------------ чтение правил
 
@@ -413,18 +415,47 @@ static uint8_t add_line(const cmd_t *c)
 // берёт первый попавшийся.
 uint16_t mapgen_find_kind(uint8_t kind) __banked
 {
+	return mapgen_kind_nth(kind, 0);
+}
+
+// n-я по счёту запись нужного вида: у НЛО карта идёт в том же порядке, что в ufos.rul,
+// поэтому тип НЛО прямо даёт номер его карты.
+uint16_t mapgen_kind_nth(uint8_t kind, uint8_t n) __banked
+{
 	res_t r;
 	const uint8_t want = kind;   // сравнение байта с параметром SDCC 4.5 портит (CLAUDE.md)
+	uint8_t skip = n;
 	if (!res_find(RES_TERRAINS, &r)) return 0xFFFF;
-	uint16_t n = far_word(r.phys);
-	for (uint16_t i = 0; i < n; i++) {
+	uint16_t total = far_word(r.phys);
+	for (uint16_t i = 0; i < total; i++) {
 		far_t p = r.phys + far_word(r.phys + 2 + (uint32_t)i * 2);
 		// сравнение делаем словами: байтовое SDCC 4.5 собирает так, что checkasm видит
 		// свою известную ловушку (CLAUDE.md)
 		uint16_t k = far_byte(p + 4);
-		if (k == (uint16_t)want) return i;
+		if (k == (uint16_t)want) {
+			if (!skip) return i;
+			skip--;
+		}
 	}
 	return 0xFFFF;
+}
+
+// Параметры миссии из развёртывания (DEPLOYS): размер поля, скрипт и список террейнов.
+// Возвращает выбранный террейн (#FFFF — в записи их нет, выбирать вызывающему).
+uint16_t mapgen_deploy(uint16_t dep, uint8_t *mods, uint8_t *levels) __banked
+{
+	res_t r;
+	if (!res_find(RES_DEPLOYS, &r)) return 0xFFFF;
+	uint16_t n = far_word(r.phys);
+	if (dep >= n) return 0xFFFF;
+	uint8_t d[12];
+	far_read(r.phys + 2 + (uint32_t)dep * 12, d, 12);
+	uint8_t w = d[0], l = d[1];
+	if (w && l) *mods = w > l ? w : l;        // поле у нас квадратное
+	if (d[2]) *levels = d[2];
+	gen_script = (uint16_t)d[3] | ((uint16_t)d[4] << 8);
+	if (!d[5]) return 0xFFFF;
+	return d[6 + (rng_next() % d[5])];
 }
 
 void mapgen_set_extra(uint16_t craft, uint16_t ufo) __banked

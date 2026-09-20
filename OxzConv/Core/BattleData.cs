@@ -118,6 +118,56 @@ namespace OxzConv
 			}
 		}
 
+		// Боевые поля развёртываний (alienDeployments.rul): размер карты, скрипт и террейны.
+		// Порядок записей тот же, что у таблицы правил alienDeployments, — движок берёт их по
+		// её номеру (в геоскейпе развёртывание хранится у места миссии, state.h: site_t).
+		public class Deploy
+		{
+			public int W = 5, L = 5, H = 4, Script = -1;
+			public List<int> Terrains = new List<int>();
+		}
+
+		public readonly List<Deploy> Deploys = new List<Deploy>();
+
+		public void LoadDeployments()
+		{
+			foreach (var o in Y.List(Y.Get(Y.Load(ox.ReadText($"standard/{RuleFolderName}/alienDeployments.rul")), "alienDeployments")) ?? new List<object>())
+			{
+				var d = new Deploy
+				{
+					W = Y.Int(Y.Get(o, "width"), 50) / 10,
+					L = Y.Int(Y.Get(o, "length"), 50) / 10,
+					H = Y.Int(Y.Get(o, "height"), 4),
+					Script = ScriptIndex(Y.Str(Y.Get(o, "script"))),
+				};
+				foreach (var t in Y.List(Y.Get(o, "terrains")) ?? new List<object>())
+				{
+					int i = TerrainIndex(Y.Str(t));
+					if (i >= 0 && d.Terrains.Count < 4) d.Terrains.Add(i);
+				}
+				Deploys.Add(d);
+			}
+		}
+
+		string RuleFolderName => ruleFolder;
+
+		// DEPLOYS (Blob, a = число записей), по 12 байт:
+		//   u8 модулей по X, u8 по Y, u8 этажей, i16 скрипт (-1 — из террейна),
+		//   u8 сколько террейнов, u8 terr[4] — их номера, u8 запас
+		byte[] EncodeDeploys()
+		{
+			var b = new List<byte> { (byte)Deploys.Count, (byte)(Deploys.Count >> 8) };
+			foreach (var d in Deploys)
+			{
+				b.Add((byte)d.W); b.Add((byte)d.L); b.Add((byte)d.H);
+				b.Add((byte)(d.Script < 0 ? 0xFF : d.Script)); b.Add((byte)(d.Script < 0 ? 0xFF : d.Script >> 8));
+				b.Add((byte)d.Terrains.Count);
+				for (int i = 0; i < 4; i++) b.Add((byte)(i < d.Terrains.Count ? d.Terrains[i] : 0));
+				b.Add(0);
+			}
+			return b.ToArray();
+		}
+
 		// mapScripts.rul: список скриптов, у каждого — список команд (MapScript::load)
 		public void LoadScripts()
 		{
@@ -360,6 +410,7 @@ namespace OxzConv
 
 			mcdPak.Add(ids.Id("TERRAINS"), ResType.Blob, EncodeTerrains(), Terrains.Count);
 			mcdPak.Add(ids.Id("MAPSCRIPTS"), ResType.Blob, EncodeScripts(), Scripts.Count);
+			mcdPak.Add(ids.Id("DEPLOYS"), ResType.Blob, EncodeDeploys(), Deploys.Count);
 			var rm = mcdPak.Write(Path.Combine(outDir, "MCD.PAK"));
 			var rb = mapPak.Write(Path.Combine(outDir, "MAPS.PAK"));
 			var rt = tilePak.Write(Path.Combine(outDir, "TILES.PAK"));

@@ -281,6 +281,7 @@ namespace OxzConv
 			battle = new BattleData(gfs, ox, RuleFolder, Game, ids, report);
 			battle.LoadRules();
 			battle.LoadScripts();
+			battle.LoadDeployments();
 			battle.Build(OutDir, prevDir, pal);
 		}
 

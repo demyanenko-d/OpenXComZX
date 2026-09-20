@@ -528,9 +528,19 @@ uint8_t geo2_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				if (ST->craft[ctx.craft].type != NONE8 && ST->craft[ctx.craft].status == CS_OUT) craft_return(ctx.craft);
 				UI_GO(A_POP, 0);
 			} else {
-				// Бой: карту собирает генератор при открытии экрана (16 §3). Выбор террейна
-				// и размера по развёртыванию миссии — следующий шаг, корабль пока остаётся
-				// на месте, разбора после боя ещё нет.
+				// Бой: карту собирает генератор при открытии экрана (16 §3). Что за миссия —
+				// берётся от цели корабля: у места высадки своё развёртывание (site_t), у
+				// сбитого НЛО — карта его типа. Разбора после боя ещё нет.
+				craft_t *cr = &ST->craft[ctx.craft];
+				uint16_t dep = 0xFFFF, ufo = 0xFFFF;
+				if (cr->dest_kind == TGT_SITE) {
+					uint8_t s = cr->dest;
+					if (s < MAX_SITES && ST->site[s].id) dep = ST->site[s].deployment;
+				} else if (cr->dest_kind == TGT_UFO) {
+					uint8_t u = cr->dest;
+					if (u < MAX_UFOS && ST->ufo[u].id) ufo = mapgen_kind_nth(2, ST->ufo[u].type);
+				}
+				bat_mission(dep, ufo, 0xFFFF);
 				UI_GO(A_POP_PUSH, SCR_BATTLE);
 			}
 		}
