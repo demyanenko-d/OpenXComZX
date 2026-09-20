@@ -4,7 +4,7 @@
 # Итог: имя=код(кадров); код выхода — число не прошедших.
 param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Names)
 $root = Split-Path -Parent $PSScriptRoot
-if (-not $Names) { $Names = @('selftest', 'ui_geoscape', 'campaign', 'month', 'aliens', 'dogfight', 'dogfight2', 'basedefense', 'ironman', 'lab', 'transfer', 'craft', 'inventory', 'ufopaedia', 'globe', 'bat_render') }
+if (-not $Names) { $Names = @('selftest', 'ui_geoscape', 'campaign', 'month', 'aliens', 'dogfight', 'dogfight2', 'basedefense', 'ironman', 'lab', 'transfer', 'craft', 'inventory', 'ufopaedia', 'globe', 'bat_render', 'bat_cursor') }
 $fail = 0
 $sum = @()
 foreach ($n in $Names) {

@@ -1,0 +1,20 @@
+# Курсор клетки и перерисовка полосы при шаге бойца (17 §0, findings_log 2026-09-20).
+# Проверяется: в бою виден курсор мыши и ромб клетки под ним (своя группа палитры боя),
+# клик уводит бойца в эту клетку, вид при этом не пересобирается целиком.
+# Снимки — tmp/shots/mapgen/70_cursor.png, 71_after_move.png.
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_cursor.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+pokew _cursor_x 176
+pokew _cursor_y 112
+wait 20
+sfile 2
+shot tmp/shots/mapgen/70_cursor.png
+click L
+wait 200
+shot tmp/shots/mapgen/71_after_move.png
+exit 0

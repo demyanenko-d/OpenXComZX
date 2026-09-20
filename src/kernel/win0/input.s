@@ -12,6 +12,8 @@
 	.globl	_cursor_x
 	.globl	_cursor_y
 	.globl	_cursor_off
+	.globl	_cell_cur_on
+	.globl	_cur_pal
 	.globl	_mouse_buttons
 	.globl	_cursor_sync
 	.globl	_cur_lock
@@ -64,6 +66,8 @@ in_rep:		.ds	1		; кадров до автоповтора удерживаем�
 _cursor_x::	.dw	160		; курсор экрана (сценарии ставят напрямую: pokew _cursor_x)
 _cursor_y::	.dw	100
 _cursor_off::	.ds	1		; 1 — курсор скрыт (заставки)
+_cell_cur_on::	.ds	1		; 1 — в списке есть спрайт 1 (курсор клетки боя)
+_cur_pal::	.ds	1		; группа палитры спрайтов курсора (ставит cursor_color)
 _mouse_buttons::	.ds	1	; кнопки сейчас: бит 0 L, 1 R
 _cur_lock::	.ds	1		; 1 — S-file занят основным кодом (input_init): спрайт не трогать
 mo_px:		.ds	1		; показания мыши прошлого кадра
@@ -233,9 +237,16 @@ cur_spr:
 	out	(c), a
 	ld	hl, (_cursor_y)
 	ld	a, h
-	and	#1				; y & #1FF, биты 9 и 14
-	or	a, #0x42
+	and	#1				; y & #1FF, бит 9 — высота 16
+	or	a, #0x02
 	ld	h, a
+	;; Бит 14 (LEAP) — «последний спрайт слоя». Ставим его только когда курсор клетки в бою
+	;; выключен: иначе TSU не дойдёт до спрайта 1 и ромб клетки не появится.
+	ld	a, (_cell_cur_on)
+	or	a, a
+	jr	nz, 0$
+	set	6, h
+0$:
 	ld	a, (_cursor_off)
 	or	a, a
 	jr	nz, 1$
@@ -247,7 +258,14 @@ cur_spr:
 	or	a, #0x02			; бит 9
 	ld	h, a
 	ld	(SFILE_W1), hl
-	ld	hl, #0xF000			; палитра 15 (CRAM #F0..#FF)
+	ld	a, (_cur_pal)			; группа палитры (cursor.c): CRAM cur_pal · 16 + пиксель
+	rlca
+	rlca
+	rlca
+	rlca
+	and	a, #0xF0
+	ld	h, a
+	ld	l, #0				; тайл 0 — стрелка
 	ld	(SFILE_W2), hl
 	ld	bc, #FMADDR_PORT
 	xor	a, a
@@ -278,7 +296,7 @@ cur_isr:
 	sub	a, e				; y растёт вверх — сдвиг вниз
 	ld	(hl), e
 	call	cur_addy
-	jr	cur_spr
+	jp	cur_spr
 
 ;; A — сырой байт порта кнопок: щелчки колеса (счётчик 7:4, 4 бита со сносом) в защёлку клавиш,
 ;; числом шагов — in_key_reps (быстрая прокрутка за один кадр даёт несколько шагов зума)

@@ -117,6 +117,7 @@ static uint16_t __at(0xB000) row_ofs[BUF_H];
 static uint8_t __at(0xB200) row_page[BUF_H];
 
 static void center_on_unit(void);       // определена ниже, вместе с юнитами
+static void draw_strip(int16_t lo, int16_t hi);   // перерисовка полосы вида (ниже)
 
 static void rows_init(void)
 {
@@ -603,12 +604,14 @@ static uint8_t move_wait;                        // кадров до следу
 static const int8_t dir_dx[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
 static const int8_t dir_dy[8] = { -1, -1, 0, 1, 1, 1, 0, -1 };
 
-// Экранная точка -> клетка карты (обратное к Camera::convertMapToScreen)
+// Экранная точка -> клетка карты (Camera::convertScreenToMap оригинала: к точке добавляется
+// -32/2 и 24 на каждый этаж, дальше косой пересчёт). Клетке принадлежат нижние 16 строк её
+// тайла 32x40 — там же рисуется ромб курсора: клетка ровно та же, что в оригинале.
 static uint8_t screen_to_cell(int16_t mx, int16_t my, uint8_t *ox, uint8_t *oy)
 {
-	int16_t a = mx - cam_x - TILE_W / 2;                 // (x - y) * 16
-	int16_t b = my - cam_y + (int16_t)level * 24 - TILE_H / 2 + 8;   // (x + y) * 8
-	int16_t x = (a + 2 * b) / 32, y = (2 * b - a) / 32;
+	int16_t a = mx - cam_x;                              // (x - y) * 16
+	int16_t b = my - cam_y + (int16_t)level * 24 - TILE_W / 2;   // (x + y) * 8
+	int16_t x = (a + 2 * b - 32) / 32, y = (2 * b - a) / 32;
 	if (x < 0 || y < 0 || x >= m_sx || y >= m_sy) return 0;
 	*ox = (uint8_t)x; *oy = (uint8_t)y;
 	return 1;
@@ -622,14 +625,27 @@ static void step_unit(void)
 	uint8_t d = path[path_i];
 	int16_t nx = (int16_t)u->x + dir_dx[d], ny = (int16_t)u->y + dir_dy[d];
 	if (u->tu < STEP_TU || nx < 0 || ny < 0 || nx >= m_sx || ny >= m_sy) { path_n = 0; return; }
+	uint8_t ox = u->x, oy = u->y;        // откуда ушёл — эту клетку тоже перерисовать
 	u->dir = d;
 	u->x = (uint8_t)nx; u->y = (uint8_t)ny;
 	u->tu -= STEP_TU;
 	if (u->en > 1) u->en--;              // энергия тратится медленнее времени
 	path_i++;
 	if (path_i >= path_n) path_n = 0;
-	dl_ok = 0;                           // вид пересобирается: боец переехал
-	ui_dirty(0);
+	// Перерисовываем не весь вид, а полосу, в которой боец был и оказался: тот же приём,
+	// что при скролле камеры (17 §2). Полная пересборка занимала несколько кадров, и шаги
+	// шли рывками.
+	if (dl_ok && dl_page != PG_NONE) {
+		int16_t wx0 = ((int16_t)ox - (int16_t)oy) * 16, wx1 = ((int16_t)u->x - (int16_t)u->y) * 16;
+		int16_t lo = wx0 < wx1 ? wx0 : wx1, hi = wx0 < wx1 ? wx1 : wx0;
+		lo -= TILE_W; hi += TILE_W;
+		if (lo < vx_lo) lo = vx_lo;
+		if (hi > vx_hi) hi = vx_hi;
+		if (lo <= hi) draw_strip(lo, hi);
+	} else {
+		dl_ok = 0;
+		ui_dirty(0);
+	}
 }
 
 // ---------------------------------------------------------------- сгенерированная карта
@@ -768,46 +784,8 @@ static void draw_map(void)
 	show_cam();
 }
 
-// Микробенчмарк DMA (клавиша B, тест bat_bench.oxs): сколько стоит запуск BLT1 и какова
-// настоящая пропускная способность. Модель прототипов считает 300 T на запуск и 74 КБ за кадр
-// (02 §6) — на этих числах стоят все оценки в §8.3. Пишем в невидимые строки экрана (y >= 256).
-#define BENCH_N 512
-static void bench_setup(uint16_t so, uint8_t sp, uint8_t len, uint8_t num)
-{
-	dma_wait();
-	TS_DMASAL = (uint8_t)so; TS_DMASAH = (uint8_t)(so >> 8); TS_DMASAX = sp;
-	TS_DMADAL = 0; TS_DMADAH = 0; TS_DMADAX = SCREEN_PAGE + 8;   // y = 256, вне видимой области
-	TS_DMALEN = len;
-	TS_DMANUM = num;
-	TS_DMACTRL = DMA_BLT1 | DMA_D_ALGN | DMA_ASZ;
-}
-
-// 512 запусков по одной строке 32 байта: почти чистые накладные расходы
-static void bench_small(void)
-{
-	uint8_t sp = tile_tab[0];
-	uint16_t so = (uint16_t)tile_tab[1] | ((uint16_t)tile_tab[2] << 8);
-	for (uint16_t i = 0; i < BENCH_N; i++) bench_setup(so, sp, 15, 0);
-	dma_wait();
-}
-
-// 512 запусков по 32 строки (1024 байта каждый): 512 КБ переноса
-static void bench_big(void)
-{
-	uint8_t sp = tile_tab[0];
-	uint16_t so = (uint16_t)tile_tab[1] | ((uint16_t)tile_tab[2] << 8);
-	for (uint16_t i = 0; i < BENCH_N; i++) bench_setup(so, sp, 15, 31);
-	dma_wait();
-}
-
-// 512 запусков по 8 строк (256 байт) — размер, близкий к настоящей части клетки
-static void bench_tile(void)
-{
-	uint8_t sp = tile_tab[0];
-	uint16_t so = (uint16_t)tile_tab[1] | ((uint16_t)tile_tab[2] << 8);
-	for (uint16_t i = 0; i < BENCH_N; i++) bench_setup(so, sp, 15, 7);
-	dma_wait();
-}
+// Замеры DMA (клавиши B/N/V) убраны: их числа записаны в 16 §8.3, а место в банке нужно
+// под сам бой.
 
 // Полоска показателя бойца — как Bar в оригинале: 102 пикселя на полную величину
 static void bar(int16_t y, uint8_t v, uint8_t max, uint8_t color)
@@ -888,8 +866,22 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		// по очереди — клавиша G дальше пересобирает карту следующего террейна.
 		if (!load_gen(gen_terrain) && !load_map() && cur_map) { cur_map = 0; load_map(); }
 		split_start();
+		// У боя своя палитра: цвета #F0..#FF в ней тёмные, и курсор в них не виден.
+		// В оригинале у боя свой цвет курсора (Mod::BATTLESCAPE_CURSOR = 144).
+		cursor_color(CURSOR_BATTLESCAPE);
+		cell_cursor_init(1);             // ромб клетки — тот же жёлтый набор, что у стрелки
 		break;
 	case EVT_TICK:
+		// Курсор клетки: ромб на клетке под мышью — аппаратный спрайт, поэтому карту
+		// перерисовывать не нужно (в оригинале это CURSOR.PCK поверх карты).
+		if (gen_mode && loaded) {
+			uint8_t cx, cy;
+			if (cursor_y < VIEW_H && screen_to_cell(cursor_x, cursor_y, &cx, &cy)) {
+				int16_t sx = ((int16_t)cx - (int16_t)cy) * 16 + cam_x;
+				int16_t sy = ((int16_t)cx + (int16_t)cy) * 8 - (int16_t)level * 24 + cam_y;
+				cell_cursor(sx, sy + TILE_H - 16, 1);   // ромб пола — нижние 16 строк тайла
+			} else cell_cursor(0, 0, 0);
+		}
 		if (path_n) {                        // идём по пути: шаг раз в несколько кадров
 			if (move_wait) move_wait--;
 			else { step_unit(); move_wait = 3; }
@@ -903,6 +895,8 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		// рабочую память поиска пути. Иначе геоскейпу не из чего заводить слоты кэша, и он
 		// перечитывает каждый фон с карты — экран залипает (14 §todo).
 		split_stop();
+		cell_cursor(0, 0, 0);            // убрать курсор клетки из списка спрайтов
+		cursor_color(CURSOR_GEOSCAPE);   // вернуть цвет курсора геоскейпа
 		gen_free();
 		if (unit_page != PG_NONE) { pg_free(unit_page, unit_np); unit_page = PG_NONE; }
 		mapgen_free();
@@ -964,9 +958,6 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		case KEY_DOWN:  cam_y -= 8 * n; clamp_cam(); break;
 		case 'q': case 'Q': if (level + 1 < m_sz) { level++; center(); } break;
 		case 'a': case 'A': if (level) { level--; center(); } break;
-		case 'b': case 'B': bench_small(); return 0;   // микробенчмарк DMA: 512 запусков по 32 байта
-		case 'n': case 'N': bench_tile(); return 0;    // ... по 256 байт (размер части клетки)
-		case 'v': case 'V': bench_big(); return 0;     // ... по 1024 байта
 		case 'g': case 'G': {
 			// Собрать карту очередного террейна генератором и показать её (16 §3)
 			uint8_t ok = load_gen(gen_terrain);
