@@ -560,16 +560,23 @@ static void flush_marked(void)
 	memset(marked, 0, sizeof marked);
 }
 
-// Перерисовать динамические виджеты (str = DYN): тексты, списки, W_CUSTOM.
-static void redraw_dyn(void)
+// Перерисовать динамические виджеты (str = DYN): тексты, списки, W_CUSTOM. Переключатели —
+// тоже: скорость времени меняется не только щелчком (центр на цель, начало боя). tgl — только
+// переключатели: у них нет слота DYN, а обновить подсветку нужно и без полной перерисовки.
+static void redraw_dyn_(uint8_t tgl)
 {
 	for (uint8_t i = 0; i < S.n; i++) {
 		const wdef_t *w = &W[i];
-		// переключатели — тоже: скорость времени меняется не только щелчком (центр на цель, начало боя)
-		if (w->type == W_TOGGLE || (w->str != NOSTR && (w->str & 0x8000))) mark_one(i);
+		if (w->type == W_TOGGLE || (!tgl && w->str != NOSTR && (w->str & 0x8000))) mark_one(i);
 	}
 	flush_marked();
 }
+
+#define redraw_dyn() redraw_dyn_(0)
+
+// Подсветка переключателей: в оригинале timerReset «нажимает» кнопку «5 сек», и скорость
+// на кнопках меняется вместе со временем.
+void ui_toggles(void) __banked { redraw_dyn_(1); }
 
 // Частичная перерисовка (ui_dirty / ui_dirty_row): после события или тика
 // перерисовываются только отмеченные DYN-слоты и отдельные строки списков.
@@ -994,11 +1001,7 @@ static uint16_t t_start;
 static void mark(void)
 {
 	OXZ_DBG_MARK = cur;
-	dbg_puts("ui: screen ");
-	dbg_dec(cur);
-	dbg_puts(", ");
-	dbg_dec((uint16_t)(frames - t_start));
-	dbg_puts(" frames\n");
+	dbg_mark(cur, (uint16_t)(frames - t_start));   // печать — в Win0 (dbg.s): банк 1 полон
 }
 
 void ui_run(uint8_t first_screen) __banked

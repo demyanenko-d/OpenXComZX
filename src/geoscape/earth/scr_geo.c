@@ -40,6 +40,7 @@ extern volatile uint16_t frames;         // crt0.s
 // кнопка (30..35), кадр следующего повтора; прямоугольники кнопок (как HOT ниже)
 static uint8_t rep_arg;
 static uint16_t rep_at;
+static uint8_t spd_shown;                        // какая скорость показана на переключателях
 static const uint8_t rep_box[6][4] = {
 	{ 259, 176, 12, 10 }, { 283, 176, 12, 10 }, { 271, 162, 13, 12 }, { 271, 187, 13, 12 },
 	{ 295, 156, 23, 23 }, { 300, 182, 13, 17 },
@@ -137,7 +138,9 @@ static uint8_t underwater(void)
 	return 0;
 }
 
-// Центр глобуса на точку и скорость 5 с (globe->center + timerReset). Вид — по сетке предрасчитанных
+// Центр глобуса на точку (Globe::center). Скорость времени он не трогает: в оригинале правая
+// кнопка по глобусу только центрирует, а «5 сек» включает timerReset у окон событий.
+// Вид — по сетке предрасчитанных
 // видов (globe_snap), как при повороте и смене зума: иначе центрирование уводит вид с сетки и кадр
 // считается рёберным путём (в разы дольше)
 static void center_on(const geo_t *p)
@@ -149,7 +152,6 @@ static void center_on(const geo_t *p)
 	globe_snap(z, &lon, &lat);
 	ctx.globe_lon = lon;
 	ctx.globe_lat = lat;
-	ST->speed = 0;
 }
 
 // Центр на цель у окон НЛО, места миссии и базы пришельцев: масштаб не дальше zmin (просьба
@@ -158,6 +160,7 @@ void geo_center(const geo_t *p, uint8_t zmin) __banked
 {
 	if (ST->zoom < zmin) ST->zoom = zmin;
 	center_on(p);
+	ST->speed = 0;                               // UfoDetectedState/MissionDetectedState: timerReset
 }
 
 // ---------------------------------------------------------------- время
@@ -865,10 +868,10 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				: ST->months < 0 ? MUS_BASE + MUS_GMGEO1 : mus_pick(MG_GEO));
 		// глобус готовится в задний буфер до первой отрисовки экрана: иначе пока идёт кадр
 		// (несколько кадров), на экране виден фон панели без планеты
-		if (ev == EVT_OPEN) { globe_det_check(); globe_prepare(); break; }
+		if (ev == EVT_OPEN) { spd_shown = ST->speed; globe_det_check(); globe_prepare(); break; }
 		if (ev == EVT_DRAW) { draw_globe(); break; }
 		if (ev == EVT_BUTTON) {
-			if (arg < 6) ST->speed = arg;          // переключатели скорости
+			if (arg < 6) { ST->speed = arg; spd_shown = arg; }   // переключатели скорости
 			else if (arg == 10) globe_click();
 			else if (arg == 11) { ST->speed = 0; ctx.base = ST->sel_base; UI_GO(A_PUSH, SCR_BASESCAPE); }   // timerReset
 			else if (arg == 12) { ctx.tkind = TGT_NONE; ctx.flag = 0; UI_GO(A_PUSH, SCR_INTERCEPT); }   // без цели -> выбор цели
@@ -890,6 +893,9 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			break;
 		}
 		if (ev == EVT_TICK) {
+			// Скорость сбросило событие (timerReset оригинала — прилёт корабля, находка НЛО,
+			// конец месяца): подсветку переключателей надо обновить, слота DYN у них нет
+			if (ST->speed != spd_shown) { spd_shown = ST->speed; ui_toggles(); }
 			// подвижные метки (корабли, летящие НЛО) и мигание — сам следит за частотой (100 мс)
 			if (globe_marks_tick() && icons_on) df_draw_icons();   // значки свёрнутых боёв — поверх меток
 			if (rep_arg) {                           // кнопка поворота / зума держится

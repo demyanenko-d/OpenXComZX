@@ -6,6 +6,7 @@
 	.globl	_dbg_puts
 	.globl	_dbg_dec
 	.globl	_dbg_hex8
+	.globl	_dbg_mark
 
 	.area	_DATA
 dd_buf:	.ds	11
@@ -27,6 +28,29 @@ _dbg_hex8::
 	ld	bc, #0xF9AF
 	out	(c), a
 	ret
+
+;; void dbg_mark(uint16_t scr /*HL*/, uint16_t frames /*DE*/) — метка экрана для сценариев
+;; эмулятора: «ui: screen N, M frames». Строки и вывод держим здесь, а не в ui.c: банк 1
+;; (ядро интерфейса и диспетчер) забит под завязку.
+_dbg_mark::
+	push	de
+	push	hl
+	ld	hl, #m_scr
+	call	_dbg_puts
+	pop	de
+	ld	hl, #0
+	call	_dbg_dec
+	ld	hl, #m_com
+	call	_dbg_puts
+	pop	de
+	ld	hl, #0
+	call	_dbg_dec
+	ld	hl, #m_fr
+	jr	_dbg_puts
+m_scr:	.asciz	"ui: screen "
+m_com:	.asciz	", "
+m_fr:	.ascii	" frames"
+	.db	10, 0
 
 ;; void dbg_dec(uint32_t v /*DE — младшее, HL — старшее*/)
 _dbg_dec::
