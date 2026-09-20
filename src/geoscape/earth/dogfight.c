@@ -13,6 +13,7 @@
 #include "rules.h"
 #include "state.h"
 #include "game.h"
+#include "globe.h"
 #include "ui.h"
 #include "ui_ids.h"
 #include "str_ids.h"
@@ -586,8 +587,17 @@ uint8_t df_start(uint8_t c, uint8_t u) __banked
 	}
 	count_max();
 	place();
-	ctx.globe_lon = (uint16_t)((uint32_t)ST->craft[c].pos.lon >> 16);   // globe->center + timerReset
-	ctx.globe_lat = (int16_t)(ST->craft[c].pos.lat >> 16);
+	{   // globe->center + timerReset. Вид ставится по сетке предрасчитанных видов
+		// (globe_snap), как везде: центр в стороне от сетки уводит кадр глобуса на
+		// медленный рёберный путь — так же делает center_on геоскейпа.
+		uint16_t lon = (uint16_t)((uint32_t)ST->craft[c].pos.lon >> 16);
+		int16_t lat = (int16_t)(ST->craft[c].pos.lat >> 16);
+		uint8_t z = ST->zoom;
+		if (z >= GLOBE_ZOOMS) z = GLOBE_ZOOMS - 1;
+		globe_snap(z, &lon, &lat);
+		ctx.globe_lon = lon;
+		ctx.globe_lat = lat;
+	}
 	ST->speed = 0;
 	return ret;
 }
