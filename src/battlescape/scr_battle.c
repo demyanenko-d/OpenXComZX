@@ -32,6 +32,7 @@
 #include "text.h"
 #include "units.h"
 #include "doors.h"
+#include "loader.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 #define TILE_W     32
@@ -62,7 +63,6 @@ static uint8_t __at(0xBD00) row[MAP_MAXX * 4];   // ряд клеток карт
 // арифметики far_t, ни делений — только сложения.
 //   [0] страница источника, [1..2] смещение в ней, [3] DMALEN (w/2-1), [4] высота,
 //   [5] dx, [6] dy (угол кадра в ячейке), [7] ширина
-#define TE_SIZE 8
 static uint8_t __at(0xB400) tile_tab[256 * TE_SIZE];
 
 // Юниты на карте (отладка генератора, тумана войны пока нет). Спрайт собирается как в
@@ -79,6 +79,8 @@ static uint8_t unit_page = PG_NONE, unit_np;
 // страницу до конца (#BFFF). Раньше он стоял с #BE40 и при семи и больше бойцах затирался
 // ими — кадры блитились из случайной памяти, и отряд выглядел цветным мусором.
 static uint8_t __at(0xBF00) unit_tab[32 * TE_SIZE];   // кадры листа в виде для блита
+// Рабочая страница боя: массивы поиска пути, свойства частей и таблицы графики миссии
+static uint8_t pf_page = PG_NONE;                // страница под рабочие массивы поиска пути
 
 // Курсор клетки — как в оригинале (Map.cpp:679 и :968): рамка клетки в CURSOR.PCK разрезана
 // на две части. Задняя (кадр 0) рисуется до содержимого клетки, передняя (кадр 3) — после
@@ -500,62 +502,28 @@ static void fill_cols(int16_t lo, int16_t hi, int16_t y0, int16_t y1)
 
 
 // Лист юнита в память и в готовые для блита записи (как тайлсет карты)
-// Записать кадр тайлсета в строку таблицы частей — в готовом для блита виде (17 §2)
-static void tile_entry(uint8_t *p, far_t tphys, far_t fdata, uint16_t fr)
+// Лист спрайтов грузит банк 30 (loader.c): страницу берёт он, таблицу кадров кладёт
+// в дальнюю память, а сюда, в память банка, она переносится одним чтением.
+static uint8_t load_sheet(uint16_t res, uint8_t *pg, uint8_t *np, uint8_t n,
+			  const uint8_t *want, uint8_t *tab)
 {
-	uint8_t e[6];
-	far_read(tphys + 4 + (uint32_t)fr * 6, e, 6);
-	far_t src = fdata + ((uint32_t)((uint16_t)e[4] | ((uint16_t)e[5] << 8)) << 1);
-	uint16_t so = FAR_OFFS(src);
-	p[0] = FAR_PAGE(src);
-	p[1] = (uint8_t)so; p[2] = (uint8_t)(so >> 8);
-	p[3] = e[2] ? (uint8_t)(e[2] / 2 - 1) : 0;
-	p[4] = e[3];
-	p[5] = e[0]; p[6] = e[1];
-	p[7] = e[2];
+	if (pf_page == PG_NONE) return 0;
+	if (!sheet_load(res, pg, np, n, want, FAR(pf_page, TL_SHEET))) return 0;
+	far_read(FAR(pf_page, TL_SHEET), tab, (uint16_t)n * TE_SIZE);
+	return 1;
 }
 
 static uint8_t load_unit_sheet(uint16_t id)
 {
-	res_t rt;
 	if (unit_page != PG_NONE) { pg_free(unit_page, unit_np); unit_page = PG_NONE; }
-	uint32_t sz = sdres_size(id);
-	if (!sz) return 0;
-	unit_np = (uint8_t)((sz + 16383) >> 14);
-	unit_page = pg_alloc(unit_np, 1);
-	if (unit_page == PG_NONE) return 0;
-	if (!sdres_load(id, unit_page, &rt)) { pg_free(unit_page, unit_np); unit_page = PG_NONE; return 0; }
-	uint16_t nfr = rt.a;
-	far_t fdata = rt.phys + 4 + (uint32_t)nfr * 6;
-	for (uint16_t i = 0; i < 32; i++) {
-		uint8_t *p = unit_tab + i * TE_SIZE;
-		if (i >= nfr) { p[7] = 0; continue; }
-		tile_entry(p, rt.phys, fdata, i);
-	}
-	return 1;
+	return load_sheet(id, &unit_page, &unit_np, 32, 0, unit_tab);
 }
 
-// Лист курсора клетки: из CURSOR.PCK берутся два кадра — задняя и передняя половины рамки
+// Лист курсора клетки: из CURSOR.PCK берутся четыре кадра — задние и передние половины рамки
 static uint8_t load_cursor(void)
 {
-	res_t rt;
-	if (cur_page == PG_NONE) {
-		uint32_t sz = sdres_size(RES_CURSOR_PCK);
-		if (!sz) return 0;
-		cur_np = (uint8_t)((sz + 16383) >> 14);
-		cur_page = pg_alloc(cur_np, 1);
-		if (cur_page == PG_NONE) return 0;
-	}
-	if (!sdres_load(RES_CURSOR_PCK, cur_page, &rt)) return 0;
-	uint16_t nfr = rt.a;
-	far_t fdata = rt.phys + 4 + (uint32_t)nfr * 6;
-	static const uint8_t want[CUR_FRAMES] = { 0, 1, 3, 4 };
-	for (uint8_t i = 0; i < CUR_FRAMES; i++) {
-		uint8_t *p = cur_tab + i * TE_SIZE;
-		if (want[i] >= nfr) { p[7] = 0; continue; }
-		tile_entry(p, rt.phys, fdata, want[i]);
-	}
-	return 1;
+	uint8_t want[CUR_FRAMES] = { 0, 1, 3, 4 };   // в стеке: банк вызывающего при вызове отключён
+	return load_sheet(RES_CURSOR_PCK, &cur_page, &cur_np, CUR_FRAMES, want, cur_tab);
 }
 
 // Навести камеру на выбранного бойца (кнопка «центрировать», как в оригинале)
@@ -599,7 +567,6 @@ static void place_squad(uint8_t debug_n)
 #define STEP_TU        4                 // единиц времени за шаг (в оригинале зависит от пола)
 #define PATH_MAX       24
 
-static uint8_t pf_page = PG_NONE;                // страница под рабочие массивы поиска пути
 static uint8_t path[PATH_MAX], path_n, path_i;   // направления шагов
 static uint8_t move_wait;                        // кадров до следующего шага
 static uint8_t turn_dir = 0xFF;                  // куда разворачивается боец (правая кнопка)
@@ -725,8 +692,6 @@ static void gen_free(void)
 
 static uint8_t load_gen(uint16_t terrain)
 {
-	uint16_t set[GEN_SETS], tset[GEN_SETS];
-	uint8_t ns = 0;
 	gen_free();
 	loaded = 0;
 	// Параметры миссии: размер поля, этажи, скрипт и террейн — из развёртывания, если оно
@@ -739,75 +704,23 @@ static uint8_t load_gen(uint16_t terrain)
 	mapgen_set_extra(mis_craft != 0xFFFF ? mis_craft : mapgen_find_kind(1),
 			 mis_ufo != 0xFFFF ? mis_ufo : mapgen_find_kind(2));
 	if (!mapgen_run(terrain, mods, levels)) return 0;
-	mapgen_sets(set, tset, &ns);
-	if (ns > GEN_SETS) ns = GEN_SETS;
-	memset(tile_tab, 0, sizeof tile_tab);   // не оставлять кадры прошлой карты: если набор
-	memset(tile_y, 0, sizeof tile_y);       //   не загрузится, его части просто не рисуются
-	sdres_flush();                       // кэш ресурсов отдаёт страницы: наборы тайлов важнее
-	// Тайлсет грузим только у наборов, чьи части реально попали на карту: пустые наборы
-	// (те же BLANKS) иначе съедают страницы, которых потом не хватает кораблю и НЛО.
-	uint8_t used[32];
-	mapgen_used(used);
-	// Свойства частей (цена прохода и двери) живут в странице поиска пути: там их читает
-	// и сам поиск, и банку боя не приходится отдавать под них память (pathfind.h).
-	far_fill(FAR(pf_page, PF_TU), 0, 768);
-	uint16_t total = 0;                  // всего частей во всех наборах миссии
-	for (uint8_t s = 0; s < ns; s++) {
-		res_t rm;
-		if (res_find(set[s], &rm)) total += rm.a;
-	}
-	ndoors = 0;
-	uint16_t vnext = 255;                // номера для частей «дверь НЛО открыта» — сверху вниз
-	uint16_t part = 0;                   // сквозной номер части миссии
-	for (uint8_t s = 0; s < ns && part < 256; s++) {
-		res_t rm, rt;
-		if (!res_find(set[s], &rm)) continue;
-		uint8_t need = 0;                // используется ли хоть одна часть набора
-		for (uint16_t i = 0; i < rm.a && part + i < 256; i++) {
-			uint16_t g = part + i;
-			if (used[g >> 3] & (1 << (g & 7))) { need = 1; break; }
-		}
-		if (!need) { part += rm.a; continue; }
-		uint32_t tsz = sdres_size(tset[s]);
-		uint8_t np = (uint8_t)((tsz + 16383) >> 14);
-		uint8_t pg = np ? pg_alloc(np, 1) : PG_NONE;
-		if (pg == PG_NONE) break;
-		if (!sdres_load(tset[s], pg, &rt)) { pg_free(pg, np); break; }
-		gen_page[gen_ns] = pg; gen_np[gen_ns] = np; gen_ns++;
-		uint16_t nfr = rt.a;
-		far_t fdata = rt.phys + 4 + (uint32_t)nfr * 6;
-		uint16_t base = part;                // номер первой части набора (в нём же номера alt)
-		for (uint16_t i = 0; i < rm.a && part < 256; i++, part++) {
-			uint8_t mc[MC_SIZE];
-			far_read(rm.phys + (uint32_t)i * MC_SIZE, mc, MC_SIZE);
-			uint16_t fr = (uint16_t)mc[0] | ((uint16_t)mc[1] << 8);
-			if (!part || fr >= nfr) continue;        // часть 0 в клетках не встречается
-			tile_entry(tile_tab + (part - 1) * TE_SIZE, rt.phys, fdata, fr);
-			tile_y[part - 1] = mc[2];
-			// Цена прохода (255 — стена) и двери: распашная меняется на часть Alt_MCD, дверь
-			// НЛО сдвигается в сторону — ей заводится своя часть с открытым кадром (Frame[7]).
-			pf_put(PF_TU + part, mc[7]);
-			if ((mc[3] & 8) && mc[8] && base + mc[8] < 256) {
-				pf_put(PF_ALT + part, (uint8_t)(base + mc[8]));
-				ndoors++;
-				pf_put(PF_ALTSLOT + part, far_byte(rm.phys + (uint32_t)mc[8] * MC_SIZE + 5) & 3);
-			} else if ((mc[3] & 4) && vnext > total) {
-				uint16_t f7 = (uint16_t)mc[9] | ((uint16_t)mc[10] << 8);
-				if (f7 < nfr) {
-					uint16_t vp = vnext--;
-					tile_entry(tile_tab + (vp - 1) * TE_SIZE, rt.phys, fdata, f7);
-					tile_y[vp - 1] = mc[2];
-					pf_put(PF_TU + vp, 0);           // сквозь открытую дверь ходят свободно
-					pf_put(PF_ALT + part, (uint8_t)vp);
-					ndoors++;
-					pf_put(PF_ALTSLOT + part, (uint8_t)((mc[5] & 3) | 0x80));
-				}
-			}
-		}
-	}
+	tiles_req_t q;
+	mapgen_sets(q.set, q.tset, &q.ns);
+	mapgen_used(q.used);                 // какие части реально попали на карту
+	q.page = pf_page;
+	uint8_t pages[GEN_SETS], nps[GEN_SETS], npg = 0, nd = 0;
+	uint16_t nparts = tiles_load(&q, pages, nps, &npg, &nd);
+	if (!npg) return 0;
+	// Таблицы собраны в дальней памяти — переносим их к себе в банк (вид частей и смещения
+	// нужны в каждом кадре, дальнее чтение тут не годится).
+	far_read(FAR(pf_page, TL_TILES), tile_tab, sizeof tile_tab);
+	far_read(FAR(pf_page, TL_YOFS), tile_y, sizeof tile_y);
+	for (uint8_t i = 0; i < npg; i++) { gen_page[i] = pages[i]; gen_np[i] = nps[i]; }
+	gen_ns = npg;
+	ndoors = nd;
 	if (!gen_ns) return 0;
 	m_sx = (uint8_t)mapgen_sx(); m_sy = (uint8_t)mapgen_sy(); m_sz = mapgen_sz();
-	m_nt = part;
+	m_nt = (uint8_t)nparts;
 	cells = mapgen_cells();
 	map_phys = cells;
 	bmap.cells = cells; bmap.sx = m_sx; bmap.sy = m_sy; bmap.page = pf_page;
