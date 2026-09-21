@@ -1,0 +1,39 @@
+# Двери и управление бойцами в бою (17 §4): карта миссии, поиск первой двери на этаже,
+# разворот к ней правой кнопкой и открывание, переключение бойцов клавишей N.
+# Проверяется глазами по снимкам и по строкам консоли:
+#   «mapgen: … doors N» — сколько частей карты оказались дверьми;
+#   «door: at X,Y slot S» — к какой двери поставлен боец (отладочная клавиша D).
+# Правая кнопка в точке (160, 88) — клетка к западу от бойца, (176, 88) — к северу:
+# после центровки на бойце эти точки не зависят от его координат (17 §4).
+# Снимки — tmp/shots/doors/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_doors.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+shot tmp/shots/doors/00_start.png
+# следующий боец (в оригинале TAB): камера переезжает на него
+key n
+wait 60
+shot tmp/shots/doors/01_next_unit.png
+key SS+N
+wait 60
+shot tmp/shots/doors/02_prev_unit.png
+# отладка: поставить бойца к первой двери этажа, лицом к ней
+key d
+wait 150
+shot tmp/shots/doors/03_at_door.png
+# правая кнопка: развернуться к клетке и открыть дверь (сперва к западу, потом к северу)
+pokew _cursor_x 160
+pokew _cursor_y 88
+click R
+wait 150
+shot tmp/shots/doors/04_open_west.png
+pokew _cursor_x 176
+pokew _cursor_y 88
+click R
+wait 150
+shot tmp/shots/doors/05_open_north.png
+exit 0

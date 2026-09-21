@@ -8,7 +8,10 @@
 // вверх, внутри уровня — ряды Y, внутри ряда X (перекрывающие клетки идут позже), внутри
 // клетки — пол, западная стена, северная стена, объект.
 //
-// Управление: стрелки — камера, Q/A — этаж, M — следующая карта, ESC — выход.
+// Управление: левая кнопка — идти в клетку (по своему бойцу — выбрать его), правая —
+// развернуться туда и открыть дверь (как поворот в оригинале: UnitTurnBState открывает
+// дверь, к которой повернулся боец); N — следующий боец, Shift+N — предыдущий (в оригинале
+// TAB и SHIFT); стрелки — камера, Q/A — этаж, G — пересобрать карту, ESC — выход.
 #include <stdint.h>
 #include <string.h>
 #include "tsconf.h"
@@ -28,6 +31,7 @@
 #include "music.h"
 #include "text.h"
 #include "units.h"
+#include "doors.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 #define TILE_W     32
@@ -294,7 +298,7 @@ static void dl_tile(uint8_t t, int16_t x, int16_t y)
 static const wdef_t w_battle[] = {
 	// Виджет карты: рисует экран (EVT_DRAW) и отдаёт клики экрану (EVT_BUTTON, arg 0) —
 	// по ним боец идёт в клетку. Панель ниже перекрыта своими кнопками.
-	CUS(0, 0, 320, VIEW_H, DYN(0), A_CUSTOM, 0),
+	CUSR(0, 0, 320, VIEW_H, DYN(0), A_CUSTOM, 0),
 	// Панель ICONS: кнопки на тех же местах, что в оригинале (BattlescapeState.cpp:100-115).
 	HOT(48, 144, 32, 16, A_NONE, 1, 0),            // боец выше по списку
 	HOT(48, 160, 32, 16, A_NONE, 2, 0),            // боец ниже
@@ -355,14 +359,20 @@ static void dl_unit_frame(uint8_t fr, int16_t x, int16_t y)
 }
 
 // Стоит ли в клетке живой боец (цвет рамки курсора)
-static uint8_t unit_at(uint8_t z, uint8_t y, uint8_t x)
+// Номер бойца в клетке + 1 (0 — никого): по нему и рисуют, и выбирают щелчком
+static uint8_t unit_no(uint8_t z, uint8_t y, uint8_t x)
 {
 	for (uint8_t i = 0; i < nunits; i++) {
 		const unit_t *u = &units[i];
 		uint8_t uz = u->z, uy = u->y, ux = u->x;
-		if (u->alive && uz == z && uy == y && ux == x) return 1;
+		if (u->alive && uz == z && uy == y && ux == x) return (uint8_t)(i + 1);
 	}
 	return 0;
+}
+
+static uint8_t unit_at(uint8_t z, uint8_t y, uint8_t x)
+{
+	return unit_no(z, y, x) != 0;
 }
 
 // Боец в этой клетке (если он тут есть): ноги, торс, руки по направлению
@@ -490,6 +500,21 @@ static void fill_cols(int16_t lo, int16_t hi, int16_t y0, int16_t y1)
 
 
 // Лист юнита в память и в готовые для блита записи (как тайлсет карты)
+// Записать кадр тайлсета в строку таблицы частей — в готовом для блита виде (17 §2)
+static void tile_entry(uint8_t *p, far_t tphys, far_t fdata, uint16_t fr)
+{
+	uint8_t e[6];
+	far_read(tphys + 4 + (uint32_t)fr * 6, e, 6);
+	far_t src = fdata + ((uint32_t)((uint16_t)e[4] | ((uint16_t)e[5] << 8)) << 1);
+	uint16_t so = FAR_OFFS(src);
+	p[0] = FAR_PAGE(src);
+	p[1] = (uint8_t)so; p[2] = (uint8_t)(so >> 8);
+	p[3] = e[2] ? (uint8_t)(e[2] / 2 - 1) : 0;
+	p[4] = e[3];
+	p[5] = e[0]; p[6] = e[1];
+	p[7] = e[2];
+}
+
 static uint8_t load_unit_sheet(uint16_t id)
 {
 	res_t rt;
@@ -505,16 +530,7 @@ static uint8_t load_unit_sheet(uint16_t id)
 	for (uint16_t i = 0; i < 32; i++) {
 		uint8_t *p = unit_tab + i * TE_SIZE;
 		if (i >= nfr) { p[7] = 0; continue; }
-		uint8_t e[6];
-		far_read(rt.phys + 4 + (uint32_t)i * 6, e, 6);
-		far_t src = fdata + ((uint32_t)((uint16_t)e[4] | ((uint16_t)e[5] << 8)) << 1);
-		uint16_t so = FAR_OFFS(src);
-		p[0] = FAR_PAGE(src);
-		p[1] = (uint8_t)so; p[2] = (uint8_t)(so >> 8);
-		p[3] = e[2] ? (uint8_t)(e[2] / 2 - 1) : 0;
-		p[4] = e[3];
-		p[5] = e[0]; p[6] = e[1];
-		p[7] = e[2];
+		tile_entry(p, rt.phys, fdata, i);
 	}
 	return 1;
 }
@@ -537,16 +553,7 @@ static uint8_t load_cursor(void)
 	for (uint8_t i = 0; i < CUR_FRAMES; i++) {
 		uint8_t *p = cur_tab + i * TE_SIZE;
 		if (want[i] >= nfr) { p[7] = 0; continue; }
-		uint8_t e[6];
-		far_read(rt.phys + 4 + (uint32_t)want[i] * 6, e, 6);
-		far_t src = fdata + ((uint32_t)((uint16_t)e[4] | ((uint16_t)e[5] << 8)) << 1);
-		uint16_t so = FAR_OFFS(src);
-		p[0] = FAR_PAGE(src);
-		p[1] = (uint8_t)so; p[2] = (uint8_t)(so >> 8);
-		p[3] = e[2] ? (uint8_t)(e[2] / 2 - 1) : 0;
-		p[4] = e[3];
-		p[5] = e[0]; p[6] = e[1];
-		p[7] = e[2];
+		tile_entry(p, rt.phys, fdata, want[i]);
 	}
 	return 1;
 }
@@ -595,6 +602,21 @@ static void place_squad(uint8_t debug_n)
 static uint8_t pf_page = PG_NONE;                // страница под рабочие массивы поиска пути
 static uint8_t path[PATH_MAX], path_n, path_i;   // направления шагов
 static uint8_t move_wait;                        // кадров до следующего шага
+static uint8_t turn_dir = 0xFF;                  // куда разворачивается боец (правая кнопка)
+static uint8_t ndoors;                           // дверей среди частей карты (отладка)
+
+#define MC_SIZE 12                       // байт на часть в таблице набора (MCDSET, 16 §2.3)
+
+// Свойства частей лежат в странице поиска пути (pathfind.h): её читает и поиск, и бой
+static void pf_put(uint16_t off, uint8_t v)
+{
+	if (pf_page != PG_NONE) far_write(FAR(pf_page, off), &v, 1);
+}
+
+static uint8_t pf_get(uint16_t off)
+{
+	return pf_page == PG_NONE ? 0 : far_byte(FAR(pf_page, off));
+}
 
 // Смещения восьми направлений (0 — север, дальше по часовой, как в оригинале)
 // Своя копия: таблицы из банка поиска пути видны только при подключённом том банке
@@ -614,18 +636,67 @@ static uint8_t screen_to_cell(int16_t mx, int16_t my, uint8_t *ox, uint8_t *oy)
 	return 1;
 }
 
-// Один шаг по пути: поворот, перенос в клетку и расход времени
+// Следующий и предыдущий боец отряда: выбор, камера на него и отмена начатого пути
+// (BattlescapeState::btnNextSoldierClick — в оригинале камера тоже переезжает)
+static void sel_next(void)
+{
+	if (!nunits) return;
+	sel = (uint8_t)((sel + 1) % nunits);
+	path_n = 0;
+	center_on_unit();
+	ui_dirty(0);
+}
+
+static void sel_prev(void)
+{
+	if (!nunits) return;
+	sel = (uint8_t)((sel + nunits - 1) % nunits);
+	path_n = 0;
+	center_on_unit();
+	ui_dirty(0);
+}
+
+// Карта для банка клеток (doors.c): двери и цена прохода считаются там
+static dmap_t bmap;
+
+// Открыть дверь в направлении dir и перерисовать изменившиеся клетки.
+// 0 — открыли, 1 — не хватило времени, 2 — двери нет.
+static uint8_t door_try(unit_t *u, uint8_t dir, uint8_t rclick)
+{
+	uint8_t list[8], spent = 0;
+	memset(list, 0xFF, sizeof list);     // #FF — конец списка: координаты меньше 64
+	uint8_t r = door_open(&bmap, u->x, u->y, u->z, dir, rclick, u->tu, &spent, list, 4);
+	if (r) return r;
+	u->tu -= spent;
+	for (uint8_t i = 0; i < 4 && list[i * 2] != 0xFF; i++)
+		cell_repaint(list[i * 2], list[i * 2 + 1]);
+	return 0;
+}
+
+// Повернуться на одну восьмую в сторону d (в оригинале поворот при ходьбе бесплатен и
+// идёт по одному шагу за такт — отсюда и разворот на месте перед шагом)
+static void turn_to(unit_t *u, uint8_t d)
+{
+	uint8_t diff = (uint8_t)((d - u->dir) & 7);
+	u->dir = (uint8_t)((u->dir + (diff && diff <= 4 ? 1 : 7)) & 7);
+	cell_repaint(u->x, u->y);
+}
+
+// Один шаг по пути: поворот, открывание двери, перенос в клетку и расход времени
 static void step_unit(void)
 {
 	if (!nunits || path_i >= path_n) { path_n = 0; return; }
 	unit_t *u = &units[sel < nunits ? sel : 0];
 	uint8_t d = path[path_i];
+	if (u->dir != d) { turn_to(u, d); return; }      // сперва развернуться лицом к шагу
+	if (door_try(u, d, 0) != 2) return;              // дверь открывается вместо шага
 	int16_t nx = (int16_t)u->x + dir_dx[d], ny = (int16_t)u->y + dir_dy[d];
-	if (u->tu < STEP_TU || nx < 0 || ny < 0 || nx >= m_sx || ny >= m_sy) { path_n = 0; return; }
+	if (nx < 0 || ny < 0 || nx >= m_sx || ny >= m_sy) { path_n = 0; return; }
+	uint8_t cost = cell_cost(&bmap, (uint8_t)nx, (uint8_t)ny, u->z, d, STEP_TU);
+	if (u->tu < cost) { path_n = 0; return; }
 	uint8_t ox = u->x, oy = u->y;        // откуда ушёл — эту клетку тоже перерисовать
-	u->dir = d;
 	u->x = (uint8_t)nx; u->y = (uint8_t)ny;
-	u->tu -= STEP_TU;
+	u->tu -= cost;
 	if (u->en > 1) u->en--;              // энергия тратится медленнее времени
 	path_i++;
 	if (path_i >= path_n) path_n = 0;
@@ -677,6 +748,16 @@ static uint8_t load_gen(uint16_t terrain)
 	// (те же BLANKS) иначе съедают страницы, которых потом не хватает кораблю и НЛО.
 	uint8_t used[32];
 	mapgen_used(used);
+	// Свойства частей (цена прохода и двери) живут в странице поиска пути: там их читает
+	// и сам поиск, и банку боя не приходится отдавать под них память (pathfind.h).
+	far_fill(FAR(pf_page, PF_TU), 0, 768);
+	uint16_t total = 0;                  // всего частей во всех наборах миссии
+	for (uint8_t s = 0; s < ns; s++) {
+		res_t rm;
+		if (res_find(set[s], &rm)) total += rm.a;
+	}
+	ndoors = 0;
+	uint16_t vnext = 255;                // номера для частей «дверь НЛО открыта» — сверху вниз
 	uint16_t part = 0;                   // сквозной номер части миссии
 	for (uint8_t s = 0; s < ns && part < 256; s++) {
 		res_t rm, rt;
@@ -695,22 +776,33 @@ static uint8_t load_gen(uint16_t terrain)
 		gen_page[gen_ns] = pg; gen_np[gen_ns] = np; gen_ns++;
 		uint16_t nfr = rt.a;
 		far_t fdata = rt.phys + 4 + (uint32_t)nfr * 6;
+		uint16_t base = part;                // номер первой части набора (в нём же номера alt)
 		for (uint16_t i = 0; i < rm.a && part < 256; i++, part++) {
-			uint8_t mc[8], e[6];
-			far_read(rm.phys + (uint32_t)i * 8, mc, 8);
+			uint8_t mc[MC_SIZE];
+			far_read(rm.phys + (uint32_t)i * MC_SIZE, mc, MC_SIZE);
 			uint16_t fr = (uint16_t)mc[0] | ((uint16_t)mc[1] << 8);
 			if (!part || fr >= nfr) continue;        // часть 0 в клетках не встречается
-			far_read(rt.phys + 4 + (uint32_t)fr * 6, e, 6);
-			far_t src = fdata + ((uint32_t)((uint16_t)e[4] | ((uint16_t)e[5] << 8)) << 1);
-			uint8_t *p = tile_tab + (part - 1) * TE_SIZE;
-			uint16_t so = FAR_OFFS(src);
-			p[0] = FAR_PAGE(src);
-			p[1] = (uint8_t)so; p[2] = (uint8_t)(so >> 8);
-			p[3] = e[2] ? (uint8_t)(e[2] / 2 - 1) : 0;
-			p[4] = e[3];
-			p[5] = e[0]; p[6] = e[1];
-			p[7] = e[2];
+			tile_entry(tile_tab + (part - 1) * TE_SIZE, rt.phys, fdata, fr);
 			tile_y[part - 1] = mc[2];
+			// Цена прохода (255 — стена) и двери: распашная меняется на часть Alt_MCD, дверь
+			// НЛО сдвигается в сторону — ей заводится своя часть с открытым кадром (Frame[7]).
+			pf_put(PF_TU + part, mc[7]);
+			if ((mc[3] & 8) && mc[8] && base + mc[8] < 256) {
+				pf_put(PF_ALT + part, (uint8_t)(base + mc[8]));
+				ndoors++;
+				pf_put(PF_ALTSLOT + part, far_byte(rm.phys + (uint32_t)mc[8] * MC_SIZE + 5) & 3);
+			} else if ((mc[3] & 4) && vnext > total) {
+				uint16_t f7 = (uint16_t)mc[9] | ((uint16_t)mc[10] << 8);
+				if (f7 < nfr) {
+					uint16_t vp = vnext--;
+					tile_entry(tile_tab + (vp - 1) * TE_SIZE, rt.phys, fdata, f7);
+					tile_y[vp - 1] = mc[2];
+					pf_put(PF_TU + vp, 0);           // сквозь открытую дверь ходят свободно
+					pf_put(PF_ALT + part, (uint8_t)vp);
+					ndoors++;
+					pf_put(PF_ALTSLOT + part, (uint8_t)((mc[5] & 3) | 0x80));
+				}
+			}
 		}
 	}
 	if (!gen_ns) return 0;
@@ -718,6 +810,7 @@ static uint8_t load_gen(uint16_t terrain)
 	m_nt = part;
 	cells = mapgen_cells();
 	map_phys = cells;
+	bmap.cells = cells; bmap.sx = m_sx; bmap.sy = m_sy; bmap.page = pf_page;
 	rows_init();
 	level = 0;                           // камера начинается на земле, как в оригинале
 	gen_mode = 1;
@@ -798,34 +891,15 @@ static void draw_map(void)
 // Замеры DMA (клавиши B/N/V) убраны: их числа записаны в 16 §8.3, а место в банке нужно
 // под сам бой.
 
-// Полоска показателя бойца — как Bar в оригинале: 102 пикселя на полную величину
-static void bar(int16_t y, uint8_t v, uint8_t max, uint8_t color)
-{
-	uint8_t w = max ? (uint8_t)((uint16_t)v * 102 / max) : 0;
-	gfx_fill(170, y, 102, 3, 0);
-	if (w) gfx_fill(170, y, w, 3, color);
-}
-
-// Панель: картинка ICONS и показатели выбранного бойца (BattlescapeState.cpp:147-155).
-// Цвета — из палитры боя: время жёлтое, энергия зелёная, здоровье красное, мораль синяя.
+// Панель бойца рисует банк 30 (units.c): в банке боя место кончилось
 static void draw_panel(void)
 {
-	gfx_blit(RES_ICONS_PCK, 0, VIEW_H, 0, VIEW_H, 320, 200 - VIEW_H);
-	if (!nunits) return;
+	bpanel_t p;
 	const unit_t *u = &units[sel < nunits ? sel : 0];
-	// цвета полосок — из interfaces.rul боя (battlescape: barTUs 148, barEnergy 160,
-	// barHealth 9, barMorale 157)
-	bar(185, u->tu, u->tu_max, 148);
-	bar(189, u->en, u->tu_max, 160);
-	bar(193, u->hp, u->hp_max, 9);
-	bar(197, u->mor, 100, 157);
-	char b[8];
-	tbox_t t = { 136, 184, 24, 8, 0, 15, 15, 0 };
-	fmt_num(b, u->tu, 0);
-	text_draw(&t, b);                    // осталось единиц времени
-	t.x = 228; t.y = 148;
-	fmt_num(b, level + 1, 0);
-	text_draw(&t, b);                    // этаж камеры
+	p.n = nunits; p.level = level;
+	p.tu = u->tu; p.tu_max = u->tu_max; p.en = u->en;
+	p.hp = u->hp; p.hp_max = u->hp_max; p.mor = u->mor;
+	bat_panel(&p);
 }
 
 static void draw_all(void)
@@ -898,9 +972,14 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				if (on) cell_repaint(cx, cy);
 			}
 		}
-		if (path_n) {                        // идём по пути: шаг раз в несколько кадров
+		if (turn_dir != 0xFF && nunits) {    // правая кнопка: разворот по одной восьмой,
+			unit_t *u = &units[sel < nunits ? sel : 0];   // в конце — попытка открыть дверь
 			if (move_wait) move_wait--;
-			else { step_unit(); move_wait = 3; }
+			else if (u->dir != turn_dir) { turn_to(u, turn_dir); move_wait = 2; }
+			else { door_try(u, turn_dir, 1); turn_dir = 0xFF; ui_dirty(0); }
+		} else if (path_n) {                 // идём по пути: шаг раз в несколько кадров
+			if (move_wait) move_wait--;
+			else { step_unit(); move_wait = 3; if (!path_n) ui_dirty(0); }   // в конце — обновить панель
 		}
 		break;
 	case EVT_DRAW:
@@ -923,6 +1002,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		if (dl_page != PG_NONE) { pg_free(dl_page, 2); dl_page = PG_NONE; dl_ok = 0; }
 		if (pf_page != PG_NONE) { pg_free(pf_page, 1); pf_page = PG_NONE; }
 		path_n = 0;
+		turn_dir = 0xFF;
 		// Карта боя рисуется в строки холста 200.., а там же задний буфер глобуса (globe.s,
 		// BACK_Y 280): после боя геоскейп обязан нарисовать планету заново, иначе на экране
 		// остаются тайлы поля боя.
@@ -932,25 +1012,37 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		break;
 	case EVT_BUTTON:
 		switch (arg) {
-		case 0: {                            // клик по карте: вести выбранного бойца
+		case 0: {                            // клик по карте
 			if (!gen_mode || !nunits || cursor_y >= VIEW_H) break;
 			uint8_t tx, ty;
 			if (!screen_to_cell(cursor_x, cursor_y, &tx, &ty)) break;
-			const unit_t *u = &units[sel < nunits ? sel : 0];
+			unit_t *u = &units[sel < nunits ? sel : 0];
+			if (ui_arrow_max) {              // правая кнопка: развернуться туда и открыть дверь
+				path_n = 0;
+				turn_dir = dir_to((int16_t)tx - (int16_t)u->x, (int16_t)ty - (int16_t)u->y);
+				move_wait = 0;
+				break;
+			}
+			uint8_t no = unit_no(u->z, ty, tx);
+			if (no && no - 1 != sel) {       // свой боец — выбрать его (primaryAction оригинала)
+				sel = (uint8_t)(no - 1);
+				path_n = 0;
+				ui_dirty(0);
+				break;
+			}
 			pf_req_t q = { cells, m_sx, m_sy, u->z, u->x, u->y, tx, ty, u->tu, STEP_TU, pf_page };
 			path_n = pf_find(&q, path, PATH_MAX);
 			path_i = 0;
-
 			move_wait = 0;
 			break;
 		}
-		case 1: if (sel) sel--; ui_dirty(0); break;
-		case 2: if (sel + 1 < nunits) sel++; ui_dirty(0); break;
+		case 1: sel_prev(); break;           // боец выше по списку (и камера на него)
+		case 2: sel_next(); break;
 		case 3: if (level + 1 < m_sz) { level++; center(); ui_dirty(0); } break;
 		case 4: if (level) { level--; center(); ui_dirty(0); } break;
 		case 5: UI_GO(A_PUSH, SCR_INVENTORY); break;
 		case 6: center_on_unit(); ui_dirty(0); break;
-		case 7: if (nunits) { sel = (uint8_t)((sel + 1) % nunits); center_on_unit(); ui_dirty(0); } break;
+		case 7: sel_next(); break;           // следующий боец
 		case 9:                              // «1/2»: все этажи или только текущий
 			all_levels = !all_levels;
 			dl_ok = 0;
@@ -973,6 +1065,23 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		case KEY_UP:    cam_y += 8 * n; clamp_cam(); break;
 		case KEY_DOWN:  cam_y -= 8 * n; clamp_cam(); break;
 		case 'q': case 'Q': if (level + 1 < m_sz) { level++; center(); } break;
+		case 'd': case 'D': {               // отладка: поставить бойца к первой двери
+			uint8_t dx, dy, ds;
+			if (!gen_mode || !nunits || !door_find(&bmap, level, &dx, &dy, &ds)) break;
+			unit_t *u = &units[sel < nunits ? sel : 0];
+			uint8_t ox = u->x, oy = u->y;
+			u->x = dx; u->y = dy; u->z = level;
+			u->dir = ds == 1 ? 6 : 0;         // западная стена — лицом на запад, северная — на север
+			path_n = 0;
+			cell_repaint(ox, oy);
+			dbg_puts("door: at "); dbg_dec(dx); dbg_puts(","); dbg_dec(dy);
+			dbg_puts(" slot "); dbg_dec(ds); dbg_puts("
+");
+			center_on_unit();
+			break;
+		}
+		case 'n': sel_next(); break;         // следующий боец (в оригинале TAB)
+		case 'N': sel_prev(); break;         // предыдущий (в оригинале SHIFT)
 		case 'a': case 'A': if (level) { level--; center(); } break;
 		case 'g': case 'G': {
 			// Собрать карту очередного террейна генератором и показать её (16 §3)
@@ -980,7 +1089,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			dbg_puts("mapgen: terrain ");
 			dbg_dec(gen_terrain);
 			dbg_puts(ok ? " ok " : " FAIL ");
-			if (ok) { dbg_puts("dl "); dbg_dec(dl_n); dbg_puts(" over "); dbg_dec(dl_over); dbg_puts(" "); dbg_dec(m_sx); dbg_puts("x"); dbg_dec(m_sy); dbg_puts(" parts "); dbg_dec(m_nt); dbg_puts(" sets "); dbg_dec(gen_ns); dbg_puts(" units "); dbg_dec(nunits); }
+			dbg_puts(" dl "); dbg_dec(dl_n); dbg_puts(" units "); dbg_dec(nunits); dbg_puts(" doors "); dbg_dec(ndoors);
 			dbg_puts("\n");
 			gen_terrain++;
 			ui_dirty(0);

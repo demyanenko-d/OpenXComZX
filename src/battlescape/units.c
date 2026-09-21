@@ -13,6 +13,11 @@
 #include "pages.h"
 #include "state.h"
 #include "units.h"
+#include "gfx.h"
+#include "text.h"
+#include "res_ids.h"
+
+#define PANEL_Y 144                      // окно карты выше, ниже — панель ICONS
 
 // Свободна ли клетка под бойца: нужен пол и пустой объект. min — когда высадка идёт
 // в корабль: пол должен быть его частью, иначе отряд встаёт на землю рядом с трапом.
@@ -72,4 +77,32 @@ uint8_t crew_deploy(const crew_req_t *q, cunit_t *out, uint8_t max) __banked
 			x++;
 		}
 	return k;
+}
+
+// ---------------------------------------------------------------- панель боя
+// Полоска показателя — как Bar в оригинале: 102 пикселя на полную величину
+static void bar(int16_t y, uint8_t v, uint8_t max, uint8_t color)
+{
+	uint8_t w = max ? (uint8_t)((uint16_t)v * 102 / max) : 0;
+	gfx_fill(170, y, 102, 3, 0);
+	if (w) gfx_fill(170, y, w, 3, color);
+}
+
+void bat_panel(const bpanel_t *p) __banked
+{
+	gfx_blit(RES_ICONS_PCK, 0, PANEL_Y, 0, PANEL_Y, 320, 200 - PANEL_Y);
+	if (!p->n) return;
+	// цвета полосок — из interfaces.rul боя (barTUs 148, barEnergy 160, barHealth 9,
+	// barMorale 157)
+	bar(185, p->tu, p->tu_max, 148);
+	bar(189, p->en, p->tu_max, 160);
+	bar(193, p->hp, p->hp_max, 9);
+	bar(197, p->mor, 100, 157);
+	char b[8];
+	tbox_t t = { 136, 184, 24, 8, 0, 15, 15, 0 };
+	fmt_num(b, p->tu, 0);
+	text_draw(&t, b);                    // осталось единиц времени
+	t.x = 228; t.y = 148;
+	fmt_num(b, p->level + 1, 0);
+	text_draw(&t, b);                    // этаж камеры
 }

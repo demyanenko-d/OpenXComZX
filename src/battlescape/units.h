@@ -22,4 +22,10 @@ typedef struct {
 // out — буфер вызывающего на стеке: страница банка вызывающего при вызове отключена.
 uint8_t crew_deploy(const crew_req_t *q, cunit_t *out, uint8_t max) __banked;
 
+// Панель боя (BattlescapeState.cpp:147-155): картинка ICONS и показатели выбранного
+// бойца. Рисуется здесь, а не в банке боя, — тот забит отрисовкой карты. n == 0 —
+// отряда нет, рисуется одна панель.
+typedef struct { uint8_t n, tu, tu_max, en, hp, hp_max, mor, level; } bpanel_t;
+void bat_panel(const bpanel_t *p) __banked;
+
 #endif

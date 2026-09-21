@@ -28,6 +28,7 @@ namespace OxzConv
 		{
 			public byte[] Frame = new byte[8];
 			public int PLevel, TLevel, BigWall, TileType, ScanG, FrameBase;
+			public int TuWalk, Alt;            // цена прохода (255 — не пройти) и часть-замена для двери
 			public bool NoFloor, StopLOS, UfoDoor, Door, GravLift;
 		}
 
@@ -42,6 +43,7 @@ namespace OxzConv
 				r.ScanG = buf[p + 20] | (buf[p + 21] << 8);
 				r.UfoDoor = buf[p + 30] != 0; r.StopLOS = buf[p + 31] != 0; r.NoFloor = buf[p + 32] != 0;
 				r.BigWall = buf[p + 33]; r.GravLift = buf[p + 34] != 0; r.Door = buf[p + 35] != 0;
+				r.TuWalk = buf[p + 39]; r.Alt = buf[p + 46];
 				r.TLevel = (sbyte)buf[p + 48]; r.PLevel = buf[p + 49];
 				r.TileType = buf[p + 53];
 				l.Add(r);
