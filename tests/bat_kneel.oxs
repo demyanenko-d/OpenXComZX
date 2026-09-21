@@ -1,0 +1,20 @@
+# Приседание бойца (BattlescapeGame::kneel): клавиша K и кнопка панели (112, 160).
+# Вниз — 4 единицы времени, вверх — 8; ноги берутся из кадров 32..39 листа (legsKneel
+# оригинала), всё остальное опускается на 4 точки (offYKneel). Перед шагом боец встаёт.
+# Проверяется по снимкам: 00 — стоя, 01 — на колене, 02 — снова стоя.
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_kneel.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+shot tmp/shots/kneel/00_stand.png
+key k
+wait 60
+shot tmp/shots/kneel/01_kneel.png
+key k
+wait 60
+shot tmp/shots/kneel/02_stand.png
+echo battle kneel OK
+exit 0

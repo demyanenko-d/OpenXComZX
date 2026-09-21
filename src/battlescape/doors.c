@@ -27,9 +27,11 @@ static const int8_t door_chk[] = {
 static const uint8_t door_ofs[8] = { 0, 1, 5, 6, 10, 11, 15, 16 };   // в тройках
 static const uint8_t door_n[8] = { 1, 2, 1, 2, 1, 2, 1, 2 };         // без правой кнопки
 
+// Номер клетки считается в 16 битах: на 32-битное умножение уходило слишком много времени
 static far_t cell_addr(const dmap_t *m, uint8_t x, uint8_t y, uint8_t z)
 {
-	return m->cells + ((uint32_t)((uint16_t)z * m->sy + y) * m->sx + x) * 4;
+	uint16_t idx = (uint16_t)(((uint16_t)z * m->sy + y) * m->sx + x);
+	return m->cells + ((uint32_t)idx << 2);
 }
 
 static uint8_t part_get(const dmap_t *m, uint16_t off)
@@ -60,6 +62,38 @@ uint8_t cell_cost(const dmap_t *m, uint8_t x, uint8_t y, uint8_t z, uint8_t d, u
 	if (!cost) cost = step;
 	if (d & 1) cost += cost >> 1;
 	return cost;
+}
+
+// Есть ли в клетке пол: сама часть пола и флаг «нет пола» (MCD.No_Floor)
+static uint8_t has_floor(const dmap_t *m, uint8_t x, uint8_t y, uint8_t z)
+{
+	uint8_t c[4];
+	far_read(cell_addr(m, x, y, z), c, 4);
+	if (!c[0]) return 0;
+	return (part_get(m, PF_FLAGS + c[0]) & 1) == 0;
+}
+
+// Насколько опущен пол клетки (Tile::getTerrainLevel): меньшее из T_Level пола и объекта
+static int8_t terrain_level(const dmap_t *m, uint8_t x, uint8_t y, uint8_t z)
+{
+	uint8_t c[4];
+	far_read(cell_addr(m, x, y, z), c, 4);
+	int8_t lv = c[0] ? (int8_t)part_get(m, PF_TLEVEL + c[0]) : 0;
+	if (c[3]) {
+		int8_t o = (int8_t)part_get(m, PF_TLEVEL + c[3]);
+		if (o < lv) lv = o;
+	}
+	return lv;
+}
+
+uint8_t cell_step_z(const dmap_t *m, uint8_t fx, uint8_t fy, uint8_t z, uint8_t tx, uint8_t ty) __banked
+{
+	uint8_t nz = z;
+	// стоим высоко на ступенях — шаг поднимает на этаж, если наверху есть на что встать
+	if (z + 1 < m->sz && terrain_level(m, fx, fy, z) <= -16 && has_floor(m, tx, ty, (uint8_t)(z + 1)))
+		nz = (uint8_t)(z + 1);
+	while (nz && !has_floor(m, tx, ty, nz)) nz--;   // под ногами пусто — падаем ниже
+	return nz;
 }
 
 // Заменить часть slot клетки на открытую створку и записать клетку в список перерисовки

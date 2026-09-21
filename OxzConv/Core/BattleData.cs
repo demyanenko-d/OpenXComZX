@@ -396,14 +396,17 @@ namespace OxzConv
 				if (!gfs.Has($"UNITS/{name}.TAB")) continue;
 				var all = Formats.DecodePck(gfs.Read($"UNITS/{name}.PCK"), gfs.Read($"UNITS/{name}.TAB"), TileW, TileH);
 				if (all.Count == 0) continue;
-				// Лист целиком (до 300 кадров) в SPRSET не влезает, да и не нужен: берём позу
-				// «стоя» по восьми направлениям — левая рука, правая рука, ноги, торс
-				// (UnitSprite::drawRoutine0: larm 0, rarm 8, legsStand 16, торс 32 у UFO и
-				// 270 у наземных юнитов TFTD). Остальные позы — когда дойдёт до анимации.
+				// Лист целиком (до 300 кадров) в SPRSET не влезает, да и не нужен: берём позы
+				// «стоя» и «на колене» по восьми направлениям (UnitSprite::drawRoutine0:
+				// larm 0, rarm 8, legsStand 16, legsKneel 24, торс 32 у UFO и 270 у наземных
+				// юнитов TFTD). Порядок кадров в листе — 40 штук:
+				//   0-7 левая рука, 8-15 правая, 16-23 ноги стоя, 24-31 торс, 32-39 ноги на колене.
+				// Остальные позы (ходьба, смерть, полёт) — когда дойдёт до анимации.
 				int torso = game == "TFTD" && all.Count > 277 ? 270 : 32;
 				var idx = new List<int>();
 				for (int i = 0; i < 24; i++) idx.Add(i);
 				for (int i = 0; i < 8; i++) idx.Add(torso + i);
+				for (int i = 24; i < 32; i++) idx.Add(i);            // ноги на колене
 				var frames = new List<Img>();
 				foreach (var i in idx) frames.Add(i < all.Count ? all[i] : all[0]);
 				var sprset = Sprites.EncodeSprset(frames);

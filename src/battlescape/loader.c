@@ -1,6 +1,7 @@
 // Графика миссии: тайлсеты наборов, таблица частей для блита и листы спрайтов.
 // Вынесено из экрана боя (банк 28 переполнен) в банк логики миссии; всё, что собирается,
-// пишется в дальнюю память — экран боя забирает таблицы к себе одним far_read.
+// пишется в рабочие страницы боя (pathfind.h, loader.h) — экран боя забирает таблицы
+// к себе одним far_read, а свойства частей читает прямо оттуда поиск пути.
 //
 // Таблица частей: номер части в клетке (1..255) — сквозной по наборам миссии, строка
 // таблицы для части t лежит по индексу t-1 (часть 0 в клетках не встречается). Запись
@@ -63,9 +64,9 @@ uint16_t tiles_load(const tiles_req_t *q, uint8_t *pages, uint8_t *nps,
 	uint8_t ns = q->ns > TL_SETS ? TL_SETS : q->ns;
 	uint8_t nd = 0, npg = 0;
 	// Не оставлять кадры прошлой карты: если набор не загрузится, его части не рисуются
-	far_fill(FAR(q->page, TL_TILES), 0, 256 * TE_SIZE);
-	far_fill(FAR(q->page, TL_YOFS), 0, 256);
-	far_fill(FAR(q->page, PF_TU), 0, 768);
+	far_fill(FAR(q->page + 1, TL_TILES), 0, 256 * TE_SIZE);
+	far_fill(FAR(q->page + 1, TL_YOFS), 0, 256);
+	far_fill(FAR(q->page, PF_TU), 0, PF_PROPS);   // свойства частей — в первой странице
 	sdres_flush();                       // кэш ресурсов отдаёт страницы: тайлсеты важнее
 	uint16_t total = 0;                  // всего частей во всех наборах миссии
 	for (uint8_t s = 0; s < ns; s++) {
@@ -100,11 +101,13 @@ uint16_t tiles_load(const tiles_req_t *q, uint8_t *pages, uint8_t *nps,
 			uint16_t fr = (uint16_t)mc[0] | ((uint16_t)mc[1] << 8);
 			if (!part || fr >= nfr) continue;
 			tile_entry(e, rt.phys, fdata, fr);
-			far_write(FAR(q->page, TL_TILES) + (uint32_t)(part - 1) * TE_SIZE, e, TE_SIZE);
-			far_write(FAR(q->page, TL_YOFS) + (part - 1), &mc[2], 1);
+			far_write(FAR(q->page + 1, TL_TILES) + (uint32_t)(part - 1) * TE_SIZE, e, TE_SIZE);
+			far_write(FAR(q->page + 1, TL_YOFS) + (part - 1), &mc[2], 1);
 			// Цена прохода (255 — стена) и двери: распашная меняется на часть Alt_MCD,
 			// дверь НЛО сдвигается — ей заводится своя часть с открытым кадром Frame[7].
 			far_write(FAR(q->page, PF_TU) + part, &mc[7], 1);
+			far_write(FAR(q->page, PF_TLEVEL) + part, &mc[6], 1);
+			far_write(FAR(q->page, PF_FLAGS) + part, &mc[3], 1);
 			if ((mc[3] & 8) && mc[8] && base + mc[8] < 256) {
 				uint8_t v = (uint8_t)(base + mc[8]);
 				far_write(FAR(q->page, PF_ALT) + part, &v, 1);
@@ -116,10 +119,12 @@ uint16_t tiles_load(const tiles_req_t *q, uint8_t *pages, uint8_t *nps,
 				if (f7 < nfr) {
 					uint16_t vp = vnext--;
 					tile_entry(e, rt.phys, fdata, f7);
-					far_write(FAR(q->page, TL_TILES) + (uint32_t)(vp - 1) * TE_SIZE, e, TE_SIZE);
-					far_write(FAR(q->page, TL_YOFS) + (vp - 1), &mc[2], 1);
+					far_write(FAR(q->page + 1, TL_TILES) + (uint32_t)(vp - 1) * TE_SIZE, e, TE_SIZE);
+					far_write(FAR(q->page + 1, TL_YOFS) + (vp - 1), &mc[2], 1);
 					uint8_t v = 0;
 					far_write(FAR(q->page, PF_TU) + vp, &v, 1);   // открытая дверь свободна
+					far_write(FAR(q->page, PF_TLEVEL) + vp, &mc[6], 1);
+					far_write(FAR(q->page, PF_FLAGS) + vp, &mc[3], 1);
 					v = (uint8_t)vp;
 					far_write(FAR(q->page, PF_ALT) + part, &v, 1);
 					v = (uint8_t)((mc[5] & 3) | 0x80);

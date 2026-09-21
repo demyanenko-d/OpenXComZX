@@ -9,7 +9,7 @@
 // для двери) лежат в странице поиска пути — pathfind.h, их заполняет экран боя.
 typedef struct {
 	far_t cells;
-	uint8_t sx, sy;
+	uint8_t sx, sy, sz;
 	uint8_t page;
 } dmap_t;
 
@@ -30,5 +30,10 @@ uint8_t door_open(const dmap_t *m, uint8_t x, uint8_t y, uint8_t z, uint8_t dir,
 // Найти первую дверь на этаже (отладка боя, клавиша D): клетка и слот стены.
 // 1 — нашли. Обход как у отрисовки: ряды Y, внутри ряда X.
 uint8_t door_find(const dmap_t *m, uint8_t z, uint8_t *x, uint8_t *y, uint8_t *slot) __banked;
+
+// Этаж, на котором боец окажется, шагнув из (fx, fy, z) в клетку (tx, ty): вверх по
+// лестнице (у клетки, с которой уходим, T_Level <= -16 и наверху есть пол) или вниз, пока
+// под ногами нет пола — как Pathfinding::getTUCost и canFallDown.
+uint8_t cell_step_z(const dmap_t *m, uint8_t fx, uint8_t fy, uint8_t z, uint8_t tx, uint8_t ty) __banked;
 
 #endif

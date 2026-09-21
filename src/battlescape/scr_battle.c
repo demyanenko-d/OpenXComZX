@@ -70,7 +70,7 @@ static uint8_t __at(0xB400) tile_tab[256 * TE_SIZE];
 // в порядке: 0-7 левая рука, 8-15 правая, 16-23 ноги, 24-31 торс.
 #define MAX_UNITS 12
 #define UNIT_PARTS 4
-typedef struct { uint8_t x, y, z, dir, alive; uint8_t tu, tu_max, hp, hp_max, en, mor; } unit_t;
+typedef struct { uint8_t x, y, z, dir, alive, kneel; uint8_t tu, tu_max, hp, hp_max, en, mor; } unit_t;
 static unit_t __at(0xBE00) units[MAX_UNITS];
 static uint8_t nunits;
 static uint8_t sel;                      // выбранный боец (панель показывает его состояние)
@@ -79,6 +79,11 @@ static uint8_t unit_page = PG_NONE, unit_np;
 // страницу до конца (#BFFF). Раньше он стоял с #BE40 и при семи и больше бойцах затирался
 // ими — кадры блитились из случайной памяти, и отряд выглядел цветным мусором.
 static uint8_t __at(0xBF00) unit_tab[32 * TE_SIZE];   // кадры листа в виде для блита
+// Ноги на колене — восемь кадров листа (32..39), они идут после позы стоя
+#define KNEEL_TU_DOWN  4                 // цена приседания и вставания (BattlescapeGame::kneel)
+#define KNEEL_TU_UP    8
+#define KNEEL_DY       4                 // всё, кроме ног, опускается на 4 точки (offYKneel)
+static uint8_t __at(0xBEB0) kneel_tab[8 * TE_SIZE];
 // Рабочая страница боя: массивы поиска пути, свойства частей и таблицы графики миссии
 static uint8_t pf_page = PG_NONE;                // страница под рабочие массивы поиска пути
 
@@ -302,15 +307,16 @@ static const wdef_t w_battle[] = {
 	// по ним боец идёт в клетку. Панель ниже перекрыта своими кнопками.
 	CUSR(0, 0, 320, VIEW_H, DYN(0), A_CUSTOM, 0),
 	// Панель ICONS: кнопки на тех же местах, что в оригинале (BattlescapeState.cpp:100-115).
-	HOT(48, 144, 32, 16, A_NONE, 1, 0),            // боец выше по списку
-	HOT(48, 160, 32, 16, A_NONE, 2, 0),            // боец ниже
-	HOT(80, 144, 32, 16, A_NONE, 3, 0),            // этаж вверх
-	HOT(80, 160, 32, 16, A_NONE, 4, 0),            // этаж вниз
-	HOT(144, 144, 32, 16, A_NONE, 5, 'i'),         // инвентарь
-	HOT(144, 160, 32, 16, A_NONE, 6, 'c'),         // центрировать на бойце
-	HOT(176, 144, 32, 16, A_NONE, 7, 0),           // следующий боец
-	HOT(208, 144, 32, 16, A_NONE, 9, 0),           // показывать все этажи или только текущий
-	HOT(240, 144, 32, 16, A_NONE, 8, 0),           // конец хода
+	HOT(48, 144, 32, 16, A_CUSTOM, 1, 0),            // боец выше по списку
+	HOT(48, 160, 32, 16, A_CUSTOM, 2, 0),            // боец ниже
+	HOT(80, 144, 32, 16, A_CUSTOM, 3, 0),            // этаж вверх
+	HOT(80, 160, 32, 16, A_CUSTOM, 4, 0),            // этаж вниз
+	HOT(112, 160, 32, 16, A_CUSTOM, 10, 'k'),        // присесть и встать
+	HOT(144, 144, 32, 16, A_CUSTOM, 5, 'i'),         // инвентарь
+	HOT(144, 160, 32, 16, A_CUSTOM, 6, 'c'),         // центрировать на бойце
+	HOT(176, 144, 32, 16, A_CUSTOM, 7, 0),           // следующий боец
+	HOT(208, 144, 32, 16, A_CUSTOM, 9, 0),           // показывать все этажи или только текущий
+	HOT(240, 144, 32, 16, A_CUSTOM, 8, 0),           // конец хода
 	HOT(240, 160, 32, 16, A_POP, 0, ESC),          // выйти из боя
 };
 
@@ -385,10 +391,16 @@ static void draw_unit_at(uint8_t z, uint8_t y, uint8_t x, int16_t px, int16_t py
 		const unit_t *u = &units[i];
 		if (!u->alive || u->z != z || u->y != y || u->x != x) continue;
 		uint8_t d = u->dir & 7;
-		dl_unit_frame(16 + d, px, py);       // ноги
-		dl_unit_frame(24 + d, px, py);       // торс
-		dl_unit_frame(0 + d, px, py);        // левая рука
-		dl_unit_frame(8 + d, px, py);        // правая рука
+		int16_t dy = 0;
+		if (u->kneel) {                      // на колене: свои ноги, остальное ниже
+			const uint8_t *e = kneel_tab + (uint16_t)d * TE_SIZE;
+			if (e[7]) dl_blit(e, px, py);
+			dy = KNEEL_DY;
+		} else
+			dl_unit_frame(16 + d, px, py);   // ноги
+		dl_unit_frame(24 + d, px, py + dy);  // торс
+		dl_unit_frame(0 + d, px, py + dy);   // левая рука
+		dl_unit_frame(8 + d, px, py + dy);   // правая рука
 		return;
 	}
 }
@@ -508,15 +520,19 @@ static uint8_t load_sheet(uint16_t res, uint8_t *pg, uint8_t *np, uint8_t n,
 			  const uint8_t *want, uint8_t *tab)
 {
 	if (pf_page == PG_NONE) return 0;
-	if (!sheet_load(res, pg, np, n, want, FAR(pf_page, TL_SHEET))) return 0;
-	far_read(FAR(pf_page, TL_SHEET), tab, (uint16_t)n * TE_SIZE);
+	// Переменные банка (кроме __at-массивов) лежат в Win1, а он подключён всегда — значит
+	// указатели на них можно отдавать и в другой банк.
+	if (!sheet_load(res, pg, np, n, want, FAR(pf_page + 1, TL_SHEET))) return 0;
+	far_read(FAR(pf_page + 1, TL_SHEET), tab, (uint16_t)n * TE_SIZE);
 	return 1;
 }
 
 static uint8_t load_unit_sheet(uint16_t id)
 {
 	if (unit_page != PG_NONE) { pg_free(unit_page, unit_np); unit_page = PG_NONE; }
-	return load_sheet(id, &unit_page, &unit_np, 32, 0, unit_tab);
+	if (!load_sheet(id, &unit_page, &unit_np, 40, 0, unit_tab)) return 0;
+	far_read(FAR(pf_page + 1, TL_SHEET) + 32 * TE_SIZE, kneel_tab, sizeof kneel_tab);
+	return 1;
 }
 
 // Лист курсора клетки: из CURSOR.PCK берутся четыре кадра — задние и передние половины рамки
@@ -550,7 +566,7 @@ static void place_squad(uint8_t debug_n)
 	uint8_t n = crew_deploy(&q, cu, MAX_UNITS);
 	for (uint8_t i = 0; i < n; i++) {
 		units[i].x = cu[i].x; units[i].y = cu[i].y; units[i].z = cu[i].z;
-		units[i].dir = 0; units[i].alive = 1;
+		units[i].dir = 0; units[i].alive = 1; units[i].kneel = 0;
 		units[i].tu = units[i].tu_max = cu[i].tu;
 		units[i].hp = units[i].hp_max = cu[i].hp;
 		units[i].en = cu[i].en; units[i].mor = cu[i].mor;
@@ -640,6 +656,21 @@ static uint8_t door_try(unit_t *u, uint8_t dir, uint8_t rclick)
 	return 0;
 }
 
+// Присесть или встать (BattlescapeGame::kneel): 4 единицы времени вниз, 8 вверх.
+// Сидящего бойца хуже видно и точнее стреляет — это появится вместе с видимостью и стрельбой.
+static void do_kneel(void)
+{
+	if (!nunits) return;
+	unit_t *u = &units[sel < nunits ? sel : 0];
+	uint8_t cost = u->kneel ? KNEEL_TU_UP : KNEEL_TU_DOWN;
+	if (u->tu < cost) return;
+	u->tu -= cost;
+	u->kneel = !u->kneel;
+	path_n = 0;
+	cell_repaint(u->x, u->y);
+	ui_dirty(0);
+}
+
 // Повернуться на одну восьмую в сторону d (в оригинале поворот при ходьбе бесплатен и
 // идёт по одному шагу за такт — отсюда и разворот на месте перед шагом)
 static void turn_to(unit_t *u, uint8_t d)
@@ -655,18 +686,32 @@ static void step_unit(void)
 	if (!nunits || path_i >= path_n) { path_n = 0; return; }
 	unit_t *u = &units[sel < nunits ? sel : 0];
 	uint8_t d = path[path_i];
+	if (u->kneel) {                                  // идти на коленях нельзя — сперва встать
+		if (u->tu < KNEEL_TU_UP) { path_n = 0; return; }
+		u->tu -= KNEEL_TU_UP;
+		u->kneel = 0;
+		cell_repaint(u->x, u->y);
+		return;
+	}
 	if (u->dir != d) { turn_to(u, d); return; }      // сперва развернуться лицом к шагу
 	if (door_try(u, d, 0) != 2) return;              // дверь открывается вместо шага
 	int16_t nx = (int16_t)u->x + dir_dx[d], ny = (int16_t)u->y + dir_dy[d];
 	if (nx < 0 || ny < 0 || nx >= m_sx || ny >= m_sy) { path_n = 0; return; }
 	uint8_t cost = cell_cost(&bmap, (uint8_t)nx, (uint8_t)ny, u->z, d, STEP_TU);
 	if (u->tu < cost) { path_n = 0; return; }
-	uint8_t ox = u->x, oy = u->y;        // откуда ушёл — эту клетку тоже перерисовать
+	uint8_t ox = u->x, oy = u->y, oz = u->z;   // откуда ушёл — эту клетку тоже перерисовать
+	u->z = cell_step_z(&bmap, ox, oy, oz, (uint8_t)nx, (uint8_t)ny);   // лестница вверх, падение вниз
 	u->x = (uint8_t)nx; u->y = (uint8_t)ny;
 	u->tu -= cost;
 	if (u->en > 1) u->en--;              // энергия тратится медленнее времени
 	path_i++;
 	if (path_i >= path_n) path_n = 0;
+	if (u->z != oz) {                    // сменился этаж — камера едет за бойцом (Camera::setViewLevel)
+		level = u->z;
+		dl_ok = 0;
+		ui_dirty(0);
+		return;
+	}
 	// Перерисовываем не весь вид и даже не полосу, а две клетки — ту, откуда боец ушёл, и
 	// ту, где оказался (17 §2). Гасится и собирается заново только их прямоугольник.
 	uint8_t nxx = u->x, nyy = u->y;
@@ -713,8 +758,8 @@ static uint8_t load_gen(uint16_t terrain)
 	if (!npg) return 0;
 	// Таблицы собраны в дальней памяти — переносим их к себе в банк (вид частей и смещения
 	// нужны в каждом кадре, дальнее чтение тут не годится).
-	far_read(FAR(pf_page, TL_TILES), tile_tab, sizeof tile_tab);
-	far_read(FAR(pf_page, TL_YOFS), tile_y, sizeof tile_y);
+	far_read(FAR(pf_page + 1, TL_TILES), tile_tab, sizeof tile_tab);
+	far_read(FAR(pf_page + 1, TL_YOFS), tile_y, sizeof tile_y);
 	for (uint8_t i = 0; i < npg; i++) { gen_page[i] = pages[i]; gen_np[i] = nps[i]; }
 	gen_ns = npg;
 	ndoors = nd;
@@ -723,7 +768,7 @@ static uint8_t load_gen(uint16_t terrain)
 	m_nt = (uint8_t)nparts;
 	cells = mapgen_cells();
 	map_phys = cells;
-	bmap.cells = cells; bmap.sx = m_sx; bmap.sy = m_sy; bmap.page = pf_page;
+	bmap.cells = cells; bmap.sx = m_sx; bmap.sy = m_sy; bmap.sz = m_sz; bmap.page = pf_page;
 	rows_init();
 	level = 0;                           // камера начинается на земле, как в оригинале
 	gen_mode = 1;
@@ -860,7 +905,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	}
 	case EVT_OPEN:
 		if (dl_page == PG_NONE) dl_page = pg_alloc(2, 1);   // список вида: две страницы подряд
-		if (pf_page == PG_NONE) pf_page = pg_alloc(1, 1);   // рабочая память поиска пути
+		if (pf_page == PG_NONE) pf_page = pg_alloc(2, 1);   // рабочая память боя: поиск пути и таблицы
 		// Карта миссии собирается генератором (16 §3). Пока миссии нет, террейн берётся
 		// по очереди — клавиша G дальше пересобирает карту следующего террейна.
 		load_gen(gen_terrain);               // карта миссии: генератор (16 §3)
@@ -913,7 +958,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		loaded = 0;
 		nunits = 0;
 		if (dl_page != PG_NONE) { pg_free(dl_page, 2); dl_page = PG_NONE; dl_ok = 0; }
-		if (pf_page != PG_NONE) { pg_free(pf_page, 1); pf_page = PG_NONE; }
+		if (pf_page != PG_NONE) { pg_free(pf_page, 2); pf_page = PG_NONE; }
 		path_n = 0;
 		turn_dir = 0xFF;
 		// Карта боя рисуется в строки холста 200.., а там же задний буфер глобуса (globe.s,
@@ -943,7 +988,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				ui_dirty(0);
 				break;
 			}
-			pf_req_t q = { cells, m_sx, m_sy, u->z, u->x, u->y, tx, ty, u->tu, STEP_TU, pf_page };
+			pf_req_t q = { cells, m_sx, m_sy, u->z, m_sz, u->x, u->y, tx, ty, u->tu, STEP_TU, pf_page };
 			path_n = pf_find(&q, path, PATH_MAX);
 			path_i = 0;
 			move_wait = 0;
@@ -956,6 +1001,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		case 5: UI_GO(A_PUSH, SCR_INVENTORY); break;
 		case 6: center_on_unit(); ui_dirty(0); break;
 		case 7: sel_next(); break;           // следующий боец
+		case 10: do_kneel(); break;          // присесть и встать
 		case 9:                              // «1/2»: все этажи или только текущий
 			all_levels = !all_levels;
 			dl_ok = 0;
@@ -993,6 +1039,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			center_on_unit();
 			break;
 		}
+		case 'k': case 'K': do_kneel(); break;   // присесть и встать (в оригинале K)
 		case 'n': sel_next(); break;         // следующий боец (в оригинале TAB)
 		case 'N': sel_prev(); break;         // предыдущий (в оригинале SHIFT)
 		case 'a': case 'A': if (level) { level--; center(); } break;

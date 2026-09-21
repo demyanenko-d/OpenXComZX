@@ -1,0 +1,25 @@
+# Переходы между этажами в бою (16 §5.4): боец, оказавшийся над пустотой, падает на этаж
+# ниже — и поиск пути считает шаг так же (doors.c, cell_step_z).
+# Проверка по памяти: units[] экрана боя лежит в странице банка 28 (#4B) со смещения #3E00,
+# запись бойца — 12 байт, третий байт — этаж. Ставим выбранному бойцу этаж 1 (над полом
+# корабля) и ведём его на соседнюю клетку: после шага он должен оказаться снова на этаже 0.
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_levels.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+expect 4B:3E02 0
+shot tmp/shots/levels/00_ground.png
+poke 4B:3E02 1
+wait 20
+# шесть клеток к западу от бойца (за пределы корабля): точка считается от центра — 17 §0
+pokew _cursor_x 64
+pokew _cursor_y 40
+click L
+wait 200
+expect 4B:3E02 0
+shot tmp/shots/levels/01_fell.png
+echo battle levels OK
+exit 0
