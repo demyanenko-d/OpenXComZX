@@ -7,6 +7,7 @@
 #include "pages.h"
 #include "far.h"
 #include "fat.h"
+#include "dbg.h"
 
 extern uint32_t sd_lba, sd_phys;
 extern uint16_t sd_ptr, sd_cnt;
@@ -212,6 +213,8 @@ uint8_t fat_read(const fat_file_t *f, uint32_t pos, far_t dst, uint32_t len) __b
 {
 	uint8_t old = pg_win3();
 	uint8_t r = FAT_OK;
+	if (!dst) { dbg_puts("fat_read: dst=0 len "); dbg_dec((uint16_t)len); dbg_puts("
+"); }
 	while (len) {
 		uint32_t left;
 		uint32_t lba = file_lba(f, pos >> 9, &left);

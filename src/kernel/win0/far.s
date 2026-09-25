@@ -271,25 +271,6 @@ _far_copy::
 	call	_dbg_puts
 	ld	hl, #fc_len
 	call	pr_far
-	ld	hl, #s_fcsp
-	call	_dbg_puts
-	ld	hl, #0
-	add	hl, sp
-	inc	hl
-	inc	hl			; за сохранённым адресом возврата
-	ld	b, #6			; шесть слов стека вызывающего
-fc_spl:	push	bc
-	push	hl
-	ld	e, (hl)
-	inc	hl
-	ld	d, (hl)
-	ex	de, hl
-	call	pr_hl
-	pop	hl
-	inc	hl
-	inc	hl
-	pop	bc
-	djnz	fc_spl
 	ld	hl, #s_nl
 	call	_dbg_puts
 	pop	iy
@@ -471,15 +452,13 @@ page_of:
 	or	e
 	ret
 
-s_fcbad:	.ascii	"far_copy: bad args, caller "
+s_fcbad:	.ascii	"far_copy: args, caller "
 	.db	0
 s_fcdst:	.ascii	"dst "
 	.db	0
 s_fcsrc:	.ascii	"src "
 	.db	0
 s_fclen:	.ascii	"len "
-	.db	0
-s_fcsp:		.ascii	"sp: "
 	.db	0
 s_nl:		.db	10, 0
 
