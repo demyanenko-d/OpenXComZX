@@ -18,3 +18,5 @@ obj/
 *~
 Thumbs.db
 desktop.ini
+# Логи посторонних программ, попавшие в корень
+debug.log
