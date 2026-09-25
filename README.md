@@ -8,6 +8,17 @@ ZX Evolution / Pentevo: Z80 до 14 МГц, 4 МБ страничной памя
 формулы, те же мелочи интерфейса. Данные берутся из копии игры пользователя —
 их конвертирует утилита на ПК, в репозитории оригинальных данных нет.
 
+## Как это выглядит
+
+Снимки с эмулятора, игра — Terror from the Deep.
+
+|  |  |  |
+|---|---|---|
+| [<img src="project_docs/scr/Screenshot_2.png" width="260">](project_docs/scr/Screenshot_2.png)<br>Главное меню | [<img src="project_docs/scr/Screenshot_3.png" width="260">](project_docs/scr/Screenshot_3.png)<br>Выбор места для первой базы | [<img src="project_docs/scr/Screenshot_4.png" width="260">](project_docs/scr/Screenshot_4.png)<br>Глобус: регионы, тень, метки |
+| [<img src="project_docs/scr/Screenshot_8.png" width="260">](project_docs/scr/Screenshot_8.png)<br>Глобус вблизи: города и страны | [<img src="project_docs/scr/Screenshot_9.png" width="260">](project_docs/scr/Screenshot_9.png)<br>Обнаружена подлодка пришельцев | [<img src="project_docs/scr/Screenshot_10.png" width="260">](project_docs/scr/Screenshot_10.png)<br>Запуск перехвата |
+| [<img src="project_docs/scr/Screenshot_11.png" width="260">](project_docs/scr/Screenshot_11.png)<br>Корабль в полёте: смена приказа | [<img src="project_docs/scr/Screenshot_5.png" width="260">](project_docs/scr/Screenshot_5.png)<br>База | [<img src="project_docs/scr/Screenshot_6.png" width="260">](project_docs/scr/Screenshot_6.png)<br>Снаряжение «Тритона» |
+| [<img src="project_docs/scr/Screenshot_7.png" width="260">](project_docs/scr/Screenshot_7.png)<br>Исследования: распределение учёных | [<img src="project_docs/scr/Screenshot_1.png" width="260">](project_docs/scr/Screenshot_1.png)<br>Заставка |  |
+
 ## Что уже работает
 
 | Часть | Состояние |
