@@ -386,7 +386,7 @@ blk_even:
 8$:	pop	bc
 	ld	a, b			; нечётные от c0 + 1 до c1 − 1: (c1 − c0) / 2 штук
 	sub	a, c
-	rra
+	srl	a			; именно srl: rra не трогает Z, и при разнице 1 djnz уходил на 256 кругов
 	jr	z, blk_fin
 	ld	b, a
 	ld	h, #>SH_LB

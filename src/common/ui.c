@@ -424,7 +424,13 @@ static uint8_t content_same(uint8_t i)
 	case W_TEXT: case W_BUTTON: case W_COMBO:
 		if (!dyn) return 0;
 		get_text(w->str, 0);
-		h = sig_str(buf);
+		// Прокрутка — часть содержимого: у статьи Уфопедии текст один и тот же, меняется
+		// только число пропущенных строк (tx_skip его ставит scr_text). Без этого подпись
+		// совпадала и прокрутка не рисовалась вовсе. И проба не должна оставлять флаг
+		// взведённым: гасит его только text_draw, а тут вывода нет — следующий текст
+		// на экране потерял бы верхние строки (ревизия 2026-09-26).
+		h = (uint16_t)(sig_str(buf) + (uint16_t)tx_skip * 7u);
+		tx_skip = 0;
 		break;
 	case W_BAR:
 		if (!dyn) return 0;

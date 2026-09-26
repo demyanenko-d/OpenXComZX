@@ -202,6 +202,9 @@ void mus_set_mode(uint8_t mode) __banked
 
 void mus_play(uint16_t id) __banked
 {
+	// Нет трека (жребий не выбрал, группа пуста) — продолжаем играть прежний, как
+	// Mod::playMusic оригинала. Раньше такой вызов глушил музыку и оставлял висеть ноту.
+	if (!id) return;
 	if (M.magic != MUS_MAGIC) { memset(&M, 0, sizeof M); M.page = PG_NONE; M.magic = MUS_MAGIC; }
 	if (id == M.id && mus_state) return;   // тот же трек — не перезапускать (21 §2)
 	mus_state = 0;
