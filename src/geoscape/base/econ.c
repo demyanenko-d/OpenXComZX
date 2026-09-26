@@ -180,6 +180,8 @@ uint8_t soldier_new(uint8_t base) __banked
 void soldier_delete(uint8_t i) __banked
 {
 	soldier_t s;
+	inv_clear_soldier(i);                // иначе вещи остаются за номером, и новобранец,
+	                                     //   получив тот же номер, наследует чужое снаряжение
 	soldier_get(i, &s);
 	s.base = NONE8;
 	soldier_put(i, &s);

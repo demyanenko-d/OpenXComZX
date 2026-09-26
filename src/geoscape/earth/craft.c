@@ -110,6 +110,7 @@ uint8_t waypoint_new(const geo_t *p) __banked
 
 void waypoint_confirm(uint8_t w) __banked
 {
+	if (w >= MAX_WAYPOINTS) return;      // точки кончились: waypoint_new отдал NONE8
 	if (ST->waypoint[w].id == WP_PENDING) ST->waypoint[w].id = ++ST->ids[ID_WAYPOINT];
 }
 

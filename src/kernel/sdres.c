@@ -123,7 +123,6 @@ uint32_t sdres_size(uint16_t id) __banked
 	const uint16_t want = id;   // сравнение байта с параметром SDCC 4.5 портит (CLAUDE.md)
 	if (!sd_state) sd_state = packs_open() ? 1 : 2;
 	if (sd_state != 1 || !id) return 0;
-	if (!nslots && !slots_open()) return 0;   // после sdres_flush слоты заводятся заново
 	for (uint8_t p = 0; p < NPACKS; p++)
 		for (uint16_t i = 0; i < pk_n[p]; i++) {
 			far_read(FAR(idx_page, 0) + ((uint32_t)idx_off[p] + 1 + i) * 16, e, 16);
@@ -141,7 +140,6 @@ uint8_t sdres_load(uint16_t id, uint8_t page, res_t *r) __banked
 	uint8_t e[16];
 	if (!sd_state) sd_state = packs_open() ? 1 : 2;
 	if (sd_state != 1 || !id) return 0;
-	if (!nslots && !slots_open()) return 0;   // после sdres_flush слоты заводятся заново
 	for (uint8_t p = 0; p < NPACKS; p++)
 		for (uint16_t i = 0; i < pk_n[p]; i++) {
 			far_read(FAR(idx_page, 0) + ((uint32_t)idx_off[p] + 1 + i) * 16, e, 16);

@@ -428,13 +428,14 @@ void gfx_copy(int16_t x, int16_t ysrc, int16_t ydst, int16_t w, int16_t h) __ban
 // (Window::setThinBorder). Вынесено из ui.c — банк 1 полон.
 void gfx_window(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c, uint16_t bg, uint8_t thin) __banked
 {
+	// Фон мог не прочитаться (нет карты, вытеснен слот): тогда заливаем цветом, иначе
+	// внутри окна остаётся прошлая картинка и понять это по экрану нельзя.
 	if (thin) {
 		gfx_bevel(x, y, w, h, c, 0, 0);
-		if (bg) gfx_bg(bg, x + 3, y + 3, w - 5, h - 5);
+		if (!bg || !gfx_bg(bg, x + 3, y + 3, w - 5, h - 5)) gfx_fill(x + 3, y + 3, w - 5, h - 5, c + 3);
 		return;
 	}
-	if (bg) gfx_bg(bg, x + 5, y + 5, w - 10, h - 10);
-	else gfx_fill(x + 4, y + 4, w - 8, h - 8, c + 3);
+	if (!bg || !gfx_bg(bg, x + 5, y + 5, w - 10, h - 10)) gfx_fill(x + 4, y + 4, w - 8, h - 8, c + 3);
 	gfx_rings(x, y, w, h, c);
 }
 

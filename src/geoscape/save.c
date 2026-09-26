@@ -85,7 +85,8 @@ uint8_t st_peek(uint8_t slot, st_header_t *h) __banked
 	else if (r != BIOS_OK)
 		return SAVE_IOERR;
 	if (got < sizeof *h || h->magic != ST_MAGIC) return SAVE_BAD;
-	if (h->version != ST_VERSION) return SAVE_VERSION;
+	h->name[SAVE_NAME - 1] = 0;          // файл слота лежит на хосте: имя может быть
+	if (h->version != ST_VERSION) return SAVE_VERSION;   //   без нуля, а его копируют strcpy
 	if (h->game != res_game()) return SAVE_OTHERGAME;
 	return SAVE_OK;
 }

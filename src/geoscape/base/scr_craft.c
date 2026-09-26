@@ -369,6 +369,8 @@ static void equip_left(uint8_t it, uint16_t change)
 	base_t *bs = &ST->base[ctx.base];
 	if (fl & ITEMS_F_FIXED_WEAPON) {
 		uint8_t cg = ST->craft[ctx.craft].cargo;
+		if (cg == NONE8) return;             // трюма нет (cargo_alloc не дал): ST->cargo[255]
+		                                     //   уходит за страницу состояния, в код ядра
 		uint16_t per = 0;
 		uint8_t ammo = hwp_ammo(it, &per);
 		for (uint8_t k = 0; k < CARGO_VEH && change; k++) {

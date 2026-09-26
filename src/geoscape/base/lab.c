@@ -40,6 +40,17 @@ static uint8_t rl(const rtab_t *t, const rlist_t *l, uint16_t *out, uint8_t max)
 	return n;
 }
 
+// То же, но список пар (ref, количество): requiredItems и producedItems правил хранятся
+// парами (refmap, OxzConv/Core/Rules.cs), и на пару приходится 4 байта. Раньше их читали
+// как одиночные значения, и количество бралось из неинициализированного стека: на склад
+// попадало мусорное число штук, материалы списывались как попало (ревизия 2026-09-26).
+static uint8_t rl_pairs(const rtab_t *t, const rlist_t *l, uint16_t *out, uint8_t max)
+{
+	uint8_t n = l->n > max / 2 ? (uint8_t)(max / 2) : l->n;
+	if (n) rtab_tail(t, l->off, out, (uint16_t)n * 4);
+	return n;
+}
+
 // Все темы списка исследованы (пустой — да)
 static uint8_t all_done(const rtab_t *t, const rlist_t *l)
 {
@@ -357,7 +368,7 @@ uint16_t manuf_have(uint8_t b, uint16_t ref) __banked
 static uint8_t materials_ok(uint8_t b)
 {
 	uint16_t v[32];
-	uint8_t n = rl(&tmf, &mr.required_items, v, 32);
+	uint8_t n = rl_pairs(&tmf, &mr.required_items, v, 32);
 	for (uint8_t i = 0; i + 1 < n * 2; i += 2)
 		if (manuf_have(b, v[i]) < v[i + 1]) return 0;
 	return 1;
@@ -370,7 +381,7 @@ static void start_item(uint8_t b)
 {
 	uint16_t v[32];
 	funds_add(-(int32_t)mr.cost);
-	uint8_t n = rl(&tmf, &mr.required_items, v, 32);
+	uint8_t n = rl_pairs(&tmf, &mr.required_items, v, 32);
 	for (uint8_t i = 0; i + 1 < n * 2; i += 2) {
 		uint16_t ref = v[i], q = v[i + 1];
 		if (ref & RREF_ALT) {
@@ -436,7 +447,7 @@ uint16_t prod_done_units(uint8_t slot) __banked
 static void make_unit(prod_t *p)
 {
 	uint16_t v[32];
-	uint8_t n = rl(&tmf, &mr.produced_items, v, 32);
+	uint8_t n = rl_pairs(&tmf, &mr.produced_items, v, 32);
 	for (uint8_t i = 0; i + 1 < n * 2; i += 2) {
 		uint16_t ref = v[i], q = v[i + 1];
 		if (ref & RREF_ALT) { craft_add(p->base, (uint8_t)(ref & 0xFF), 0); break; }
