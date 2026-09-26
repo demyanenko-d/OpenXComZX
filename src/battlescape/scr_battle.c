@@ -516,21 +516,24 @@ static void fill_cols(int16_t lo, int16_t hi, int16_t y0, int16_t y1)
 // Лист юнита в память и в готовые для блита записи (как тайлсет карты)
 // Лист спрайтов грузит банк 30 (loader.c): страницу берёт он, таблицу кадров кладёт
 // в дальнюю память, а сюда, в память банка, она переносится одним чтением.
+// n — сколько кадров разобрать, ncopy — сколько записей перенести в tab. Разделены не зря:
+// у листа брони кадров 40, а в unit_tab влезает 32 (хвост #BF00..#BFFF), и копия «на всё»
+// уезжала за #C000 — прямо в окно Win3, где в этот миг лежат таблицы частей миссии.
 static uint8_t load_sheet(uint16_t res, uint8_t *pg, uint8_t *np, uint8_t n,
-			  const uint8_t *want, uint8_t *tab)
+			  const uint8_t *want, uint8_t *tab, uint8_t ncopy)
 {
 	if (pf_page == PG_NONE) return 0;
 	// Переменные банка (кроме __at-массивов) лежат в Win1, а он подключён всегда — значит
 	// указатели на них можно отдавать и в другой банк.
 	if (!sheet_load(res, pg, np, n, want, FAR(pf_page + 1, TL_SHEET))) return 0;
-	far_read(FAR(pf_page + 1, TL_SHEET), tab, (uint16_t)n * TE_SIZE);
+	far_read(FAR(pf_page + 1, TL_SHEET), tab, (uint16_t)ncopy * TE_SIZE);
 	return 1;
 }
 
 static uint8_t load_unit_sheet(uint16_t id)
 {
 	if (unit_page != PG_NONE) { pg_free(unit_page, unit_np); unit_page = PG_NONE; }
-	if (!load_sheet(id, &unit_page, &unit_np, 40, 0, unit_tab)) return 0;
+	if (!load_sheet(id, &unit_page, &unit_np, 40, 0, unit_tab, 32)) return 0;
 	far_read(FAR(pf_page + 1, TL_SHEET) + 32 * TE_SIZE, kneel_tab, sizeof kneel_tab);
 	return 1;
 }
@@ -539,7 +542,7 @@ static uint8_t load_unit_sheet(uint16_t id)
 static uint8_t load_cursor(void)
 {
 	uint8_t want[CUR_FRAMES] = { 0, 1, 3, 4 };   // в стеке: банк вызывающего при вызове отключён
-	return load_sheet(RES_CURSOR_PCK, &cur_page, &cur_np, CUR_FRAMES, want, cur_tab);
+	return load_sheet(RES_CURSOR_PCK, &cur_page, &cur_np, CUR_FRAMES, want, cur_tab, CUR_FRAMES);
 }
 
 // Навести камеру на выбранного бойца (кнопка «центрировать», как в оригинале)
@@ -906,6 +909,8 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	case EVT_OPEN:
 		if (dl_page == PG_NONE) dl_page = pg_alloc(2, 1);   // список вида: две страницы подряд
 		if (pf_page == PG_NONE) pf_page = pg_alloc(2, 1);   // рабочая память боя: поиск пути и таблицы
+		if (pf_page == PG_NONE) { dbg_puts("battle: no pages
+"); break; }   // иначе запись уйдёт в страницу #FF
 		// Карта миссии собирается генератором (16 §3). Пока миссии нет, террейн берётся
 		// по очереди — клавиша G дальше пересобирает карту следующего террейна.
 		load_gen(gen_terrain);               // карта миссии: генератор (16 §3)

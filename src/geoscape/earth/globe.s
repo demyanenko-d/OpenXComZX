@@ -153,6 +153,9 @@ r_giv:		.ds	2
 rg:		.ds	15		; res_t: GLOBE, TEXTURE.DAT, GEOBORD.SCR
 rt:		.ds	15
 rb:		.ds	15
+;; Адрес res_t уходит в res_find, а тот при промахе по вшитым пакетам переключает Win2
+;; на банк 12 — значит буфер должен лежать в Win1 (_DATA), а не в странице банка.
+dt_res:		.ds	15		; res_t GLOBEDET
 
 	.area	_BANK24
 
@@ -171,7 +174,6 @@ r_bz:		.ds	1
 r_rz:		.ds	1
 r_ncell:	.ds	1
 ; детали (detail): вид последней проекции
-dt_res:		.ds	15		; res_t GLOBEDET
 dt_hdr:		.ds	24
 dt_ng:		.ds	1
 dt_nv:		.ds	2

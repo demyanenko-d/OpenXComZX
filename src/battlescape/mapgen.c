@@ -513,7 +513,8 @@ void mapgen_set_extra(uint16_t craft, uint16_t ufo) __banked
 uint8_t mapgen_run(uint16_t terrain, uint8_t mods, uint8_t levels) __banked
 {
 	int16_t script = -1;
-	memset(&G, 0, sizeof G);
+	mapgen_free();                       // страницы прошлой карты: memset ниже сотрёт их
+	memset(&G, 0, sizeof G);             //   номера, и они утекут из пула навсегда
 	G.mx = mods > MAX_MOD ? MAX_MOD : mods;
 	G.my = G.mx;
 	G.sz = levels;

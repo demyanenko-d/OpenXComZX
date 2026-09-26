@@ -39,7 +39,7 @@ $banks = @(
     @{ n = 9; page = 0x38; files = @('geoscape\base\scr_lab') }
     @{ n = 10; page = 0x39; files = @('geoscape\base\scr_craft') }
     @{ n = 11; page = 0x3A; files = @('kernel\gfx', 'kernel\cursor', 'kernel\boot'); ram = 0xBF00 }   # графика, опрос ввода, запуск; с #BF00 — фон под всплывающими окнами (gfx.c)
-    @{ n = 12; page = 0x3B; files = @('kernel\fat', 'kernel\sdres', 'kernel\music'); ram = 0xBF00 }   # музыка: состояние плеера с #BF00
+    @{ n = 12; page = 0x3B; files = @('kernel\fat', 'kernel\sdres', 'kernel\music'); ram = 0xBB00 }   # музыка: состояние плеера с #BF00, каталог и кэш SD (sdres.c) — с #BB00
     @{ n = 13; page = 0x3C; files = @('common\scr_ufop') }
     @{ n = 14; page = 0x3E; files = @('test\bank_a') }
     @{ n = 15; page = 0x3F; files = @('test\bank_b') }

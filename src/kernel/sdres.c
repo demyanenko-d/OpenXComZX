@@ -56,6 +56,21 @@ uint8_t sd_state;                      // 0 — не открывали, 1 — �
 #define IDX_PAGES 2
 #define IDX_MAX   2000
 
+// Завести слоты кэша: по SLOT_PAGES страниц на слот, сколько дадут. Зовётся и после
+// sdres_flush — тот отдаёт страницы бою, и вернуть их надо при первом же запросе ресурса,
+// иначе slot_page[] остаётся PG_NONE, а чтение уходит по адресу #3FC000 — в запретные
+// страницы #F0-#FF (загрузчики, TS-BIOS, vDOS), до 64 КБ за раз.
+static uint8_t slots_open(void)
+{
+	for (nslots = 0; nslots < NSLOTS; nslots++) {
+		uint8_t p = pg_alloc(SLOT_PAGES, SLOT_PAGES);
+		if (p == PG_NONE) break;
+		slot_page[nslots] = p;
+		slot_id[nslots] = 0;
+	}
+	return nslots != 0;
+}
+
 static uint8_t packs_open(void)
 {
 	uint8_t any = 0;
@@ -64,12 +79,7 @@ static uint8_t packs_open(void)
 	if (fat_mount()) { dbg_puts("sd: no FAT volume\n"); return 0; }
 	idx_page = pg_alloc(IDX_PAGES, 1);
 	if (idx_page == PG_NONE) return 0;
-	for (nslots = 0; nslots < NSLOTS; nslots++) {
-		uint8_t p = pg_alloc(SLOT_PAGES, SLOT_PAGES);
-		if (p == PG_NONE) break;
-		slot_page[nslots] = p;
-	}
-	if (!nslots) return 0;
+	if (!slots_open()) return 0;
 	uint32_t idx_pos = 0;
 	for (uint8_t p = 0; p < NPACKS; p++) {
 		far_t idx = FAR(idx_page, 0) + idx_pos;
@@ -113,6 +123,7 @@ uint32_t sdres_size(uint16_t id) __banked
 	const uint16_t want = id;   // сравнение байта с параметром SDCC 4.5 портит (CLAUDE.md)
 	if (!sd_state) sd_state = packs_open() ? 1 : 2;
 	if (sd_state != 1 || !id) return 0;
+	if (!nslots && !slots_open()) return 0;   // после sdres_flush слоты заводятся заново
 	for (uint8_t p = 0; p < NPACKS; p++)
 		for (uint16_t i = 0; i < pk_n[p]; i++) {
 			far_read(FAR(idx_page, 0) + ((uint32_t)idx_off[p] + 1 + i) * 16, e, 16);
@@ -130,6 +141,7 @@ uint8_t sdres_load(uint16_t id, uint8_t page, res_t *r) __banked
 	uint8_t e[16];
 	if (!sd_state) sd_state = packs_open() ? 1 : 2;
 	if (sd_state != 1 || !id) return 0;
+	if (!nslots && !slots_open()) return 0;   // после sdres_flush слоты заводятся заново
 	for (uint8_t p = 0; p < NPACKS; p++)
 		for (uint16_t i = 0; i < pk_n[p]; i++) {
 			far_read(FAR(idx_page, 0) + ((uint32_t)idx_off[p] + 1 + i) * 16, e, 16);
@@ -155,6 +167,7 @@ uint8_t sdres_find(uint16_t id, res_t *r) __banked
 	uint8_t e[16];
 	if (!sd_state) sd_state = packs_open() ? 1 : 2;
 	if (sd_state != 1 || !id) return 0;
+	if (!nslots && !slots_open()) return 0;   // после sdres_flush слоты заводятся заново
 	use_clock++;
 	for (uint8_t s = 0; s < nslots; s++)
 		if (slot_id[s] == id) { slot_use[s] = use_clock; *r = slot_res[s]; return 1; }
