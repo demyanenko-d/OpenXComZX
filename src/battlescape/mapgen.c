@@ -76,6 +76,10 @@ typedef struct {
 } gen_t;
 
 static gen_t __at(0xB000) G;
+// Память банка при старте не обнуляется, поэтому «есть ли что освобождать» держим
+// отдельным признаком в Win1 (_DATA обнуляется): иначе первый же mapgen_free отдавал
+// в пул мусорные номера страниц и рушил его (ревизия 2026-09-29).
+static uint8_t g_ready;
 // Какие корабль и НЛО ставить: номера террейнов из таблицы TERRAINS (#FFFF — не ставить).
 // Пока их задаёт вызывающий (отладка), потом — миссия: корабль отряда и тип НЛО.
 static uint16_t gen_craft = 0xFFFF, gen_ufo = 0xFFFF;
@@ -527,6 +531,7 @@ uint8_t mapgen_run(uint16_t terrain, uint8_t mods, uint8_t levels) __banked
 	G.pages = (uint8_t)((bytes + 16383) / 16384);
 	G.page = pg_alloc(G.pages, 1);
 	if (G.page == PG_NONE) { dbg_puts("mapgen: no pages\n"); return 0; }
+	g_ready = 1;                         // теперь в G есть что освобождать
 	G.cells = FAR(G.page, 0);
 	for (uint8_t i = 0; i < G.pages; i++) far_fill(FAR(G.page + i, 0), 0, 16384);
 
@@ -634,6 +639,8 @@ uint8_t mapgen_run(uint16_t terrain, uint8_t mods, uint8_t levels) __banked
 // (иначе ему нечем грузить фоны окон и он читает их с карты каждый кадр).
 void mapgen_free(void) __banked
 {
+	if (!g_ready) return;
+	g_ready = 0;
 	if (G.page != PG_NONE && G.pages) pg_free(G.page, G.pages);
 	G.page = PG_NONE;
 	G.pages = 0;

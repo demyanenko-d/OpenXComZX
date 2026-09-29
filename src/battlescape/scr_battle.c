@@ -909,8 +909,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	case EVT_OPEN:
 		if (dl_page == PG_NONE) dl_page = pg_alloc(2, 1);   // список вида: две страницы подряд
 		if (pf_page == PG_NONE) pf_page = pg_alloc(2, 1);   // рабочая память боя: поиск пути и таблицы
-		if (pf_page == PG_NONE) { dbg_puts("battle: no pages
-"); break; }   // иначе запись уйдёт в страницу #FF
+		if (pf_page == PG_NONE) { dbg_puts("battle: no pages\n"); break; }   // иначе — в страницу #FF
 		// Карта миссии собирается генератором (16 §3). Пока миссии нет, террейн берётся
 		// по очереди — клавиша G дальше пересобирает карту следующего террейна.
 		load_gen(gen_terrain);               // карта миссии: генератор (16 §3)
@@ -1039,8 +1038,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			path_n = 0;
 			cell_repaint(ox, oy);
 			dbg_puts("door: at "); dbg_dec(dx); dbg_puts(","); dbg_dec(dy);
-			dbg_puts(" slot "); dbg_dec(ds); dbg_puts("
-");
+			dbg_puts(" slot "); dbg_dec(ds); dbg_puts("\n");
 			center_on_unit();
 			break;
 		}

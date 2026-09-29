@@ -107,6 +107,7 @@ static uint8_t packs_open(void)
 // запросе ресурса — если к тому времени память освободится.
 void sdres_flush(void) __banked
 {
+	if (sd_state != 1) return;           // до packs_open в S лежит мусор из памяти банка
 	for (uint8_t s = 0; s < nslots; s++) {
 		if (slot_page[s] != PG_NONE) pg_free(slot_page[s], SLOT_PAGES);
 		slot_page[s] = PG_NONE;

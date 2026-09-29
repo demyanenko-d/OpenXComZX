@@ -213,8 +213,8 @@ uint8_t fat_read(const fat_file_t *f, uint32_t pos, far_t dst, uint32_t len) __b
 {
 	uint8_t old = pg_win3();
 	uint8_t r = FAT_OK;
-	if (!dst) { dbg_puts("fat_read: dst=0 len "); dbg_dec((uint16_t)len); dbg_puts("
-"); }
+	// Приёмник 0 — ошибка вызывающего: DMA уйдёт в физическую страницу 0 (ревизия 2026-09-26)
+	if (!dst) { dbg_puts("fat_read: dst=0 len "); dbg_dec((uint16_t)len); dbg_puts("\n"); }
 	while (len) {
 		uint32_t left;
 		uint32_t lba = file_lba(f, pos >> 9, &left);
