@@ -1,0 +1,17 @@
+# Загрузка с карты, как на железе (23_distribution.md): без снапшота — TS-BIOS читает
+# oxz_card.img, запускает boot.$C (Wild Commander), в панели виден корень карты.
+# Карта обязана быть FAT32: с FAT16 TS-BIOS пишет «System Meditation: FAT32 NOT FOUND!».
+# TS-BIOS в эмуляторе стартует в Setup (NVRAM пуст), выход — F12; F12 эмулятор забирает
+# себе под сброс, поэтому скан-код PS/2 шлётся командой pckey (07 §…).
+# Запуск: powershell -File tools\run.ps1 -Boot -Script tests\boot_card.oxs -Headless
+# Проверять глазами: tmp/shots/boot/ — 00 Setup, 02 панели WC с OXZTFTD.SPG.
+
+wait 400
+shot tmp/shots/boot/00_setup.png
+pckey F12
+wait 500
+shot tmp/shots/boot/01_boot.png
+wait 500
+shot tmp/shots/boot/02_wc.png
+echo boot card scenario done
+exit 0

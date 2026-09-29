@@ -3,13 +3,15 @@
 #   powershell -File tools\run.ps1 -Frames 200 -Shot tmp\shot.png    # N кадров, снимок, выход
 #   powershell -File tools\run.ps1 -Script tests\ui_geoscape.oxs -Headless   # сценарий без окна
 #   powershell -File tools\run.ps1 -Script tests\ui_geoscape.oxs          # сценарий в окне, потом — руками
+#   powershell -File tools\run.ps1 -Boot                             # как на железе: без снапшота,
+#       TS-BIOS грузится с карты oxz_card.img (boot.$C -> Wild Commander -> ENTER на OXZTFTD.SPG)
 #   powershell -File tools\run.ps1 -Cmd tmp\oxz_cmd.txt                   # окно + канал управления:
 #       строки, дописанные в этот файл, эмулятор исполняет на лету и после них не выходит —
 #       так ведётся живая игра снаружи: мышь, клавиши, снимки, save/load состояния (07 §…)
 # Эмулятор запускается из корня проекта: относительные пути в сценариях — от него.
 # Код выхода в тестовом режиме: код программы (#FAAF) / сценария (exit),
 # #FD — не прошёл expect, #FE — таймаут waitmark, #EE — авария (RST 0).
-param([int]$Frames = 0, [string]$Shot = '', [string]$Script = '', [string]$Wav = '', [string]$Cmd = '', [switch]$Headless)
+param([int]$Frames = 0, [string]$Shot = '', [string]$Script = '', [string]$Wav = '', [string]$Cmd = '', [switch]$Headless, [switch]$Boot)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $out  = Join-Path $root 'tmp\build'
@@ -20,10 +22,12 @@ New-Item -ItemType Directory -Force (Join-Path $root 'tmp\shots') | Out-Null
 # Просто окно (без сценария/кадров/снимка): консоль эмулятора закрывается
 # (MISC.HideConsole) — запись Win+G (Game Bar) видит только окно игры.
 $interactive = -not ($Frames -gt 0 -or $Shot -or $Script -or $Cmd -or $Headless)
+# -Boot: снапшот не грузим — машина стартует с карты через TS-BIOS, как настоящая
+# (карта должна быть FAT32, иначе TS-BIOS пишет «System Meditation: FAT32 NOT FOUND!»)
 & node (Join-Path $root 'tools\mkini.js') (Join-Path $emu 'Unreal.ini') $ini `
     'AUTOLOAD.diskA=' `
-    "AUTOLOAD.snapshot=$(Join-Path $out 'oxz.spg')" `
-    "ZC.SDCARD=$(Join-Path $root 'tmp\sdimg\oxz.img')" `
+    "AUTOLOAD.snapshot=$(if ($Boot) { '' } else { Join-Path $out 'oxz.spg' })" `
+    "ZC.SDCARD=$(Join-Path $root 'oxz_card.img')" `
     'INPUT.Wheel=KEMPSTON' `
     "MISC.HideConsole=$(if ($interactive) { 1 } else { 0 })"
 if ($LASTEXITCODE -ne 0) { throw 'mkini failed' }

@@ -75,9 +75,11 @@
   только в банки.
 - Большие пакеты (фоны `BACK.PAK`, `UFOP.PAK`, `ITEMS.PAK`) читаются с
   SD-карты (`src/kernel/sd.s`, `fat.c`, `sdres.c`, банк 12;
-  `project_docs/13_sd_card.md`); образ для эмулятора `tmp/sdimg/oxz.img`
-  собирает `build.ps1`. Готовая карта для реального железа (обе игры + WC + образ,
-  он же подкладывается эмулятору) — `powershell -File tools\dist.ps1`
+  `project_docs/13_sd_card.md`). Карта одна и для эмулятора, и для железа:
+  содержимое — `distr/` в корне проекта, образ — `oxz_card.img` там же
+  (единственное исключение из правила «всё в `tmp/`»), собирает
+  `powershell -File tools\dist.ps1` (`build.ps1` зовёт его сам, когда данные
+  новее образа). **Образ только FAT32** — TS-BIOS с FAT16 не грузится
   (`project_docs/23_distribution.md`). DMA — прямыми регистрами с опросом `DMAStatus`
   (очередь `dmaq` не запущена).
 - Целевое железо — с VDAC: палитра в CRAM с битом 15 (линейный RGB555),

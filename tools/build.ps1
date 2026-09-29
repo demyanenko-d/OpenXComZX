@@ -1,8 +1,9 @@
 # Сборка OpenXComZX: SDCC -> Intel HEX -> проверка map -> SPG (+ пакеты данных) + метки.
 # Раскладка — src/inc/memmap.h, project_docs/08_ui_port_plan.md §4.
 # Все выходные файлы — в tmp\build (правило проекта: артефакты только в tmp\).
-#   powershell -File tools\build.ps1 [-Game TFTD|UFO]
-param([string]$Game = 'TFTD')
+#   powershell -File tools\build.ps1 [-Game TFTD|UFO] [-NoCard]
+# -NoCard — не трогать карту (oxz_card.img): так зовёт dist.ps1, он соберёт её сам.
+param([string]$Game = 'TFTD', [switch]$NoCard)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $src  = Join-Path $root 'src'
@@ -95,19 +96,13 @@ if (-not (Test-Path $stamp) -or (Get-Item $conv).LastWriteTime -gt (Get-Item $st
     Invoke-Tool $conv @('--game', (Join-Path $root $gameDirs[$Game]), '--out', (Join-Path $root 'tmp\sd'))
 }
 
-# Образ SD для эмулятора (tmp\sdimg\oxz.img, 64 МБ без таблицы разделов, кластер
-# 4 КБ -> FAT16): каталог tmp\sd (OXZ\<игра>\*.PAK) — пакеты, которые игра читает
-# с карты (BACK, UFOP, ITEMS). robimg — unreal\tools\robimg (пути — абсолютные;
-# -o — размер кластера).
-$img = Join-Path $root 'tmp\sdimg\oxz.img'
-$robimg = Join-Path $root 'unreal\tools\robimg\robimg.exe'
-if (-not (Test-Path $img) -or (Get-Item $stamp).LastWriteTime -gt (Get-Item $img).LastWriteTime) {
-    New-Item -ItemType Directory -Force (Split-Path $img) | Out-Null
-    Remove-Item $img -ErrorAction SilentlyContinue
-    & $robimg "-p=$img" -s=65536 -o=4096 | Out-Null
-    & $robimg "-p=$img" -a=1 "-C=$(Join-Path $root 'tmp\sd')" | Out-Null
-    if (-not (Test-Path $img)) { throw 'robimg failed' }
-    Write-Host "sd image: $img"
+# Карта: distr\ (содержимое карты) + образ oxz_card.img в корне — одна и та же карта
+# и для эмулятора, и для железа (23_distribution.md). Раскладку и образ делает
+# dist.ps1 -NoBuild; зовём его, только если данные конвертера новее образа.
+$img = Join-Path $root 'oxz_card.img'
+if (-not $NoCard -and (-not (Test-Path $img) -or (Get-Item $stamp).LastWriteTime -gt (Get-Item $img).LastWriteTime)) {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'dist.ps1') -NoBuild
+    if ($LASTEXITCODE -ne 0) { throw 'dist.ps1 failed' }
 }
 
 # Заголовки из реестров конвертера — в tmp\build\gen
