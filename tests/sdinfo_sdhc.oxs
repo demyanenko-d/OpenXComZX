@@ -2,7 +2,7 @@
 # Без этого эмулятор Unreal даёт только SDSC (байтовая адресация + CMD16), и ветка CT_BLOCK
 # драйвера (sd.s set_arg) не выполнялась ни разу, а любая карта от 4 ГБ — SDHC/SDXC.
 # Ждём: тип карты 8 (+#03, CT_BLOCK), том FAT32, чтение пачкой = посекторно, 13 пакетов OK;
-# главное меню окно диагностики само не открывает. Снимок — tmp/shots/sdinfo/04_sdhc.png.
+# главное меню окно диагностики само не открывает. Снимок — tmp/shots/sdinfo/05_sdhc.png.
 # Запуск: powershell -File tools\run.ps1 -Script tests\sdinfo_sdhc.oxs -Headless
 #@set ZC.SDHC=1
 
@@ -13,7 +13,7 @@ waitmark 1 300
 poke _ui_request 14
 waitmark 14 600
 wait 4
-shot tmp/shots/sdinfo/04_sdhc.png
+shot tmp/shots/sdinfo/05_sdhc.png
 expect 3E:3003 8
 expect 3E:300A 1
 expect 3E:3010 0

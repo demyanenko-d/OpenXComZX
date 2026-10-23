@@ -11,7 +11,7 @@
 # Сообщения — латиницей: PS 5.1 читает этот файл как ANSI и портит кириллицу в конвейере.
 param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Names)
 $root = Split-Path -Parent $PSScriptRoot
-if (-not $Names) { $Names = @('selftest', 'ui_geoscape', 'campaign', 'month', 'aliens', 'dogfight', 'dogfight2', 'basedefense', 'ironman', 'lab', 'transfer', 'craft', 'inventory', 'ufopaedia', 'globe', 'intercept', 'bat_render', 'bat_cursor', 'bat_doors', 'bat_levels', 'bat_kneel', 'sdinfo', 'sdinfo_dma', 'sdinfo_sdhc', 'sdinfo_nocard') }
+if (-not $Names) { $Names = @('selftest', 'ui_geoscape', 'campaign', 'month', 'aliens', 'dogfight', 'dogfight2', 'basedefense', 'ironman', 'lab', 'transfer', 'craft', 'inventory', 'ufopaedia', 'globe', 'intercept', 'bat_render', 'bat_cursor', 'bat_doors', 'bat_levels', 'bat_kneel', 'sdinfo', 'sdinfo_dma', 'sdinfo_sdhc', 'sdinfo_nocard', 'ufopaedia+nodma', 'bat_render+nodma') }
 $log = Join-Path $root 'tmp\oxz_crash.log'
 $bad = 'OXZ: (DMA INTO KERNEL|PC LOST|STACK OVERFLOW|CACHE STALE|ISR STACK)'
 $warn = 'OXZ: (STACK LOW|STACK WRITE|POP MISMATCH|POP PATH)'
@@ -19,7 +19,11 @@ $fail = 0
 $sum = @()
 foreach ($n in $Names) {
     Remove-Item $log -ErrorAction SilentlyContinue
-    $o = & powershell -File (Join-Path $root 'tools\run.ps1') -Script "tests\$n.oxs" -Headless 2>&1
+    # «имя+nodma» — тот же сценарий на машине без канала DMA SPI (ZC.FaultDmaSpi=1): игра
+    # сама переходит на посекторное чтение карты (fat.c dma_check, 23 §5)
+    $script = $n; $extra = @()
+    if ($n -match '^(.+)\+nodma$') { $script = $Matches[1]; $extra = @('-Set', 'ZC.FaultDmaSpi=1') }
+    $o = & powershell -File (Join-Path $root 'tools\run.ps1') -Script "tests\$script.oxs" -Headless @extra 2>&1
     $code = $LASTEXITCODE
     $fr = '?'
     foreach ($l in $o) { if ("$l" -match 'exit code \S+ at frame (\d+)') { $fr = $Matches[1] } }

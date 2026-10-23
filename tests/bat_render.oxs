@@ -27,12 +27,16 @@ key CS+6
 wait 20
 shot tmp/shots/bat/02_scroll.png
 
-# следующий террейн — карта собирается заново
+# следующий террейн — карта собирается заново. Ждать по метке, а не фиксированное время:
+# сборка идёт внутри обработки клавиши (метка #FCAF = 0), без DMA SPI — 364 кадра против ~140
+# (-Set 'ZC.FaultDmaSpi=1', 23 §5), и нажатия посреди загрузки сдвигали камеру
 key G
-wait 200
+waitmark 248 1500
+wait 10
 shot tmp/shots/bat/03_terrain1.png
 key G
-wait 200
+waitmark 248 1500
+wait 10
 shot tmp/shots/bat/04_terrain2.png
 
 key SPACE

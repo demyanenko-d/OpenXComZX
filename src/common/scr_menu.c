@@ -13,6 +13,7 @@
 #include "scrdef.h"
 #include "music.h"
 #include "sddiag.h"
+#include "fat.h"
 
 static uint8_t ng_diff, ng_iron;
 static uint8_t sd_checked;             // карту проверяли (главное меню — раз за запуск)
@@ -338,7 +339,9 @@ void menu_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked
 	case SCR_MAIN_MENU:
 		if (slot == 0) {
 			str_copy(STR_OPENXCOM, buf, 200);
-			strcat(buf, "\x02ZX Evolution / TS-Config");
+			// чтение пачкой не прошло проверку (fat.c dma_check) — карта читается посекторно:
+			// игра работает, но медленнее; окно диагностики ради этого не всплывает (23 §5)
+			strcat(buf, fat_nodma ? "\x02TS-Config: SD without DMA" : "\x02ZX Evolution / TS-Config");
 		} else
 			strcpy(buf, "DEBUG: ALL WINDOWS");
 		break;

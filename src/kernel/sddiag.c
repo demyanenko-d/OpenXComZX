@@ -152,7 +152,10 @@ void sddiag_run(uint8_t full) __banked
 	if (!fat_ok) { D.rd = RD_NOVOL; return; }
 	uint8_t pg = pg_alloc(1, 1);
 	if (pg == PG_NONE) { D.rd = RD_NOPAGE; return; }
+	uint8_t nd = fat_nodma;             // сравнить именно пачку с посекторным, даже если
+	fat_nodma = 0;                      // fat_mount уже перевёл чтение на CMD17
 	read_test(pg);
+	fat_nodma = nd;
 	if (full)
 		for (uint8_t i = 0; i < NPK; i++) pack_check(i, pg);
 	pg_free(pg, 1);
@@ -161,9 +164,13 @@ void sddiag_run(uint8_t full) __banked
 // sd_state == 0 — не беда: sdres открывает пакеты лениво, при первом ресурсе, а главное меню
 // спрашивает до рисования своего фона (под сценарием интро нет — пакетов ещё никто не
 // просил). Нет пакетов вовсе — это и так поймает read_test: он открывает BACK.PAK сам.
+// Пачка не работает, но fat_mount уже перевёл чтение на CMD17 — не беда: игра цела, только
+// медленнее; об этом говорит заголовок главного меню, а окно на каждом запуске мешало бы.
 uint8_t sddiag_bad(void) __banked
 {
-	return sd_state == 2 || D.rd != RD_OK;
+	if (sd_state == 2) return 1;
+	if (fat_nodma && (D.rd == RD_MISMATCH || D.rd == RD_ERR18)) return 0;
+	return D.rd != RD_OK;
 }
 
 #define ROW_PK 6                        // первая строка пакетов
@@ -227,15 +234,16 @@ void sddiag_text(uint8_t row, char *buf) __banked
 	case 3:                             // пачка против посекторного
 		p = put(p, "Read test\t");
 		switch (D.rd) {
-		case RD_OK:       put(p, "CMD18+DMA = CMD17: OK"); break;
-		case RD_MISMATCH: p = put(p, "MISMATCH at byte "); put_num(p, D.rd_at); break;
-		case RD_ERR18:    put(p, "CMD18+DMA: READ ERROR"); break;
-		case RD_ERR17:    put(p, "CMD17: READ ERROR"); break;
-		case RD_NOPAGE:   put(p, "no free page"); break;
-		case RD_NOFILE:   put(p, "no BACK.PAK to read"); break;
-		case RD_NOVOL:    put(p, "no volume"); break;
-		case RD_BADHDR:   put(p, "same data, but not a pack"); break;
+		case RD_OK:       p = put(p, "CMD18+DMA = CMD17: OK"); break;
+		case RD_MISMATCH: p = put(p, "MISMATCH at byte "); p = put_num(p, D.rd_at); break;
+		case RD_ERR18:    p = put(p, "CMD18+DMA: READ ERROR"); break;
+		case RD_ERR17:    p = put(p, "CMD17: READ ERROR"); break;
+		case RD_NOPAGE:   p = put(p, "no free page"); break;
+		case RD_NOFILE:   p = put(p, "no BACK.PAK to read"); break;
+		case RD_NOVOL:    p = put(p, "no volume"); break;
+		case RD_BADHDR:   p = put(p, "same data, but not a pack"); break;
 		}
+		if (fat_nodma) put(p, ", using CMD17");   // fat_mount перевёл чтение на посекторное
 		break;
 	case 4:
 	case 5: {                           // байты двух чтений

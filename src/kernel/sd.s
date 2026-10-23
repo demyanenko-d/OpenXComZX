@@ -349,6 +349,7 @@ rdm_got:
 	cp	#0xFE
 	jr	nz, rdm_fail
 	call	dma_sec
+	jr	c, rdm_fail		; DMA не кончился — канала нет (fat.c перейдёт на CMD17)
 	in	a, (SD_DAT)		; CRC
 	in	a, (SD_DAT)
 	ld	hl, (_sd_phys + 1)	; адрес += 512
@@ -371,6 +372,8 @@ rdm_fail:
 
 ;; DMA SPI->RAM: 256 слов с порта #57 по физическому адресу _sd_phys. Регистры —
 ;; напрямую с опросом DMAStatus, как в gfx.c / far.c (очередь dmaq не запущена).
+;; Выход: CY=1 — DMA не кончился за 65536 опросов (~3 млн тактов, ~40 кадров): на машине
+;; без канала DMA SPI раньше здесь было вечное ожидание.
 dma_sec:
 	ld	bc, #0x27AF		; DMAStatus: ждать, пока занят (графика)
 ds_w0:	in	a, (c)
@@ -404,9 +407,15 @@ ds_w0:	in	a, (c)
 	ld	a, #0x02		; DMACtrl: SPI->RAM, пуск
 	ld	b, #0x27
 	out	(c), a
+	ld	de, #0			; ждать конца не вечно: 65536 опросов
 ds_w1:	in	a, (c)
 	rlca
-	jr	c, ds_w1
+	ret	nc			; готово, CY=0
+	dec	de
+	ld	a, d
+	or	e
+	jr	nz, ds_w1
+	scf				; DMA не кончился: CY=1
 	ret
 
 ;; CMD12: остановить передачу (CS не отпускать), пропустить байт-заполнитель, R1b —

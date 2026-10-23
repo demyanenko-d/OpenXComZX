@@ -1,16 +1,24 @@
-# Диагностика SD при отказе DMA SPI->RAM (эмулятор: «fault dmaspi 1» — байты с карты
-# читаются, но в память не пишутся). Так выглядела бы машина без этого канала: том и каталоги
-# читаются посекторно (CMD17 + INIR) и находятся, а ресурсы пачкой (CMD18 + DMA) — пустые;
-# у игры пропадают заставка, фоны окон и музыка. Главное меню само открывает окно
-# диагностики (SCR_SDINFO = 14): read test — MISMATCH (+#10 = 1), пакеты при этом — OK.
-# После «fault dmaspi 0» и RETRY — снова норма. Снимки — tmp/shots/sdinfo/.
-# Запуск: powershell -File tools\run.ps1 -Script tests\sdinfo_dma.oxs -Headless
+# Отказ DMA SPI->RAM (эмулятор: «fault dmaspi 1» — байты с карты читаются, но в память не
+# пишутся). Так выглядела бы машина без этого канала: том и каталоги читаются посекторно
+# (CMD17 + INIR) и находятся, а ресурсы пачкой (CMD18 + DMA) — пустые. fat_mount это
+# замечает (dma_check) и переводит все чтения на CMD17 (_fat_nodma = 1): фон главного меню
+# настоящий, во второй строке заголовка — «TS-Config: SD without DMA»; окно диагностики само
+# не всплывает (игра цела). Открытое запросом, оно показывает Read test MISMATCH (+#10 = 1)
+# и «using CMD17», пакеты — OK. После «fault dmaspi 0» и RETRY — пачка снова совпадает.
+# Вся игра без DMA — любой сценарий с -Set 'ZC.FaultDmaSpi=1' (23 §5).
+# Снимки — tmp/shots/sdinfo/. Запуск: powershell -File tools\run.ps1 -Script tests\sdinfo_dma.oxs -Headless
 
 fault dmaspi 1
-waitmark 14 900
+waitmark 1 600
 poke _alien_off 1
+wait 10
+waitmark 1 300
+expect _fat_nodma 1
+shot tmp/shots/sdinfo/02_menu_nodma.png
+poke _ui_request 14
+waitmark 14 600
 wait 4
-shot tmp/shots/sdinfo/02_dma_fault.png
+shot tmp/shots/sdinfo/03_dma_fault.png
 expect 3E:3010 1
 expect 3E:3011 0
 expect 3E:3023 0
@@ -19,7 +27,7 @@ fault dmaspi 0
 key R
 waitmark 14 600
 wait 4
-shot tmp/shots/sdinfo/03_dma_back.png
+shot tmp/shots/sdinfo/04_dma_back.png
 expect 3E:3010 0
 key SPACE
 waitmark 1 300

@@ -26,6 +26,7 @@ static uint16_t root_secs;              // FAT16: секторов корнев�
 static uint32_t vol_base;               // LBA тома (0 — том с сектора 0, без MBR)
 static uint8_t vol_part;                // тип раздела из MBR (0 — MBR нет)
 uint8_t fat_ok;
+uint8_t fat_nodma;                      // 1 — пачка (CMD18 + DMA) не прошла проверку: всё посекторно
 
 static uint8_t read_sec(uint32_t lba)
 {
@@ -40,6 +41,40 @@ static uint8_t read_sec(uint32_t lba)
 
 static uint16_t w16(uint16_t o) { return secbuf[o] | (secbuf[o + 1] << 8); }
 static uint32_t w32(uint16_t o) { return w16(o) | ((uint32_t)w16(o + 2) << 16); }
+
+// Проверка чтения пачкой при монтировании: два первых сектора тома — CMD18 + DMA SPI->RAM
+// в страницу пула и посекторно (CMD17 + INIR в secbuf) — должны совпасть. Иначе (сторонний
+// эмулятор без канала DMA SPI или без CMD18: каталоги и том находятся, а ресурсы приходят
+// пустыми — без заставки, фонов и музыки, 23 §5) fat_read читает всё посекторно: медленнее,
+// но данные настоящие. Страница залита узором — «DMA ничего не записал» не сойдёт за
+// совпадение. Нет свободной страницы (бой) — прежний вывод остаётся. Монтируют и sdres,
+// и музыка, и глобус, поэтому проверка здесь, а не у кого-то одного из них.
+static void dma_check(uint32_t lba)
+{
+	uint8_t b[16];
+	uint8_t bad = 0;
+	uint8_t pg = pg_alloc(1, 1);
+	if (pg == PG_NONE) return;
+	uint8_t old = pg_win3();
+	far_fill(FAR(pg, 0), 0x55, 1024);
+	sd_lba = lba;
+	sd_phys = FAR(pg, 0);
+	sd_cnt = 2;
+	if (sd_rdm()) bad = 2;
+	for (uint8_t s = 0; s < 2 && !bad; s++) {
+		sec_cached = 0xFFFFFFFFul;
+		if (read_sec(lba + s)) { bad = 3; break; }
+		for (uint16_t o = 0; o < 512; o += 16) {
+			far_read(FAR(pg, (uint16_t)s * 512 + o), b, 16);
+			if (memcmp(b, secbuf + o, 16)) { bad = 1; break; }
+		}
+	}
+	pg_map3(old);
+	pg_free(pg, 1);
+	if (bad == 3) return;                       // и CMD17 не читает — DMA тут ни при чём
+	fat_nodma = bad != 0;
+	if (bad) dbg_puts(bad == 1 ? "sd: CMD18+DMA data differ, reading by CMD17\n" : "sd: CMD18+DMA failed, reading by CMD17\n");
+}
 
 uint8_t fat_mount(void) __banked
 {
@@ -76,6 +111,7 @@ uint8_t fat_mount(void) __banked
 	data_lba = root_lba + root_secs;
 	root_clus = fat32 ? w32(44) : 0;
 	fat_ok = 1;
+	dma_check(base);
 	return FAT_OK;
 }
 
@@ -228,7 +264,7 @@ uint8_t fat_read(const fat_file_t *f, uint32_t pos, far_t dst, uint32_t len) __b
 		uint16_t so = (uint16_t)pos & 511;
 		uint16_t n = 512 - so;
 		if (n > len) n = (uint16_t)len;
-		if (!so && len >= 512 && !((uint8_t)dst & 1)) {
+		if (!so && len >= 512 && !((uint8_t)dst & 1) && !fat_nodma) {
 			uint32_t k = len >> 9;
 			if (k > left) k = left;
 			if (k > 0xFFFF) k = 0xFFFF;

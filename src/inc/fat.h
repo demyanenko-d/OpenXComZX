@@ -31,6 +31,8 @@ typedef struct {
 } fat_info_t;
 
 extern uint8_t fat_ok;      // том смонтирован
+extern uint8_t fat_nodma;   // 1 — чтение пачкой (CMD18 + DMA) не прошло проверку при монтировании,
+                            // fat_read читает посекторно (CMD17); 23 §5
 uint8_t fat_mount(void) __banked;
 void fat_info(fat_info_t *i) __banked;
 uint8_t fat_open(const char *path, fat_file_t *f) __banked;

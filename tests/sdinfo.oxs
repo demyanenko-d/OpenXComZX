@@ -22,6 +22,7 @@ expect 3E:3010 0
 expect 3E:3023 0
 expect 3E:3026 0
 expect 3E:302F 0
+expect _fat_nodma 0
 # RETRY — повтор той же проверки
 key R
 waitmark 14 600
