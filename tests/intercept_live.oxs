@@ -1,0 +1,60 @@
+# Перехват НЛО по живому пути (жалоба 2026-10-24: «виснет при перехвате НЛО»): новая игра,
+# пришельцы включены, настоящее обнаружение НЛО (как aliens.oxs) -> «Intercept» -> первый
+# корабль в списке -> OK -> время вперёд -> встреча и воздушный бой. В intercept/dogfight
+# этот путь обходится отладочными ключами (_geo_dbg_fly, _ui_request 216).
+# Перед «Intercept» — снимок машины tmp/saves/icpt_before.bin (повторять участок: load).
+# Снимки — tmp/shots/icpt/. Запуск: powershell -File tools\run.ps1 -Script tests\intercept_live.oxs -Headless
+
+# сторож ячейки с сохранённым IX: в 2026-10-24 globe_xy вернула испорченный IX, и mk_add ушла по нему
+ixguard _globe_xy
+# кто сбрасывает бит 4 в коде ядра: call ___muluint2ulong (#0316) в ___mulsint2slong превращался в call #0306
+watch 04:0303
+waitmark 1 600
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 600
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 300
+type atlantis
+key ENTER
+waitmark 32 300
+
+# --- обнаружение НЛО
+key 6
+waitmark 36 3000
+shot tmp/shots/icpt/01_ufo_detected.png
+save tmp/saves/icpt_before.bin
+# «Intercept» -> список кораблей
+pokew _cursor_x 128
+pokew _cursor_y 124
+click L
+waitmark 200 300
+shot tmp/shots/icpt/02_crafts.png
+# вторая строка — BARRACUDA-1 (первая — TRITON-1, транспорт без оружия: боя не будет)
+pokew _cursor_x 60
+pokew _cursor_y 90
+click L
+waitmark 203 300
+shot tmp/shots/icpt/03_confirm.png
+key ENTER
+waitmark 32 300
+shot tmp/shots/icpt/04_flying.png
+# Полёт: зонд заканчивает маршрут и исчезает раньше, чем корабль его догонит (под сценарием
+# зерно постоянное — исход тот же каждый раз); окно «UFO lost» при этом пропускается — НЛО
+# уже нет (scr_geo.c show_event). Сам воздушный бой — dogfight.oxs / dogfight2.oxs. Здесь
+# важно, что вылет и полёт идут без аварий: до исправления cpu_column машина падала через
+# 12 кадров после OK (KERNEL CODE WRITE, затем PC LOST).
+key 2
+wait 600
+shot tmp/shots/icpt/05_flight.png
+wait 1500
+shot tmp/shots/icpt/06_after.png
+echo intercept live scenario OK
+exit 0

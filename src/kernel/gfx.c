@@ -47,13 +47,18 @@ void gfx_pset(int16_t x, int16_t y, uint8_t c) __banked
 	pg_map3(old);
 }
 
-// Столбец CPU: страница экрана — 32 строки по 512 байт, подключается раз на полосу.
+// Столбец CPU: страница экрана — 32 строки по 512 байт, подключается раз на полосу. Строк до
+// конца страницы — по той строке, что подключит gfx_map, то есть с gfx_yb. Считали по голому
+// y, и пока виджет собирался в рабочей области (ui.c stage_begin: gfx_yb = stage_y − y, не
+// кратно 32) столбец проходил конец страницы: указатель уходил за #FFFF в Win0 и писал цвет
+// линии в код ядра — так call в ___mulsint2slong стал call #0306, и игра падала при перехвате
+// НЛО (2026-10-24, findings_log; в эмуляторе теперь ловушка KERNEL CODE WRITE).
 static void cpu_column(int16_t x, int16_t y, int16_t h, uint8_t c)
 {
 	uint8_t old = pg_win3();
 	while (h > 0) {
 		uint8_t *p = gfx_map(x, y);
-		uint8_t n = 32 - ((uint8_t)y & 31);
+		uint8_t n = 32 - ((uint8_t)(y + gfx_yb) & 31);
 		if (n > h) n = (uint8_t)h;
 		h -= n;
 		y += n;
