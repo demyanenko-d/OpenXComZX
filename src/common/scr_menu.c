@@ -12,8 +12,10 @@
 #include "game.h"
 #include "scrdef.h"
 #include "music.h"
+#include "sddiag.h"
 
 static uint8_t ng_diff, ng_iron;
+static uint8_t sd_checked;             // карту проверяли (главное меню — раз за запуск)
 
 // ---------------------------------------------------------------- главное меню
 
@@ -239,9 +241,24 @@ static const struct { uint8_t id; const char *name; } dbg_list[] = {
 	{ SCR_MONTHLY_COSTS, "Monthly costs" }, { SCR_BUILD_FACILITIES, "Build facilities" },
 	{ SCR_CRAFTS, "Crafts" }, { SCR_SOLDIERS, "Soldiers" }, { SCR_PURCHASE, "Purchase" }, { SCR_SELL, "Sell" },
 	{ SCR_STATISTICS, "Statistics" }, { SCR_SLIDESHOW, "Lose/win slideshow" },
+	{ SCR_SDINFO, "SD card diagnostics" },   // последней: тесты кликают строки по номеру; без новой игры (menu_event)
 };
 static uint8_t dbg_cut;                 // «Lose/win slideshow»: по очереди поражение и победа
 #define NDBG (sizeof dbg_list / sizeof dbg_list[0])
+
+// ---------------------------------------------------------------- диагностика SD
+
+// Своё окно (в OpenXcom такого нет): на чужой машине отладочный вывод не виден, а без
+// пакетов с карты игра молча теряет заставки, фоны и музыку. Открывается само из главного
+// меню, если пакеты не открылись или чтение пачкой (DMA) расходится с посекторным; вручную —
+// из отладочного списка. Без фоновой картинки: фон — тоже с карты.
+static const wdef_t w_sdinfo[] = {
+	WIN(0, 0, 320, 200, UI_EL_WINDOW),
+	TXT(5, 5, 310, 9, UI_EL_TEXT, DYN(0), TC),
+	LST(8, 16, 304, 19 * 8, UI_EL_LIST, 1, 0),   // 19 строк — всё на одном снимке
+	BTN(64, 176, 92, 16, UI_EL_BUTTON, DYN(2), A_CUSTOM, 1, 'r'),
+	BTN(164, 176, 92, 16, UI_EL_BUTTON, STR_OK, A_POP, 0, ESC),
+};
 
 // ---------------------------------------------------------------- ComboBox
 
@@ -275,6 +292,7 @@ static const scr_t tab[] = {
 	SCR(SCR_DEBUG, UI_SCR_SAVEMENUS, UI_SCR_GEOSCAPE, RES_BACK01_SCR, SF_POPUP | SF_ALTPAL, w_debug),
 	SCR(SCR_COMBO, 0, NOUI, 0, SF_POPUP, w_combo),
 	SCR(SCR_DELETE_SAVE, UI_SCR_SAVEMENUS, UI_SCR_GEOSCAPE, RES_BACK01_SCR, SF_POPUP | SF_ALTPAL, w_delete),
+	SCR(SCR_SDINFO, UI_SCR_SAVEMENUS, UI_SCR_GEOSCAPE, 0, SF_POPUP | SF_ALTPAL, w_sdinfo),
 };
 
 uint8_t menu_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
@@ -353,6 +371,15 @@ void menu_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked
 		} else if (row < nart)
 			str_copy(rtab_word(&upt, art[row], offsetof(r_ufopaedia_t, name)), buf, 256);
 		break;
+	case SCR_SDINFO:
+		if (slot == 0) sddiag_title(buf);
+		else if (slot == 2) strcpy(buf, "RETRY");
+		else if (row == LIST_COLS) {
+			static const uint8_t cw[] = { 66, 238 };
+			list_cols(buf, 2, cw, 0);
+		} else
+			sddiag_text(row, buf);
+		break;
 	case SCR_DEBUG:
 		if (slot == 0) strcpy(buf, "ALL WINDOWS (DEBUG)");
 		else if (row == LIST_COLS) {
@@ -375,6 +402,7 @@ uint8_t menu_rows(uint8_t id, uint8_t slot) __banked
 	case SCR_UFOP_SELECT: return nart;
 	case SCR_DEBUG: return NDBG;
 	case SCR_COMBO: return combo.n;
+	case SCR_SDINFO: return sddiag_rows();
 	}
 	return 0;
 }
@@ -383,6 +411,14 @@ uint8_t menu_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 {
 	switch (id) {
 	case SCR_MAIN_MENU:
+		// Раз за запуск: пакеты с карты не открылись или пачка (DMA) расходится с посекторным
+		// чтением — показать диагностику, иначе на чужой машине не понять, куда делись
+		// заставка, фоны и музыка (23 §5)
+		if (ev == EVT_OPEN && !sd_checked) {
+			sd_checked = 1;
+			sddiag_run(0);
+			if (sddiag_bad()) ui_request = SCR_SDINFO;
+		}
 		if (ev == EVT_MUSIC) mus_play(mus_kind(MK_MENU));   // GMSTORY / GMWAITLO (18 §2)
 		if (ev == EVT_BUTTON && arg == 1) {       // выход: в эмуляторе — код 0
 			OXZ_DBG_EXIT = 0;
@@ -462,8 +498,17 @@ uint8_t menu_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	case SCR_COMBO:
 		if (ev == EVT_LIST && arg < combo.n) { combo.sel = arg; combo.changed = 1; UI_GO(A_POP, 0); }
 		break;
+	case SCR_SDINFO:
+		if (ev == EVT_OPEN) sddiag_run(1);
+		else if (ev == EVT_BUTTON && arg == 1) {  // RETRY: заново (карту могли переставить)
+			sddiag_run(1);
+			ui_dirty(0);
+			ui_dirty(1);
+		}
+		break;
 	case SCR_DEBUG:
 		if (ev == EVT_LIST) {
+			if (dbg_list[arg].id == SCR_SDINFO) { UI_GO(A_PUSH, SCR_SDINFO); break; }
 			if (!ctx.in_game) quick_game();
 			strcpy(ui_msg, "Test message");
 			if (dbg_list[arg].id == SCR_SLIDESHOW) {   // конец игры: заставка, статистика, главное меню

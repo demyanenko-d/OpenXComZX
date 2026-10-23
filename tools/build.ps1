@@ -42,7 +42,7 @@ $banks = @(
     @{ n = 11; page = 0x3A; files = @('kernel\gfx', 'kernel\cursor', 'kernel\boot'); ram = 0xBF00 }   # графика, опрос ввода, запуск; с #BF00 — фон под всплывающими окнами (gfx.c)
     @{ n = 12; page = 0x3B; files = @('kernel\fat', 'kernel\sdres', 'kernel\music'); ram = 0xBB00 }   # музыка: состояние плеера с #BF00, каталог и кэш SD (sdres.c) — с #BB00
     @{ n = 13; page = 0x3C; files = @('common\scr_ufop') }
-    @{ n = 14; page = 0x3E; files = @('test\bank_a') }
+    @{ n = 14; page = 0x3E; files = @('test\bank_a', 'kernel\sddiag'); ram = 0xB000 }   # служебный: самотест джампера, диагностика SD (с #B000 — её результаты)
     @{ n = 15; page = 0x3F; files = @('test\bank_b') }
     @{ n = 16; page = 0x3D; files = @('geoscape\month') }   # конец месяца
     @{ n = 17; page = 0x40; files = @('geoscape\earth\world', 'geoscape\earth\geo') }   # ГСЧ, регионы, сфера, маска суши

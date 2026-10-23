@@ -23,6 +23,8 @@ static uint32_t sec_cached = 0xFFFFFFFFul;
 static uint8_t fat32, spc, spc_shift;   // FAT32?, секторов на кластер (степень 2)
 static uint32_t fat_lba, data_lba, root_lba, root_clus;
 static uint16_t root_secs;              // FAT16: секторов корневого каталога
+static uint32_t vol_base;               // LBA тома (0 — том с сектора 0, без MBR)
+static uint8_t vol_part;                // тип раздела из MBR (0 — MBR нет)
 uint8_t fat_ok;
 
 static uint8_t read_sec(uint32_t lba)
@@ -43,6 +45,8 @@ uint8_t fat_mount(void) __banked
 {
 	uint32_t base = 0;
 	fat_ok = 0;
+	vol_base = 0;
+	vol_part = 0;
 	sec_cached = 0xFFFFFFFFul;
 	if (sd_init()) return FAT_NOCARD;
 	if (read_sec(0)) return FAT_IOERR;
@@ -50,8 +54,10 @@ uint8_t fat_mount(void) __banked
 	// MBR: первый раздел FAT (тип 4, 6, B, C, E), если сектор 0 не загрузочный BPB
 	if (secbuf[0] != 0xEB && secbuf[0] != 0xE9) {
 		uint8_t t = secbuf[0x1C2];
-		if (t != 0x04 && t != 0x06 && t != 0x0B && t != 0x0C && t != 0x0E) return FAT_NOFS;
+		vol_part = t;
 		base = w32(0x1C6);
+		vol_base = base;
+		if (t != 0x04 && t != 0x06 && t != 0x0B && t != 0x0C && t != 0x0E) return FAT_NOFS;
 		if (read_sec(base)) return FAT_IOERR;
 	}
 	if (w16(11) != 512) return FAT_NOFS;
@@ -264,4 +270,14 @@ uint8_t fat_write(const fat_file_t *f, uint32_t pos, far_t src, uint32_t len) __
 	}
 	pg_map3(old);
 	return r;
+}
+
+// Сведения о томе для экрана диагностики (sddiag.c, другой банк): i — в Win0/Win1.
+void fat_info(fat_info_t *i) __banked
+{
+	i->part = vol_part;
+	i->base = vol_base;
+	i->fat32 = fat32;
+	i->spc = spc;
+	i->data_lba = data_lba;
 }

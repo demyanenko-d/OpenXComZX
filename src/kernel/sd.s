@@ -26,6 +26,8 @@
 	.globl	_sd_phys
 	.globl	_sd_cnt
 	.globl	_sd_type
+	.globl	_sd_step
+	.globl	_sd_r1
 
 SD_DAT	.equ	0x57
 SD_CTL	.equ	0x77
@@ -35,6 +37,10 @@ CT_BLOCK .equ	0x08
 _sd_lba::	.ds	4
 _sd_ptr::	.ds	2
 _sd_type::	.ds	1		; 0 — нет карты, CT_BLOCK — блочная адресация, 4 — байтовая
+;; для диагностики (sddiag.c): на каком шаге sd_init остановилась (1 CMD0, 2 CMD8,
+;; 3 ACMD41, 4 CMD58, 5 CMD16; 0 — карта готова) и последний ответ R1 (бит 7 — ответа нет)
+_sd_step::	.ds	1
+_sd_r1::	.ds	1
 _sd_phys::	.ds	4
 _sd_cnt::	.ds	2
 sd_arg:		.ds	4		; аргумент команды, старший байт первым
@@ -112,9 +118,11 @@ cmd_w:	in	a, (SD_DAT)
 	bit	7, a
 	jr	z, cmd_ok
 	djnz	cmd_w
+	ld	(_sd_r1), a
 	scf
 	ret
-cmd_ok:	or	a
+cmd_ok:	ld	(_sd_r1), a
+	or	a
 	ret
 
 ;; ---------------------------------------------------------------- инициализация
@@ -122,6 +130,8 @@ cmd_ok:	or	a
 _sd_init::
 	xor	a
 	ld	(_sd_type), a
+	inc	a			; шаг 1: CMD0
+	ld	(_sd_step), a
 	call	cs_off
 	ld	b, #250
 	call	skip
@@ -142,7 +152,9 @@ init0n:	dec	de
 	jr	nz, init0
 	jp	fail
 
-init8:	call	arg_zero		; CMD8: SDv2? эхо #01AA
+init8:	ld	a, #2			; шаг 2: CMD8
+	ld	(_sd_step), a
+	call	arg_zero		; CMD8: SDv2? эхо #01AA
 	ld	hl, #sd_arg + 2
 	ld	(hl), #0x01
 	inc	hl
@@ -164,7 +176,9 @@ init8:	call	arg_zero		; CMD8: SDv2? эхо #01AA
 	jr	acmd
 
 sdv1:	ld	e, #0			; SDv1: ACMD41 без HCS, адресация байтовая
-acmd:	ld	hl, #0x8000
+acmd:	ld	a, #3			; шаг 3: ACMD41 (E — HCS, не трогать)
+	ld	(_sd_step), a
+	ld	hl, #0x8000
 acmd_l:	push	hl
 	push	de
 	call	arg_zero
@@ -188,7 +202,9 @@ acmd_l:	push	hl
 	jr	nz, acmd_l
 	jp	fail
 
-ready:	ld	a, e
+ready:	ld	a, #4			; шаг 4: CMD58
+	ld	(_sd_step), a
+	ld	a, e
 	or	a
 	ld	a, #0x04
 	jr	z, settype		; SDv1 — байтовая
@@ -212,6 +228,8 @@ settype:
 	ld	(_sd_type), a
 	cp	#CT_BLOCK
 	jr	z, init_ok
+	ld	a, #5			; шаг 5: CMD16
+	ld	(_sd_step), a
 	call	arg_zero		; байтовая адресация: CMD16 — блок 512
 	ld	hl, #sd_arg + 2
 	ld	(hl), #0x02
@@ -220,6 +238,7 @@ settype:
 init_ok:
 	call	release
 	xor	a
+	ld	(_sd_step), a		; 0 — карта готова
 	ret
 
 fail:	call	release

@@ -29,7 +29,9 @@
   `powershell -File tools\run.ps1 -Script tests\campaign.oxs -Headless`,
   также `tests\lab.oxs`, `transfer.oxs`, `craft.oxs`, `ufopaedia.oxs`, `month.oxs`,
   `aliens.oxs`, `dogfight.oxs`, `dogfight2.oxs`, `basedefense.oxs`, `ironman.oxs`,
-  `globe.oxs` (скорость глобуса по зумам — `tools\globeprof.ps1`), `bat_render.oxs`
+  `globe.oxs` (скорость глобуса по зумам — `tools\globeprof.ps1`), `bat_render.oxs`,
+  `sdinfo*.oxs` (окно диагностики SD: норма, отказ DMA, SDHC, нет карты; настройки
+  эмулятора сценарий задаёт строкой `#@set`)
   (`ufopaedia_ufo.oxs` — после сборки `-Game UFO`;
   все разом — `powershell -File tools\runtests.ps1`), `month.oxs`, `aliens.oxs`;
   все разом — `powershell -File tools\runtests.ps1` (итог «имя=код(кадров)»;

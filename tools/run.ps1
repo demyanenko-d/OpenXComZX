@@ -11,7 +11,9 @@
 # Эмулятор запускается из корня проекта: относительные пути в сценариях — от него.
 # Код выхода в тестовом режиме: код программы (#FAAF) / сценария (exit),
 # #FD — не прошёл expect, #FE — таймаут waitmark, #EE — авария (RST 0).
-param([int]$Frames = 0, [string]$Shot = '', [string]$Script = '', [string]$Wav = '', [string]$Cmd = '', [switch]$Headless, [switch]$Boot)
+# -Set 'ZC.SDHC=1','ZC.SDCARD=' — свои ключи ini эмулятора поверх стандартных; сценарий
+# может объявить их сам строками «#@set ZC.SDHC=1» (так их видит и runtests.ps1).
+param([int]$Frames = 0, [string]$Shot = '', [string]$Script = '', [string]$Wav = '', [string]$Cmd = '', [switch]$Headless, [switch]$Boot, [string[]]$Set = @())
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $out  = Join-Path $root 'tmp\build'
@@ -22,6 +24,11 @@ New-Item -ItemType Directory -Force (Join-Path $root 'tmp\shots') | Out-Null
 # Просто окно (без сценария/кадров/снимка): консоль эмулятора закрывается
 # (MISC.HideConsole) — запись Win+G (Game Bar) видит только окно игры.
 $interactive = -not ($Frames -gt 0 -or $Shot -or $Script -or $Cmd -or $Headless)
+if ($Script) {
+    foreach ($l in [System.IO.File]::ReadAllLines((Join-Path $root $Script))) {
+        if ($l -match '^#@set\s+(\S+=\S*)') { $Set += $Matches[1] }
+    }
+}
 # -Boot: снапшот не грузим — машина стартует с карты через TS-BIOS, как настоящая
 # (карта должна быть FAT32, иначе TS-BIOS пишет «System Meditation: FAT32 NOT FOUND!»)
 & node (Join-Path $root 'tools\mkini.js') (Join-Path $emu 'Unreal.ini') $ini `
@@ -29,7 +36,8 @@ $interactive = -not ($Frames -gt 0 -or $Shot -or $Script -or $Cmd -or $Headless)
     "AUTOLOAD.snapshot=$(if ($Boot) { '' } else { Join-Path $out 'oxz.spg' })" `
     "ZC.SDCARD=$(Join-Path $root 'oxz_card.img')" `
     'INPUT.Wheel=KEMPSTON' `
-    "MISC.HideConsole=$(if ($interactive) { 1 } else { 0 })"
+    "MISC.HideConsole=$(if ($interactive) { 1 } else { 0 })" `
+    @Set
 if ($LASTEXITCODE -ne 0) { throw 'mkini failed' }
 
 $argv = @('-c', $ini, '-l', (Join-Path $out 'oxz.labels'))

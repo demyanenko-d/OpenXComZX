@@ -21,8 +21,18 @@ typedef struct {
 	uint32_t run_clus[FAT_RUNS], run_len[FAT_RUNS];
 } fat_file_t;
 
+// Сведения о томе (экран диагностики SD, sddiag.c)
+typedef struct {
+	uint8_t part;           // тип раздела из MBR (0 — том с сектора 0, без MBR)
+	uint32_t base;          // LBA тома
+	uint8_t fat32;          // 1 — FAT32, 0 — FAT16
+	uint8_t spc;            // секторов в кластере
+	uint32_t data_lba;      // первый сектор области данных
+} fat_info_t;
+
 extern uint8_t fat_ok;      // том смонтирован
 uint8_t fat_mount(void) __banked;
+void fat_info(fat_info_t *i) __banked;
 uint8_t fat_open(const char *path, fat_file_t *f) __banked;
 uint8_t fat_read(const fat_file_t *f, uint32_t pos, far_t dst, uint32_t len) __banked;
 uint8_t fat_write(const fat_file_t *f, uint32_t pos, far_t src, uint32_t len) __banked;

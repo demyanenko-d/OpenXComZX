@@ -20,6 +20,7 @@
 #define SCR_DEBUG           11   // отладочное меню: открыть любое окно
 #define SCR_COMBO           12   // выпадающий список ComboBox (combo, screens.c)
 #define SCR_DELETE_SAVE     13   // подтверждение удаления сохранения (ctx.item — слот)
+#define SCR_SDINFO          14   // диагностика SD-карты (sddiag.c): сама — если пакеты не читаются
 
 // --- концовки (банк 2, scr_end.c); группа 0 делится с меню: 24.. — сюда
 #define SCR_SLIDESHOW       24   // SlideshowState: заставка cut_play

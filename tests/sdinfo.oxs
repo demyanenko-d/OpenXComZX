@@ -1,0 +1,34 @@
+# Экран диагностики SD (src/kernel/sddiag.c, окно SCR_SDINFO = 14; 23_distribution.md §5).
+# Норма: карта читается, чтение пачкой (CMD18 + DMA) совпадает с посекторным (CMD17),
+# все 13 пакетов найдены. Результаты — в памяти банка 14 (страница #3E, D с #B000 =
+# смещение #3000): +#04 mount (#FE — смонтирован до диагностики), +#0A fat32,
+# +#10 rd (0 — пачка = посекторно), +#23..#2F коды пакетов (0 — OK).
+# Главное меню само зовёт диагностику и открывает окно, только если с картой беда, —
+# здесь оно открывается запросом. Снимки — tmp/shots/sdinfo/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\sdinfo.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+# главное меню не должно было открыть диагностику само
+wait 10
+waitmark 1 300
+poke _ui_request 14
+waitmark 14 600
+wait 4
+shot tmp/shots/sdinfo/00_ok.png
+expect 3E:3004 0xFE
+expect 3E:300A 1
+expect 3E:3010 0
+expect 3E:3023 0
+expect 3E:3026 0
+expect 3E:302F 0
+# RETRY — повтор той же проверки
+key R
+waitmark 14 600
+wait 4
+shot tmp/shots/sdinfo/01_retry.png
+expect 3E:3010 0
+key SPACE
+waitmark 1 300
+echo sdinfo scenario OK
+exit 0
