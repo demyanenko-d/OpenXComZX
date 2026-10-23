@@ -147,6 +147,7 @@ static void draw_soldier(void)
 	soldier_t so;
 	rtab_t t;
 	r_armors_t ar;
+	if (sel_sol == NONE8) return;           // экипажа нет: soldier_get(255) прочёл бы чужое
 	soldier_get(sel_sol, &so);
 	if (so.armor == NONE8) return;
 	rtab_open(RES_RULE_ARMORS, &t);
@@ -310,7 +311,7 @@ static void click_at(int16_t px, int16_t py)
 {
 	r_invs_t r;
 	uint8_t cx, cy, slot = hit_slot(px, py, &cx, &cy);
-	if (slot == 0xFF) return;
+	if (slot == 0xFF || sel_sol == NONE8) return;   // экипажа нет — записи на «бойца 255» не заводить
 	inv_section(slot, &r);
 	if (carry == INV_NONE) {                     // взять
 		if (r.type == 2) {
@@ -378,6 +379,7 @@ void inv_scr_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked
 	(void)id; (void)row;
 	soldier_t so;
 	buf[0] = 0;
+	if (sel_sol == NONE8 && (slot == 0 || (slot >= 3 && slot <= 6))) return;   // экипажа нет
 	switch (slot) {
 	case 0:
 		soldier_get(sel_sol, &so);

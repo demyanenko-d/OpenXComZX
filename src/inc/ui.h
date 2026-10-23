@@ -121,7 +121,7 @@ extern uint8_t ui_request;
 // Координаты последнего клика (для W_CUSTOM/W_HOTSPOT).
 extern int16_t ui_click_x, ui_click_y;
 // Текст для экрана ошибки и подобных (Win1).
-extern char ui_msg[128];
+extern char ui_msg[256];      // по контракту str_fmt (до 256 байт): «Not enough {0} to arm {1}»
 // Буфер поля ввода W_EDIT (экран заполняет в EVT_OPEN и читает по OK).
 #define UI_EDIT_MAX 32
 extern char ui_edit[UI_EDIT_MAX];

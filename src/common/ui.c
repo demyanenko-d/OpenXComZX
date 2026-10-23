@@ -28,7 +28,7 @@
 uint8_t ui_request;
 uint8_t ui_req_op, ui_req_arg;
 int16_t ui_click_x, ui_click_y;
-char ui_msg[128];
+char ui_msg[256];
 char ui_edit[UI_EDIT_MAX];
 int8_t ui_arrow_dir;
 uint8_t ui_arrow_max;

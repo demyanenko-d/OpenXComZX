@@ -15,7 +15,7 @@ if (-not $Names) { $Names = @('selftest', 'ui_geoscape', 'campaign', 'month', 'a
 # Варианты образа карты (MBR от GRUB и т.п.) — из oxz_card.img, если он новее
 if ($Names | Where-Object { $_ -match '^sdinfo_(grub|nofat)' }) { & node (Join-Path $root 'tools\cardvariants.js') | Out-Null }
 $log = Join-Path $root 'tmp\oxz_crash.log'
-$bad = 'OXZ: (DMA INTO KERNEL|PC LOST|STACK OVERFLOW|CACHE STALE|ISR STACK|KERNEL CODE WRITE|IX SLOT)'
+$bad = 'OXZ: (DMA INTO KERNEL|PC LOST|STACK OVERFLOW|CACHE STALE|ISR STACK|KERNEL CODE WRITE|IX SLOT|GFX_MAP RANGE|MUSIC RING WRITE|TEXT DOUBLE YB)'
 $warn = 'OXZ: (STACK LOW|STACK WRITE|POP MISMATCH|POP PATH)'
 $fail = 0
 $sum = @()

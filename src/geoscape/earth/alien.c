@@ -700,7 +700,12 @@ void ufo_lifting(uint8_t u) __banked
 void ufo_shot_down(uint8_t u) __banked
 {
 	mission_t *m = &ST->mission[ST->ufo[u].mission];
-	if (m->next_wave != wave_count(m->type)) m->spawn_cd += 30 * (rng_range(0, 400) + 48);
+	if (m->next_wave != wave_count(m->type)) {
+		// до 13 440 минут за сбитое НЛО при счётчике до ~40 тыс.: два подряд переполняли u16, и
+		// волна выходила сразу — наоборот (в OpenXcom spawnCountdown — int). Насыщение: 45 суток
+		uint16_t add = 30 * (rng_range(0, 400) + 48), cd = m->spawn_cd;
+		m->spawn_cd = cd > 0xFFFFu - add ? 0xFFFFu : cd + add;
+	}
 }
 
 // Mod::getRandomMission: миссии цели objective по порядку имён, вес — последняя запись
@@ -901,7 +906,17 @@ static uint8_t process_command(const r_missionScripts_t *s, const rtab_t *t)
 			mission_type = names[cur];
 		}
 		if (!nv) return 0;
-		while (target_zone < 0) {
+		// Как processCommand OpenXcom: повтор, пока у выпавшего региона нет зоны. Если веса
+		// месяца не дают ни одного региона из valid (month_choose вернул −1, то есть #FF), цикл
+		// не кончился бы никогда — игра вставала на генерации миссии (14 §todo). После 64
+		// неудач — регион и зона прямо из списка допустимых; в нормальной игре ГСЧ тот же.
+		for (uint8_t tries = 0; target_zone < 0; tries++) {
+			if (tries == 64) {
+				uint8_t k = (uint8_t)rng_range(0, nv - 1);
+				region = valid[k].region;
+				target_zone = (int8_t)valid[k].area;
+				break;
+			}
 			region = nrw ? (uint8_t)month_choose(rw, nrw, month, 0) : (uint8_t)rng_range(0, nr - 1);
 			uint8_t lo = 0xFF, hi = 0;
 			for (uint8_t i = 0; i < nv; i++) {

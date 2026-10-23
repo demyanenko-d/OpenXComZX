@@ -248,6 +248,7 @@ static void draw_range(const dogfight_t *d, int16_t ox, int16_t oy, uint8_t i, u
 	int16_t sx = ox + (i ? 43 : 19), sy = oy + 3;
 	uint8_t x1 = i ? 0 : 2, x2 = i ? 18 : 0;
 	int16_t ry = 74 - d->w[i].range, mn = 0, mx = 0;
+	if (ry < 0) ry = 0;                  // дальность больше 74 км (правила мода) — по верх шкалы, не выше окна
 	uint8_t old = pg_win3();
 	for (uint8_t x = x1; x <= x1 + 18; x += 2) *gfx_map(sx + x, sy + ry) = color;
 	if (ry < 57) { mn = ry; mx = 57; }

@@ -45,14 +45,16 @@ void craft_checkup(uint8_t c) __banked
 {
 	rtab_t tw;
 	craft_t *cr = &ST->craft[c];
-	if (cr->damage) { cr->status = CS_REPAIR; return; }
+	// Craft::checkup: неполным оружиям — «перевооружается» (CraftWeapon::setRearming(true));
+	// снимает флаг только craft_rearm — полный боезапас или нет обойм на складе
+	uint8_t want = 0;
 	rtab_open(RES_RULE_CRAFTWEAPONS, &tw);
 	for (uint8_t k = 0; k < 2; k++)
 		if (cr->weap[k].type != NONE8 && cr->weap[k].ammo < rtab_word(&tw, cr->weap[k].type, offsetof(r_craftWeapons_t, ammo_max))) {
-			cr->status = CS_REARM;
-			return;
+			cr->weap[k].rearming = 1;
+			want = 1;
 		}
-	cr->status = CS_REFUEL;
+	cr->status = cr->damage ? CS_REPAIR : want ? CS_REARM : CS_REFUEL;
 }
 
 static void refuel(void);
@@ -69,9 +71,8 @@ static void t30min(void)
 
 static void refuel(void)
 {
-	rtab_t t, tw;
+	rtab_t t;
 	rtab_open(RES_RULE_CRAFTS, &t);
-	rtab_open(RES_RULE_CRAFTWEAPONS, &tw);
 	for (uint8_t c = 0; c < MAX_CRAFTS; c++) {
 		craft_t *cr = &ST->craft[c];
 		if (cr->type == NONE8 || cr->transit || cr->status != CS_REFUEL) continue;
@@ -96,15 +97,19 @@ static void refuel(void)
 			if (add) cr->fuel = cr->fuel + rate >= fmax ? fmax : cr->fuel + rate;
 		}
 		if (cr->fuel >= fmax) {
+			// Craft::refuel: готов, если ни одно оружие не ждёт перевооружения. Раньше критерием
+			// был «боезапас неполон» — без обойм на складе корабль ходил по кругу заправка ->
+			// перевооружение -> «нет боеприпасов» каждый час (ревью 2026-10-24)
 			cr->status = CS_READY;
 			for (uint8_t k = 0; k < 2; k++)
-				if (cr->weap[k].type != NONE8 && cr->weap[k].ammo < rtab_word(&tw, cr->weap[k].type, offsetof(r_craftWeapons_t, ammo_max)))
-					cr->status = CS_REARM;
+				if (cr->weap[k].type != NONE8 && cr->weap[k].rearming) cr->status = CS_REARM;
 		}
 	}
 }
 
-// Craft::rearm: первое оружие, которому нужны снаряды, обоймы — со склада.
+// Craft::rearm: первое оружие с флагом «перевооружается», обоймы — со склада. Нет обойм —
+// окно и флаг снят (CraftWeapon::setRearming(false)): следующий час — другое оружие или
+// заправка, а не то же окно снова. Полный боезапас — флаг снят.
 static void craft_rearm(uint8_t c)
 {
 	rtab_t tw, ti;
@@ -113,9 +118,9 @@ static void craft_rearm(uint8_t c)
 	rtab_open(RES_RULE_ITEMS, &ti);
 	for (uint8_t k = 0; k < 2; k++) {
 		uint8_t w = cr->weap[k].type;
-		if (w == NONE8) continue;
+		if (w == NONE8 || !cr->weap[k].rearming) continue;
 		uint16_t amax = rtab_word(&tw, w, offsetof(r_craftWeapons_t, ammo_max));
-		if (cr->weap[k].ammo >= amax) continue;
+		if (cr->weap[k].ammo >= amax) { cr->weap[k].rearming = 0; continue; }
 		uint8_t rate = (uint8_t)rtab_word(&tw, w, offsetof(r_craftWeapons_t, rearm_rate));
 		uint16_t clip = rtab_word(&tw, w, offsetof(r_craftWeapons_t, clip));
 		uint16_t add = rate;
@@ -125,12 +130,13 @@ static void craft_rearm(uint8_t c)
 			uint16_t need = amax - cr->weap[k].ammo;
 			uint16_t clips = ((rate < need ? rate : need) + cs - 1) / cs;
 			uint16_t have = ST->base[cr->base].items[clip];
-			if (!have) { event(GE_NO_AMMO, cr->base, c, clip); cr->status = CS_REFUEL; return; }
+			if (!have) { event(GE_NO_AMMO, cr->base, c, clip); cr->weap[k].rearming = 0; return; }
 			if (clips > have) clips = have;
 			ST->base[cr->base].items[clip] -= clips;
 			add = clips * cs;
 		}
 		cr->weap[k].ammo = cr->weap[k].ammo + add > amax ? amax : cr->weap[k].ammo + add;
+		if (cr->weap[k].ammo >= amax) cr->weap[k].rearming = 0;
 		return;
 	}
 	cr->status = CS_REFUEL;

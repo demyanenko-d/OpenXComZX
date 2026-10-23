@@ -24,7 +24,7 @@ fs.writeFileSync(LOG, '');
 const want = +(process.argv[2] || 3);
 const maxFrames = +(process.argv[3] || 400000);
 
-const TRAP = /PC LOST|KERNEL CODE WRITE|IX SLOT|STACK OVERFLOW|ISR STACK|DMA INTO KERNEL|PANIC|CACHE STALE/;
+const TRAP = /PC LOST|KERNEL CODE WRITE|IX SLOT|STACK OVERFLOW|ISR STACK|DMA INTO KERNEL|PANIC|CACHE STALE|GFX_MAP RANGE|MUSIC RING WRITE|TEXT DOUBLE YB/;
 
 // Экраны (src/common/screens.h)
 const S = { MAIN: 1, NEWGAME: 2, GEO: 32, UFO_DET: 36, UFO_LOST: 37, BASE_NAME: 42, BUILD_BASE: 43,
@@ -57,12 +57,15 @@ function send(lines) {
 }
 const click = (x, y) => [`pokew _cursor_x ${x}`, `pokew _cursor_y ${y}`, 'click L'];
 const shot = (name) => `shot tmp/shots/hunt/${name}.png`;
-
+// События хода времени по видам («geo: event K …», game.h GE_*): поток одного вида — признак
+// зацикленной логики (так нашёлся круг «нет боеприпасов», 2149 окон, ревью 2026-10-24)
+const events = {};
 
 function finish(code, why) {
 	if (done) return;
 	done = true;
 	say(`STOP: ${why}; бои ${fights}, вылеты ${launches}, обнаружений ${detected}, кадров ~${frames}`);
+	say(`события GE_*: ${Object.entries(events).map(([k, v]) => `${k}:${v}`).join(' ') || 'нет'}`);
 	send([shot('zz_end'), 'wait 5', `exit ${code}`]);
 	setTimeout(() => { try { emu.kill(); } catch (e) { /* уже вышел */ } process.exit(code); }, 8000);
 }
@@ -174,6 +177,7 @@ function onData(d) {
 		let m;
 		if ((m = /^ufo: reached slot\/status\*10\+pt (\d+) (\d+)/.exec(line))) ufoStatus[+m[1]] = Math.floor(+m[2] / 10);
 		else if ((m = /^ufo: detected slot\/hyper (\d+)/.exec(line))) detSlot = +m[1];
+		else if ((m = /^geo: event (\d+)/.exec(line))) events[m[1]] = (events[m[1]] || 0) + 1;
 		if ((m = /^ui: screen (\d+),/.exec(line))) onScreen(+m[1]);
 		else if (/^OXZ: alive/.test(line)) onAlive();
 		else if (/^df: /.test(line) || /^craft: /.test(line)) say(line);

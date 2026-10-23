@@ -42,6 +42,7 @@
 	.globl	copy_s, map_font, adv_build, char_adv_slow, glyph_entry, font_field, char_adv, add_line, layout, ly_loop, calc_th, layout_box, set_lut, make_lut, td_line, td_char, dma_idle, zfill, line_fast, ta_key, ta_clear, glyph_out, dg_atlas, ta_render, tp_lut, tr_done, glyph_entry_i, draw_glyph, dg_fast, dg_slow, lt_s	; для профилировщика (07 §6)
 	.globl	_pg_alloc
 	.globl	_gfx_map
+	.globl	gfx_map_row
 	.globl	_pg_win3
 	.globl	_pg_map3
 	.globl	_get_bank
@@ -1789,14 +1790,16 @@ dg_fast:
 	ld	(g_y), hl
 	jr	dg_fast
 
-;; _gfx_map(HL — x, DE — y + tx_yb)
+;; gfx_map_row(HL — x, DE — y + tx_yb): строка уже со сдвигом текста — без gfx_yb (pages.s),
+;; как и путь через атлас (ln_dah/ln_dax выше). Через _gfx_map сдвиг удваивался при сборке
+;; виджета (ui.c: tx_yb = gfx_yb), а граница страницы в dg_fast считалась по одинарному
 tx_map:
 	push	hl
 	ld	hl, (_tx_yb)
 	add	hl, de
 	ex	de, hl
 	pop	hl
-	jp	_gfx_map
+	jp	gfx_map_row
 
 dg_slow:				; по точкам с отсечением (контраст, край рамки/экрана)
 	ld	a, (tx_lutok)

@@ -354,8 +354,9 @@ static uint8_t detection_chance(uint8_t b)
 		if (fc->type == NONE8) continue;
 		uint8_t type = fc->type, days = fc->days;
 		rtab_get(&t, type, &f);
+		if (days) continue;                      // isMindShield: недостроенный щит не прикрывает
 		if (f.flags & FACILITIES_F_MIND) mind++;
-		if (!days) sq += f.size * f.size;
+		sq += f.size * f.size;
 	}
 	return (uint8_t)((sq / 6 + 15) / (mind + 1));
 }

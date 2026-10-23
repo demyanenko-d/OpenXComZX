@@ -661,7 +661,9 @@ uint8_t ship_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		break;
 	case SCR_CRAFT_EQUIP:
 		if (ev == EVT_OPEN) equip_fill();
-		else if (ev == EVT_BUTTON && arg == 1) UI_GO(A_PUSH, SCR_INVENTORY);
+		// CraftEquipmentState::btnInventoryClick: только если на борту есть бойцы — иначе окно
+		// инвентаря выбирало «бойца» NONE8: мусор на экране и предметы на запись 255
+		else if (ev == EVT_BUTTON && arg == 1) { if (soldiers_count(NONE8, ctx.craft, 0)) UI_GO(A_PUSH, SCR_INVENTORY); }
 		else if (ev == EVT_ARROW && arg < nlst) {
 			uint16_t ch = ui_arrow_max ? 0x7FFF : 1;
 			if (ui_arrow_dir > 0) equip_left(lst[arg], ch); else equip_right(lst[arg], ch);
