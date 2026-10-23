@@ -1,0 +1,28 @@
+# Флешка с MBR от GRUB (как с настоящего ZX Evolution, 2026-10-24: бывшая установочная Ubuntu):
+# код MBR начинается с перехода «EB 63 90», тип раздела — 07. Старый fat_mount решал по первому
+# байту, что сектор 0 — это том, читал «размер сектора» по смещению 11 (00 00) и писал «не FAT»:
+# ни заставки, ни фонов, ни музыки, хотя TS-BIOS и WC с флешки грузились. Теперь том ищется по
+# BPB, тип раздела не важен (как TS-BIOS). Образ — tools/cardvariants.js (runtests зовёт сам).
+# Ждём: смонтировано (+#04 = #FE), MBR тип 07 (+#80), LBA 63 (+#81), чтение OK, пакеты OK;
+# окно само не всплывает. Снимок — tmp/shots/sdinfo/07_grub.png.
+# Запуск: node tools\cardvariants.js; powershell -File tools\run.ps1 -Script tests\sdinfo_grub.oxs -Headless
+#@set ZC.SDCARD=tmp/sdtest/grub_mbr.img
+
+waitmark 1 600
+poke _alien_off 1
+wait 10
+waitmark 1 300
+poke _ui_request 14
+waitmark 14 600
+wait 4
+shot tmp/shots/sdinfo/07_grub.png
+expect 3E:3004 0xFE
+expect 3E:3080 7
+expect 3E:3081 63
+expect 3E:3005 0
+expect 3E:3018 0
+expect 3E:3024 0
+key SPACE
+waitmark 1 300
+echo sdinfo grub scenario OK
+exit 0

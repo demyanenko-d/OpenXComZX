@@ -3,7 +3,7 @@
 # (CMD17 + INIR) и находятся, а ресурсы пачкой (CMD18 + DMA) — пустые. fat_mount это
 # замечает (dma_check) и переводит все чтения на CMD17 (_fat_nodma = 1): фон главного меню
 # настоящий, во второй строке заголовка — «TS-Config: SD without DMA»; окно диагностики само
-# не всплывает (игра цела). Открытое запросом, оно показывает Read test MISMATCH (+#10 = 1)
+# не всплывает (игра цела). Открытое запросом, оно показывает Read test MISMATCH (+#05 = 1)
 # и «using CMD17», пакеты — OK. После «fault dmaspi 0» и RETRY — пачка снова совпадает.
 # Вся игра без DMA — любой сценарий с -Set 'ZC.FaultDmaSpi=1' (23 §5).
 # Снимки — tmp/shots/sdinfo/. Запуск: powershell -File tools\run.ps1 -Script tests\sdinfo_dma.oxs -Headless
@@ -19,16 +19,16 @@ poke _ui_request 14
 waitmark 14 600
 wait 4
 shot tmp/shots/sdinfo/03_dma_fault.png
-expect 3E:3010 1
-expect 3E:3011 0
-expect 3E:3023 0
-expect 3E:302F 0
+expect 3E:3005 1
+expect 3E:3006 0
+expect 3E:3018 0
+expect 3E:3024 0
 fault dmaspi 0
 key R
 waitmark 14 600
 wait 4
 shot tmp/shots/sdinfo/04_dma_back.png
-expect 3E:3010 0
+expect 3E:3005 0
 key SPACE
 waitmark 1 300
 echo sdinfo dma scenario OK

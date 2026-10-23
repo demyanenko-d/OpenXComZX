@@ -25,6 +25,7 @@ static uint32_t fat_lba, data_lba, root_lba, root_clus;
 static uint16_t root_secs;              // FAT16: секторов корневого каталога
 static uint32_t vol_base;               // LBA тома (0 — том с сектора 0, без MBR)
 static uint8_t vol_part;                // тип раздела из MBR (0 — MBR нет)
+static uint8_t vol_raw0[8], vol_raw1[8]; // начало сектора 0 и сектора по LBA раздела (диагностика)
 uint8_t fat_ok;
 uint8_t fat_nodma;                      // 1 — пачка (CMD18 + DMA) не прошла проверку: всё посекторно
 
@@ -76,26 +77,50 @@ static void dma_check(uint32_t lba)
 	if (bad) dbg_puts(bad == 1 ? "sd: CMD18+DMA data differ, reading by CMD17\n" : "sd: CMD18+DMA failed, reading by CMD17\n");
 }
 
+// В secbuf — загрузочный сектор тома FAT? Подпись 55AA и правдоподобный BPB: 512 байт на
+// сектор, секторов в кластере — степень двойки, 1–2 FAT, резерв не ноль. По первому байту
+// (переход EB/E9) не отличить: MBR от GRUB и syslinux тоже начинается с EB. Так и вышло на
+// настоящем ZX Evolution (2026-10-24): флешка из-под установщика Ubuntu, MBR «EB 63 90»,
+// раздел с сектора 2048 — MBR принимался за том, по смещению 11 — 00 00, «не FAT», и ни
+// заставки, ни фонов, ни музыки, хотя TS-BIOS и WC с неё грузились (23 §5).
+static uint8_t is_vbr(void)
+{
+	uint8_t c = secbuf[13], n = secbuf[16];
+	return w16(510) == 0xAA55 && w16(11) == 512 && c && !(c & (c - 1)) && n && n <= 2 && w16(14);
+}
+
 uint8_t fat_mount(void) __banked
 {
 	uint32_t base = 0;
 	fat_ok = 0;
 	vol_base = 0;
 	vol_part = 0;
+	memset(vol_raw0, 0, 8);
+	memset(vol_raw1, 0, 8);
 	sec_cached = 0xFFFFFFFFul;
 	if (sd_init()) return FAT_NOCARD;
 	if (read_sec(0)) return FAT_IOERR;
+	memcpy(vol_raw0, secbuf, 8);
 	if (w16(510) != 0xAA55) return FAT_NOFS;
-	// MBR: первый раздел FAT (тип 4, 6, B, C, E), если сектор 0 не загрузочный BPB
-	if (secbuf[0] != 0xEB && secbuf[0] != 0xE9) {
-		uint8_t t = secbuf[0x1C2];
-		vol_part = t;
-		base = w32(0x1C6);
-		vol_base = base;
-		if (t != 0x04 && t != 0x06 && t != 0x0B && t != 0x0C && t != 0x0E) return FAT_NOFS;
-		if (read_sec(base)) return FAT_IOERR;
+	// Не том — значит MBR: первый раздел, где лежит том FAT. Тип раздела не смотрим, как и
+	// TS-BIOS (REF/tsbios/src/pff/pff.c pf_mount): Windows при форматировании раздела тип в
+	// MBR не меняет, и карта из-под exFAT (07) после форматирования в FAT32 остаётся с 07.
+	if (!is_vbr()) {
+		uint8_t i;
+		for (i = 0; i < 4; i++) {
+			if (read_sec(0)) return FAT_IOERR;
+			uint16_t e = 0x1BE + (uint16_t)i * 16;
+			uint8_t t = secbuf[e + 4];
+			if (!t) continue;
+			base = w32(e + 8);
+			vol_part = t;
+			vol_base = base;
+			if (read_sec(base)) return FAT_IOERR;
+			memcpy(vol_raw1, secbuf, 8);
+			if (is_vbr()) break;
+		}
+		if (i == 4) return FAT_NOFS;
 	}
-	if (w16(11) != 512) return FAT_NOFS;
 	spc = secbuf[13];
 	spc_shift = 0;
 	while ((1 << spc_shift) < spc) spc_shift++;
@@ -316,4 +341,6 @@ void fat_info(fat_info_t *i) __banked
 	i->fat32 = fat32;
 	i->spc = spc;
 	i->data_lba = data_lba;
+	memcpy(i->raw0, vol_raw0, 8);
+	memcpy(i->raw1, vol_raw1, 8);
 }

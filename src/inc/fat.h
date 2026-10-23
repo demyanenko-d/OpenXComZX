@@ -28,6 +28,8 @@ typedef struct {
 	uint8_t fat32;          // 1 — FAT32, 0 — FAT16
 	uint8_t spc;            // секторов в кластере
 	uint32_t data_lba;      // первый сектор области данных
+	uint8_t raw0[8];        // первые байты сектора 0 (MBR или том)
+	uint8_t raw1[8];        // первые байты сектора по LBA раздела из MBR (0 — не читали)
 } fat_info_t;
 
 extern uint8_t fat_ok;      // том смонтирован

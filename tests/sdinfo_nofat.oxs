@@ -1,0 +1,20 @@
+# Ошибка монтирования тома: MBR от GRUB, а запись раздела указывает на сектор 1 — там не том
+# (образ — tools/cardvariants.js). Главное меню само открывает окно диагностики: Volume —
+# MOUNT ERROR: NOT FAT16/32 (+#04 = 3), строка MBR — тип 07 и LBA 1, строки «sector 0» и
+# «partition» — сырые байты (EB 63 90 … и нули): по фото видно, что за карта.
+# Снимок — tmp/shots/sdinfo/08_nofat.png.
+# Запуск: node tools\cardvariants.js; powershell -File tools\run.ps1 -Script tests\sdinfo_nofat.oxs -Headless
+#@set ZC.SDCARD=tmp/sdtest/nofat.img
+
+waitmark 14 1500
+poke _alien_off 1
+wait 4
+shot tmp/shots/sdinfo/08_nofat.png
+expect 3E:3004 3
+expect 3E:3080 7
+expect 3E:3081 1
+expect 3E:3005 6
+key SPACE
+waitmark 1 300
+echo sdinfo nofat scenario OK
+exit 0

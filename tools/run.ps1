@@ -29,6 +29,11 @@ if ($Script) {
         if ($l -match '^#@set\s+(\S+=\S*)') { $Set += $Matches[1] }
     }
 }
+# Образ карты относительным путём (#@set ZC.SDCARD=tmp/sdtest/...) — от корня проекта:
+# эмулятор сам дописал бы к нему свой каталог
+$Set = @($Set | ForEach-Object {
+    if ($_ -match '^ZC\.SDCARD=(.+)$' -and -not [System.IO.Path]::IsPathRooted($Matches[1])) { 'ZC.SDCARD=' + (Join-Path $root $Matches[1]) } else { $_ }
+})
 # -Boot: снапшот не грузим — машина стартует с карты через TS-BIOS, как настоящая
 # (карта должна быть FAT32, иначе TS-BIOS пишет «System Meditation: FAT32 NOT FOUND!»)
 & node (Join-Path $root 'tools\mkini.js') (Join-Path $emu 'Unreal.ini') $ini `

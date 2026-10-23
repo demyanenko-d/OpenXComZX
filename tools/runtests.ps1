@@ -11,7 +11,9 @@
 # Сообщения — латиницей: PS 5.1 читает этот файл как ANSI и портит кириллицу в конвейере.
 param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Names)
 $root = Split-Path -Parent $PSScriptRoot
-if (-not $Names) { $Names = @('selftest', 'ui_geoscape', 'campaign', 'month', 'aliens', 'dogfight', 'dogfight2', 'basedefense', 'ironman', 'lab', 'transfer', 'craft', 'inventory', 'ufopaedia', 'globe', 'intercept', 'bat_render', 'bat_cursor', 'bat_doors', 'bat_levels', 'bat_kneel', 'sdinfo', 'sdinfo_dma', 'sdinfo_sdhc', 'sdinfo_nocard', 'ufopaedia+nodma', 'bat_render+nodma') }
+if (-not $Names) { $Names = @('selftest', 'ui_geoscape', 'campaign', 'month', 'aliens', 'dogfight', 'dogfight2', 'basedefense', 'ironman', 'lab', 'transfer', 'craft', 'inventory', 'ufopaedia', 'globe', 'intercept', 'bat_render', 'bat_cursor', 'bat_doors', 'bat_levels', 'bat_kneel', 'sdinfo', 'sdinfo_dma', 'sdinfo_sdhc', 'sdinfo_nocard', 'sdinfo_grub', 'sdinfo_nofat', 'ufopaedia+nodma', 'bat_render+nodma') }
+# Варианты образа карты (MBR от GRUB и т.п.) — из oxz_card.img, если он новее
+if ($Names | Where-Object { $_ -match '^sdinfo_(grub|nofat)' }) { & node (Join-Path $root 'tools\cardvariants.js') | Out-Null }
 $log = Join-Path $root 'tmp\oxz_crash.log'
 $bad = 'OXZ: (DMA INTO KERNEL|PC LOST|STACK OVERFLOW|CACHE STALE|ISR STACK)'
 $warn = 'OXZ: (STACK LOW|STACK WRITE|POP MISMATCH|POP PATH)'

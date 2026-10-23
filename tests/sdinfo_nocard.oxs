@@ -1,6 +1,6 @@
 # Диагностика SD без карты (эмулятор: ZC.SDCARD= — Z-контроллер на всё отвечает #FF).
 # Ждём: главное меню само открывает окно (SCR_SDINFO = 14), карта не готова на шаге CMD0
-# (+#01 = 1, R1 = #FF), fat_mount — FAT_NOCARD (+#04 = 1), чтения нет (+#10 = 6, RD_NOVOL),
+# (+#01 = 1, R1 = #FF), fat_mount — FAT_NOCARD (+#04 = 1), чтения нет (+#05 = 6, RD_NOVOL),
 # фон окна — заливка (фон тоже с карты). Снимок — tmp/shots/sdinfo/06_nocard.png.
 # Запуск: powershell -File tools\run.ps1 -Script tests\sdinfo_nocard.oxs -Headless
 #@set ZC.SDCARD=
@@ -12,7 +12,7 @@ shot tmp/shots/sdinfo/06_nocard.png
 expect 3E:3001 1
 expect 3E:3002 0xFF
 expect 3E:3004 1
-expect 3E:3010 6
+expect 3E:3005 6
 key SPACE
 waitmark 1 300
 echo sdinfo nocard scenario OK

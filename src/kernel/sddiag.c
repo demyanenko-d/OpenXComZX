@@ -43,11 +43,13 @@ static const char *const pk_name[NPK] = {
 #define RD_LEN 1024                     // два сектора: CMD18 на 2 блока + CMD12
 #define RD_ODD 4097                     // нечётный приёмник — fat_read идёт посекторно
 
+// Смещения полей проверяют сценарии tests/sdinfo*.oxs (страница #3E, D с #3000):
+// +#01 step, +#02 r1, +#03 type, +#04 mount, +#05 rd, +#06 rd_at, +#18..#24 pk_r,
+// fi — последним (+#80), чтобы его рост не сдвигал остальное.
 typedef struct {
 	uint8_t full;
 	uint8_t step, r1, type;             // sd_init
 	uint8_t mount;                      // код fat_mount; MOUNT_EARLY — смонтирован до нас
-	fat_info_t fi;
 	uint8_t rd;
 	uint16_t rd_at;                     // смещение первого расхождения
 	uint8_t b18[8], b17[8];             // байты двух чтений с этого места
@@ -55,6 +57,7 @@ typedef struct {
 	uint8_t pk_runs[NPK];
 	uint16_t pk_n[NPK];                 // записей в каталоге
 	uint32_t pk_size[NPK];
+	fat_info_t fi;
 } sdd_t;
 #define MOUNT_EARLY 0xFE
 // В памяти банка (build.ps1: ram банка 14), а не в Win1: Win1 почти полон. Память банка при
@@ -192,9 +195,19 @@ static const char *const fat_err[] = {
 	"OK", "NO CARD", "READ ERROR", "NOT FAT16/32", "NOT FOUND", "FRAGMENTED", "SHORT FILE",
 };
 
+static char *put_bytes(char *p, const uint8_t *b)
+{
+	for (uint8_t i = 0; i < 8; i++) { p = put_hex(p, b[i]); *p++ = ' '; }
+	*p = 0;
+	return p;
+}
+
 void sddiag_text(uint8_t row, char *buf) __banked
 {
 	char *p = buf;
+	// Том не смонтирован (а карта ответила): строки 2, 4, 5 — про MBR и сырые байты секторов,
+	// по фото сразу видно, что за сектор 0 (MBR от GRUB «EB 63 90», Windows «33 C0»…)
+	uint8_t merr = D.mount && D.mount != MOUNT_EARLY && D.mount != FAT_NOCARD;
 	*p = 0;
 	switch (row) {
 	case 0:                             // карта
@@ -211,8 +224,7 @@ void sddiag_text(uint8_t row, char *buf) __banked
 		p = put(p, "Volume\t");
 		if (D.mount && D.mount != MOUNT_EARLY) {
 			p = put(p, "MOUNT ERROR: ");
-			p = put(p, fat_err[D.mount < 7 ? D.mount : 0]);
-			if (D.fi.part) { p = put(p, ", MBR type "); put_hex(p, D.fi.part); }
+			put(p, fat_err[D.mount < 7 ? D.mount : 0]);
 			break;
 		}
 		p = put(p, D.fi.fat32 ? "FAT32, " : "FAT16, ");
@@ -224,7 +236,16 @@ void sddiag_text(uint8_t row, char *buf) __banked
 		} else
 			put(p, "no MBR");
 		break;
-	case 2:                             // кластер
+	case 2:                             // кластер; том не найден — что в MBR
+		if (merr) {
+			p = put(p, "MBR\t");
+			if (!D.fi.part) { put(p, "no FAT partition / not an MBR"); break; }
+			p = put(p, "last tried: type ");
+			p = put_hex(p, D.fi.part);
+			p = put(p, ", LBA ");
+			put_num(p, D.fi.base);
+			break;
+		}
 		p = put(p, "Cluster\t");
 		if (!fat_ok) break;
 		p = put_num(p, (uint32_t)D.fi.spc * 512);
@@ -246,12 +267,15 @@ void sddiag_text(uint8_t row, char *buf) __banked
 		if (fat_nodma) put(p, ", using CMD17");   // fat_mount перевёл чтение на посекторное
 		break;
 	case 4:
-	case 5: {                           // байты двух чтений
-		const uint8_t *b = row == 4 ? D.b18 : D.b17;
+	case 5: {                           // байты двух чтений; том не найден — байты секторов
+		if (merr) {
+			p = put(p, row == 4 ? "  sector 0\t" : "  partition\t");
+			if (row == 4 || D.fi.part) put_bytes(p, row == 4 ? D.fi.raw0 : D.fi.raw1);
+			break;
+		}
 		p = put(p, row == 4 ? "  CMD18+DMA\t" : "  CMD17\t");
 		if (D.rd != RD_OK && D.rd != RD_MISMATCH && D.rd != RD_BADHDR) break;
-		for (uint8_t i = 0; i < 8; i++) { p = put_hex(p, b[i]); *p++ = ' '; }
-		*p = 0;
+		put_bytes(p, row == 4 ? D.b18 : D.b17);
 		break;
 	}
 	default: {                          // пакеты

@@ -15,12 +15,12 @@ waitmark 14 600
 wait 4
 shot tmp/shots/sdinfo/05_sdhc.png
 expect 3E:3003 8
-expect 3E:300A 1
-expect 3E:3010 0
-expect 3E:3023 0
+expect 3E:3085 1
+expect 3E:3005 0
+expect 3E:3018 0
+expect 3E:3019 0
+expect 3E:301E 0
 expect 3E:3024 0
-expect 3E:3029 0
-expect 3E:302F 0
 key SPACE
 waitmark 1 300
 echo sdinfo sdhc scenario OK
