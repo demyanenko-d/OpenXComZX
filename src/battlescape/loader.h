@@ -30,6 +30,7 @@
 #define TL_ASH    7168
 #define ASH_N     80
 #define ASH_MAX   6            // до #2B00
+#define TL_BIGW   11264        // 256 байт: MCD.Big_Wall части по номеру (Pathfinding::bigWallTypes)
 
 typedef struct {
 	uint16_t set[TL_SETS];     // ресурсы MCDSET наборов миссии

@@ -214,7 +214,7 @@ uint8_t aliens_deploy(unit_t *u, uint8_t n, uint8_t max, adep_t *q, uint8_t sx, 
 			if (n0 && cx * cx + cy * cy <= 400 && rng_percent((uint8_t)(20 * coef))) a->dir = dir_to(cx, cy);
 			else a->dir = (uint8_t)(rng_next() & 7);
 			a->sheet = sheet_of(q, res, a->size);
-			a->seen = 1;                         // видимости ещё нет (Б4): показываем всех
+			a->seen = 0;                         // виден, когда его заметит отряд (vision.c)
 			n++;
 		}
 	}

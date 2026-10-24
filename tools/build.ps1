@@ -60,6 +60,7 @@ $banks = @(
     @{ n = 29; page = 0x4C; files = @('battlescape\mapgen'); ram = 0xB000 }   # генератор миссии: карта из блоков по mapScript (16 §3)
     @{ n = 30; page = 0x4D; files = @('battlescape\pathfind', 'battlescape\units', 'battlescape\doors', 'battlescape\loader', 'battlescape\bload') }   # поиск пути (16 §5.4), бойцы миссии, клетки карты (двери, цена прохода), загрузка графики и миссии (bload.c — для экрана боя)
     @{ n = 31; page = 0x4E; files = @('battlescape\scr_battle', 'battlescape\deploy'); ram = 0xB000 }   # наземный бой: экран, события и логика бойцов (вид — банк 28), расстановка пришельцев; с #B000 — юниты миссии, с #B600 — узлы появления
+    @{ n = 32; page = 0x4F; files = @('battlescape\vision') }   # бой: видимость — линия взгляда по клеткам, сектор обзора (vision.c)
 )
 
 # Пакеты данных игры: выход конвертера OxzConv (tmp\sd\OXZ\<игра>), вшиваются в SPG.

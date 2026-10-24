@@ -63,14 +63,17 @@ uint8_t sheet_load(uint16_t res, uint8_t *page, uint8_t *np, uint8_t n,
 	return 1;
 }
 
-// Заведённая часть двери НЛО: кадр, смещение и свойства закрытой створки, своя цена прохода
+// Заведённая часть двери НЛО: кадр, смещение и свойства закрытой створки, своя цена прохода.
+// Обзор не держит: створка, тронувшаяся с места, уже открыта (Tile::isUfoDoorOpen — кадр != 0,
+// TileEngine::blockage тогда 0)
 static void ud_part(uint8_t page, uint8_t p, const uint8_t *e, const udoor_t *d, uint8_t tu)
 {
+	uint8_t fl = d->flags & (uint8_t)~2;
 	far_write(FAR(page + 1, TL_TILES) + (uint16_t)(p - 1) * TE_SIZE, e, TE_SIZE);
 	far_write(FAR(page + 1, TL_YOFS) + (p - 1), &d->yofs, 1);
 	far_write(FAR(page, PF_TU) + p, &tu, 1);
 	far_write(FAR(page, PF_TLEVEL) + p, &d->tlevel, 1);
-	far_write(FAR(page, PF_FLAGS) + p, &d->flags, 1);
+	far_write(FAR(page, PF_FLAGS) + p, &fl, 1);
 }
 
 uint16_t tiles_load(const tiles_req_t *q, uint8_t *pages, uint8_t *nps,
@@ -84,6 +87,7 @@ uint16_t tiles_load(const tiles_req_t *q, uint8_t *pages, uint8_t *nps,
 	far_fill(FAR(q->page, PF_TU), 0, PF_PROPS);   // свойства частей — в первой странице
 	far_fill(FAR(q->page, PF_UFOOPEN), 0, 1);     // открытых дверей НЛО нет
 	far_fill(FAR(q->page + 1, TL_UDIDX), 0, 256);
+	far_fill(FAR(q->page + 1, TL_BIGW), 0, 256);
 	door_an_n = 0;                            // створки прошлой миссии больше не едут (doors.c)
 	sdres_flush();                       // кэш ресурсов отдаёт страницы: тайлсеты важнее
 	// Двери НЛО открываются заменой на свою часть с открытым кадром (Frame[7]), а пока створка едет
@@ -130,6 +134,7 @@ uint16_t tiles_load(const tiles_req_t *q, uint8_t *pages, uint8_t *nps,
 			far_write(FAR(q->page, PF_TU) + part, &mc[7], 1);
 			far_write(FAR(q->page, PF_TLEVEL) + part, &mc[6], 1);
 			far_write(FAR(q->page, PF_FLAGS) + part, &mc[3], 1);
+			far_write(FAR(q->page + 1, TL_BIGW) + part, &mc[4], 1);   // MCD.Big_Wall (обзор, vision.c)
 			if ((mc[3] & 8) && mc[8] && base + mc[8] < 256) {
 				uint8_t v = (uint8_t)(base + mc[8]);
 				far_write(FAR(q->page, PF_ALT) + part, &v, 1);

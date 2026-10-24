@@ -24,6 +24,7 @@
 #include "loader.h"
 #include "bview.h"
 #include "deploy.h"
+#include "vision.h"
 #include "rules.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
@@ -98,6 +99,29 @@ static void unit_changed(uint8_t i)
 	bv_cell(units[i].x, units[i].y, units[i].z);
 }
 
+// Видимость (vision.c): кого из пришельцев отряд заметил впервые — показать (запись виду и
+// перерисовка их клеток; крупный — все четыре)
+static void see_update(void)
+{
+	uint8_t list[16];
+	vu_t v[MAX_BUNITS];                  // копия на стеке: банку 32 память банка 31 не видна
+	for (uint8_t i = 0; i < nunits; i++) {
+		const unit_t *u = &units[i];
+		v[i].x = u->x; v[i].y = u->y; v[i].z = u->z; v[i].dir = u->dir;
+		v[i].flags = (u->alive ? VU_ALIVE : 0) | (u->size > 1 ? VU_BIG : 0) | (u->seen ? VU_SEEN : 0);
+	}
+	uint8_t n = vis_seen(v, nunits, nsold, list, sizeof list);
+	if (!n) return;
+	for (uint8_t i = 0; i < n; i++) units[list[i]].seen = 1;
+	for (uint8_t i = 0; i < n; i++) ru_put(list[i]);
+	bv_sync(nunits);
+	for (uint8_t i = 0; i < n; i++) {
+		const unit_t *a = &units[list[i]];
+		for (uint8_t q = 0; q < a->size * a->size; q++)
+			bv_cell((uint8_t)(a->x + (q & 1)), (uint8_t)(a->y + (q >> 1)), a->z);
+	}
+}
+
 // Номер бойца в клетке + 1 (0 — никого): по нему выбирают щелчком
 static uint8_t unit_no(uint8_t z, uint8_t y, uint8_t x)
 {
@@ -165,7 +189,11 @@ static uint8_t door_anim_step(void)
 	an_on = doors_anim(&bmap, parts, cl);
 	an_tm = (uint8_t)frames;
 	for (uint8_t i = 0; parts[i]; i++) bv_tile(parts[i]);
-	for (uint8_t i = 0; cl[i * 3] != 0xFF; i++) bv_cell(cl[i * 3], cl[i * 3 + 1], cl[i * 3 + 2]);
+	for (uint8_t i = 0; cl[i * 3] != 0xFF; i++) {
+		bv_cell(cl[i * 3], cl[i * 3 + 1], cl[i * 3 + 2]);
+		vis_cell(cells, cl[i * 3], cl[i * 3 + 1], cl[i * 3 + 2], pf_page);   // створка уже не держит обзор
+	}
+	if (cl[0] != 0xFF) see_update();
 	return cl[0] != 0xFF;
 }
 
@@ -179,8 +207,11 @@ static uint8_t door_try(unit_t *u, uint8_t dir, uint8_t rclick)
 	if (r) return r;
 	u->tu -= spent;
 	if (door_anim_step()) return 0;      // створка НЛО поехала: кадр 1 (Tile::openDoor)
-	for (uint8_t i = 0; i < 4 && list[i * 2] != 0xFF; i++)
+	for (uint8_t i = 0; i < 4 && list[i * 2] != 0xFF; i++) {
 		bv_cell(list[i * 2], list[i * 2 + 1], u->z);
+		vis_cell(cells, list[i * 2], list[i * 2 + 1], u->z, pf_page);
+	}
+	see_update();
 	return 0;
 }
 
@@ -208,6 +239,7 @@ static void turn_to(uint8_t i, uint8_t d)
 	uint8_t diff = (uint8_t)((d - u->dir) & 7);
 	u->dir = (uint8_t)((u->dir + (diff && diff <= 4 ? 1 : 7)) & 7);
 	unit_changed(i);
+	see_update();                        // повернулся — другой сектор обзора (UnitTurnBState)
 }
 
 // Один шаг по пути: поворот, открывание двери, перенос в клетку и расход времени
@@ -243,6 +275,7 @@ static void step_unit(void)
 		ru_put(i);
 		bv_sync(nunits);
 		bv_set_level(nz, 0);
+		see_update();
 		ui_dirty(0);
 		return;
 	}
@@ -274,6 +307,7 @@ static uint8_t load_gen(uint16_t terrain)
 	adq.ufo = mis_ufo != 0xFFFF || mis_deploy == 0xFFFF;
 	adq.page = pf_page;
 	nunits = aliens_deploy(units, nunits, MAX_BUNITS, &adq, q.sx, q.sy);
+	vis_build(q.cells, q.sx, q.sy, q.sz, pf_page);   // маска обзора (vision.c)
 	ndoors = q.ndoors;
 	m_sx = q.sx; m_sy = q.sy; m_sz = q.sz;
 	cells = q.cells;
@@ -282,6 +316,7 @@ static uint8_t load_gen(uint16_t terrain)
 	bv_load(&v);
 	for (uint8_t i = 0; i < nunits; i++) ru_put(i);
 	bv_sync(nunits);
+	see_update();                        // кого отряд видит с места высадки
 	an_on = 0;
 	gen_mode = 1;
 	sel = 0;
@@ -382,7 +417,11 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				unit_t *u = &units[i];
 				u->x = wl_x; u->y = wl_y;
 				ru_put(i);
-			} else if (r == 2 && !path_n) ui_dirty(0);   // путь кончился — обновить панель
+				see_update();                // шаг — пересчёт обзора (UnitWalkBState)
+			} else if (r == 2) {
+				see_update();
+				if (!path_n) ui_dirty(0);    // путь кончился — обновить панель
+			}
 		} else if (path_n) {                 // идём по пути: поворот раз в несколько кадров
 			if (move_wait) move_wait--;
 			else { move_wait = 3; step_unit(); if (!path_n) ui_dirty(0); }   // в конце — обновить панель
@@ -401,6 +440,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		// перечитывает каждый фон с карты — экран залипает (14 §todo).
 		bv_close();
 		aliens_free(&adq);               // листы брони пришельцев
+		vis_free();
 		bat_unload();                    // наборы частей, листы бойца и курсора, генератор (bload.c)
 		gen_mode = 0;
 		loaded = 0;
@@ -462,7 +502,10 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			uint8_t list[24];                //   двери НЛО закрываются (BattlescapeGame::endTurn)
 			uint8_t n = doors_close_ufo(&bmap, list, 8);
 			an_on = 0;
-			for (uint8_t i = 0; i < n; i++) bv_cell(list[i * 3], list[i * 3 + 1], list[i * 3 + 2]);
+			for (uint8_t i = 0; i < n; i++) {
+				bv_cell(list[i * 3], list[i * 3 + 1], list[i * 3 + 2]);
+				vis_cell(cells, list[i * 3], list[i * 3 + 1], list[i * 3 + 2], pf_page);
+			}
 			for (uint8_t i = 0; i < nunits; i++) { units[i].tu = units[i].tu_max; units[i].en = units[i].tu_max; }
 			ui_dirty(0);
 			break;
@@ -482,16 +525,26 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			path_n = 0;                       // вид пересоберёт center_on_unit
 			ru_put(i);
 			bv_sync(nunits);
+			see_update();
 			dbg_puts("door: at "); dbg_dec(dx); dbg_puts(","); dbg_dec(dy);
 			dbg_puts(" slot "); dbg_dec(ds); dbg_puts("\n");
 			center_on_unit();
 			break;
 		}
-		case 'j': case 'J': {               // отладка: камера на следующего пришельца (видимости ещё нет)
-			static uint8_t dbg_al;
+		case 'j': case 'J': {               // отладка: камера на следующего пришельца; Shift+J — ещё и
+			static uint8_t dbg_al;          //   выбранного бойца к нему (3 клетки, лицом к нему)
 			if (nunits <= nsold) break;
 			if (dbg_al < nsold || dbg_al >= nunits) dbg_al = nsold;
 			unit_t *a = &units[dbg_al];
+			if (arg == 'J' && nsold) {
+				uint8_t i = sel < nsold ? sel : 0;
+				unit_t *u = &units[i];
+				u->x = a->x + 3 < m_sx ? a->x + 3 : a->x - 3; u->y = a->y; u->z = a->z;
+				u->dir = dir_to((int16_t)a->x - u->x, 0);
+				ru_put(i);
+				bv_sync(nunits);
+				see_update();
+			}
 			if (a->z != bv_level()) bv_set_level(a->z, 0);
 			bv_center(a->x, a->y);
 			dbg_puts("alien "); dbg_dec(dbg_al - nsold); dbg_puts(" at "); dbg_dec(a->x); dbg_puts(",");
