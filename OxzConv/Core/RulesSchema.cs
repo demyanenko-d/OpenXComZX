@@ -55,6 +55,8 @@ namespace OxzConv
 					F("minRange", "u8", "0"), F("dropoff", "u8", "2"), F("bulletSpeed", "u8", "0"), F("explosionSpeed", "u8", "0"),
 					F("specialType", "i8", "-1"), F("vaporColor", "i8", "-1"), F("vaporDensity", "u8", "0"), F("vaporProbability", "u8", "15"),
 					F("zombieUnit", "ref:units"),
+					Fn("sortRank", "u16", (e, k, rs) => rs.SortRank("items", k).ToString(),
+						"место id в std::map: груз корабля ложится на землю инвентаря в этом порядке (ItemContainer)"),
 				},
 				Flags = { "twoHanded", "fixedWeapon", "recover=true", "liveAlien", "flatRate", "arcingShot", "strengthApplied",
 					"skillApplied=true", "LOSRequired", "underwaterOnly", "landOnly", "ignoreInBaseDefense" },

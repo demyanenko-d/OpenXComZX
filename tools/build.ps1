@@ -55,7 +55,7 @@ $banks = @(
     @{ n = 24; page = 0x47; files = @('geoscape\earth\globe', 'geoscape\earth\globe_s', 'geoscape\earth\globe_tab', 'geoscape\earth\globe_sq'); tab = 0xBC00 }   # глобус (globe.md): globe_s.s — асм, globe_sq.s — таблица _GTAB с #BC00
     @{ n = 25; page = 0x48; files = @('geoscape\earth\globe_sh', 'geoscape\earth\globe_sh_s', 'geoscape\earth\globe_view', 'geoscape\earth\globe_sh_tab'); ram = 0xB800 }   # глобус, банк 25 — ассемблер: тень (globe_sh.s — кадр, globe_sh_s.s — блоки и строки, globe_sh_tab.s — таблицы), предрасчитанные виды (globe_view.s); с #B800 — рабочие таблицы тени
     @{ n = 26; page = 0x49; files = @('geoscape\earth\globe_det', 'geoscape\earth\globe_det_s'); ram = 0xA800 }   # детали глобуса: линии, подписи, города (globe_det.c; точки и отрезки — globe_det_s.s); с #A800 — рабочая память
-    @{ n = 27; page = 0x4A; files = @('geoscape\base\scr_inv') }   # инвентарь бойца (экипировка перед вылетом)
+    @{ n = 27; page = 0x4A; files = @('geoscape\base\scr_inv'); ram = 0xB000 }   # инвентарь бойца (экипировка перед вылетом); с #B000 — точки под несомым предметом
     @{ n = 28; page = 0x4B; files = @('battlescape\scr_battle'); ram = 0xB000 }   # наземный бой: отрисовка карты (этап Б1)
     @{ n = 29; page = 0x4C; files = @('battlescape\mapgen'); ram = 0xB000 }   # генератор миссии: карта из блоков по mapScript (16 §3)
     @{ n = 30; page = 0x4D; files = @('battlescape\pathfind', 'battlescape\units', 'battlescape\doors', 'battlescape\loader') }   # поиск пути (16 §5.4), бойцы миссии, клетки карты (двери, цена прохода) и загрузка графики миссии
