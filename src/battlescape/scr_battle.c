@@ -84,6 +84,20 @@ static uint8_t __at(0xBF00) unit_tab[32 * TE_SIZE];   // кадры листа �
 #define KNEEL_TU_UP    8
 #define KNEEL_DY       4                 // всё, кроме ног, опускается на 4 точки (offYKneel)
 static uint8_t __at(0xBEB0) kneel_tab[8 * TE_SIZE];
+// Бойцы TFTD рисуются правилом 13 (armors.rul STR_NONE_UC drawingRoutine): на колене всё, кроме
+// ног, ниже на offYKneel + 1, при ходьбе торс качается на YoffWalk + 1 (UnitSprite.cpp:341, 493)
+static uint8_t u_tftd;
+
+// Ходьба (BattleUnit::startWalking / keepWalking): идёт один боец за раз. Фаза растёт раз в
+// 30 мс (Options::battleXcomSpeed); на середине пути позиция бойца уже клетка назначения —
+// «рисовальный» переход оригинала, к концу он стоит. По диагонали фаз вдвое больше.
+static uint8_t wk_u = 0xFF;              // кто идёт (#FF — никто)
+static uint8_t wk_ph, wk_mid, wk_end;    // фаза, середина и конец
+static uint8_t wk_lx, wk_ly, wk_dx, wk_dy, wk_z;   // откуда и куда (этаж тот же)
+static uint8_t wk_acc;                   // мс к следующей фазе
+static uint16_t wk_fr;                   // кадр прошлого такта
+static int16_t wk_ox, wk_oy;             // смещение спрайта от клетки, где боец числится (Map::calculateWalkingOffset)
+extern volatile uint16_t frames;         // crt0.s
 // Рабочая страница боя: массивы поиска пути, свойства частей и таблицы графики миссии
 static uint8_t pf_page = PG_NONE;                // страница под рабочие массивы поиска пути
 
@@ -106,8 +120,8 @@ static uint8_t cur_on, cur_cx, cur_cy;   // курсор на клетке (cur_
 #define DL_MAX  (DL_PAGE_N * 2)
 #define DL_SIZE 8
 static uint8_t *const dl = (uint8_t *)0xC000;   // подключённая страница списка
-static uint8_t dl_page = PG_NONE;        // первая из двух подряд
-static uint16_t dl_n;                // записей в списке
+uint8_t dl_page = PG_NONE;               // первая из двух подряд (и scr_battle_s.s)
+uint16_t dl_n;                       // записей в списке
 static uint8_t dl_ok;                // список отвечает текущему виду
 
 // Сплит-экран (17_battle_render.md §3): карта живёт в строках холста BUF_Y.. и показывается
@@ -145,26 +159,20 @@ extern uint16_t map_gx, map_gy, split_line, vblank_line;
 // уже нарисованного в обход порядка художника. Вне прямоугольника скрытый холст — черновик.
 #define CANVAS_D  (CANVAS2_PAGE - SCREEN_PAGE)
 static uint8_t vis_d;                    // сдвиг страниц видимого холста; скрытый — vis_d ^ CANVAS_D
-static uint8_t tgt_d;                    // куда рисуют fill_buf, fill_cols и dl_run
+uint8_t tgt_d;                           // куда рисуют ring_op (гашение), fill_buf и dl_run
 static uint8_t away;                     // поверх боя открывали экран (инвентарь): сплит снят
 
-// Адрес начала строки карты в холсте: смещение в странице и сама страница. Считать это в сборке
-// списка (сдвиги 16-битных величин) дороже, чем прочитать из таблицы.
-static uint16_t __at(0xB000) row_ofs[BUF_H];
-static uint8_t __at(0xB200) row_page[BUF_H];
+// Адрес строки буфера y в холсте: страница SCREEN_PAGE + ((y + BUF_Y) >> 5), смещение
+// ((y + BUF_Y) & 31) << 9. Таблицы row_ofs / row_page (768 байт памяти банка) убраны: команды
+// списка считает ассемблер (scr_battle_s.s) парой сдвигов, а место ушло под код банка.
+#define ROW_PAGE(y)  (SCREEN_PAGE + (uint8_t)(((y) + BUF_Y) >> 5))
+#define ROW_OFS(y)   ((uint16_t)(((y) + BUF_Y) & 31) << 9)
 
 static void center_on_unit(void);       // определена ниже, вместе с юнитами
 static void draw_strip(int16_t lo, int16_t hi);   // перерисовка полосы вида (ниже)
 static void cell_repaint(uint8_t x, uint8_t y);   // перерисовка одной клетки (ниже)
-
-static void rows_init(void)
-{
-	for (uint16_t y = 0; y < BUF_H; y++) {
-		uint16_t b = y + BUF_Y;
-		row_ofs[y] = (uint16_t)(b & 31) << 9;
-		row_page[y] = SCREEN_PAGE + (uint8_t)(b >> 5);
-	}
-}
+static void walk_paint(void);                     // перерисовка шага идущего бойца (ниже)
+static void draw_rect(int16_t lo, int16_t hi, int16_t y0, int16_t y1);
 
 // Включить сплит: карта видна со строки BUF_Y холста, панель — со своей строки 144
 static void split_start(void)
@@ -201,121 +209,46 @@ static void dma_wait(void)
 		;
 }
 
-// Очистить буфер карты (512x256 = 128 КБ) одним DMA FILL: он читает слово и повторяет его,
-// поэтому стоит втрое дешевле переноса. gfx_fill тут не годится — он режет по видимому экрану.
-static void fill_buf(void)
+// Прямоугольник кольца: мировой диапазон [lo, hi] по X, строки буфера [y0, y1] (на завороте
+// кольца — два куска). copy = 0 — погасить его в холсте tgt_d (DMA FILL повторяет слово
+// источника: первое слово куска сперва обнуляется, и оно же источник — втрое дешевле переноса);
+// 1 — перенести из скрытого холста в видимый (2D DMA, у обоих шаг строки 512)
+static void ring_op(int16_t lo, int16_t hi, int16_t y0, int16_t y1, uint8_t copy)
 {
-	far_t base = FAR(SCREEN_PAGE + tgt_d + (BUF_Y >> 5), (uint16_t)(BUF_Y & 31) << 9);
-	uint16_t zero = 0;
-	far_write(base, &zero, 2);
-	uint16_t so = FAR_OFFS(base) + 2;
-	uint8_t sp = FAR_PAGE(base);
-	dma_wait();
-	TS_DMASAL = (uint8_t)FAR_OFFS(base); TS_DMASAH = (uint8_t)(FAR_OFFS(base) >> 8);
-	TS_DMASAX = FAR_PAGE(base);
-	TS_DMADAL = (uint8_t)so; TS_DMADAH = (uint8_t)(so >> 8); TS_DMADAX = sp;
-	TS_DMALEN = 255;                     // 256 слов = 512 байт в пачке
-	TS_DMANUM = 255;                     // 256 пачек = 256 строк буфера
-	TS_DMACTRL = DMA_FILL;
-	dma_wait();
-}
-
-// Прогон списка: на запись — ожидание DMA и восемь выгрузок регистров
-static void dl_run(void)
-{
-	uint8_t old = pg_map3(dl_page), d = tgt_d;   // страницы списка — основного холста
-	const uint8_t *p = dl;
-	for (uint16_t i = dl_n, k = 0; i; i--, k++, p += DL_SIZE) {
-		if (k == DL_PAGE_N) { pg_map3(dl_page + 1); p = dl; }
+	uint16_t c0 = (uint16_t)(lo + BIAS) & (BUF_W - 1);
+	uint16_t n = (uint16_t)(hi - lo + 1);
+	uint8_t pg = ROW_PAGE(y0), sd = copy ? vis_d ^ CANVAS_D : tgt_d, dd = copy ? vis_d : tgt_d;
+	if (n > BUF_W) n = BUF_W;
+	while (n) {
+		uint16_t part = BUF_W - c0;      // до конца строки буфера
+		if (part > n) part = n;
+		uint16_t w = (part + 1) & ~1, o = ROW_OFS(y0) + c0;
+		if (!copy) {
+			uint16_t zero = 0;
+			far_write(FAR(pg + dd, o), &zero, 2);
+		}
 		dma_wait();
-		TS_DMASAL = p[0]; TS_DMASAH = p[1]; TS_DMASAX = p[2];
-		TS_DMADAL = p[3]; TS_DMADAH = p[4]; TS_DMADAX = p[5] + d;
-		TS_DMALEN = p[6];
-		TS_DMANUM = p[7];
-		TS_DMACTRL = DMA_BLT1 | DMA_D_ALGN | DMA_ASZ;
-	}
-	pg_map3(old);
-}
-
-// Вызывается, когда в Win3 уже подключена страница списка (build_list переключает по рядам)
-static uint16_t dl_over;                 // сколько кадров не влезло в список (диагностика)
-
-static uint8_t *dl_put(void)
-{
-	if (dl_n >= DL_MAX) { dl_over++; return 0; }
-	if (dl_n == DL_PAGE_N) pg_map3(dl_page + 1);   // перевалили во вторую страницу
-	return dl + (dl_n++ & (DL_PAGE_N - 1)) * DL_SIZE;
-}
-
-// Кадр (запись вида tile_tab/unit_tab) -> команды дисплей-листа: источник лежит подряд
-// (строка = w байт), приёмник
-// шагает на 512 (BLT1 | D_ALGN | ASZ, 02 §6). Кадр — всегда одна команда; по краям окна он не
-// обрезается (см. ниже), сверху и снизу обрезается строками.
-static void dl_blit(const uint8_t *e, int16_t x, int16_t y)
-{
-	int16_t h = e[4];
-	if (!e[7]) return;
-	int16_t bx = (int16_t)((uint16_t)(x + e[5] + BIAS) & (BUF_W - 1)), by = y + e[6];
-	uint8_t sp = e[0];
-	uint16_t so = (uint16_t)e[1] | ((uint16_t)e[2] << 8);
-	uint8_t len = e[3];
-	int16_t w = e[7];
-	if (bx & 1) return;                  // DMA адресует словами; cam_x и dx кадра всегда чётные
-	if (by <= -TILE_H || by >= BUF_H) return;
-	// Быстрый путь: кадр целиком внутри буфера — обрезать нечего, одна команда на кадр
-	if (by >= 0 && by + h <= BUF_H && bx >= 0 && bx + w <= BUF_W) {
-		uint8_t *q = dl_put();
-		if (!q) return;
-		uint16_t o = row_ofs[by] + (uint16_t)bx;
-		q[0] = (uint8_t)so; q[1] = (uint8_t)(so >> 8); q[2] = sp;
-		q[3] = (uint8_t)o; q[4] = (uint8_t)(o >> 8); q[5] = row_page[by];
-		q[6] = len;
-		q[7] = (uint8_t)(h - 1);
-		return;
-	}
-	if (by < 0) {                        // верх кадра выше буфера — пропустить строки
-		so += (uint16_t)(-by) * (uint16_t)w;
-		h += by;
-		by = 0;
-	}
-	if (by + h > BUF_H) h = BUF_H - by;
-	if (h <= 0) return;
-	// Кадр лёг на стык кольца: левая часть идёт в конец строки буфера, правая — в начало.
-	// Строки при этом короче шага источника, поэтому команда на строку (таких кадров мало —
-	// только те, что попали на стык).
-	uint16_t step = e[7];
-	uint16_t w1 = (uint16_t)(BUF_W - bx) & ~1;       // сколько влезает до конца строки
-	uint16_t w2 = ((uint16_t)w - w1) & ~1;           // остаток — в начало строки
-	while (so >= 0x4000) { so -= 0x4000; sp++; }
-	while (h > 0) {
-		uint8_t *d;
-		if (w1) {
-			d = dl_put();
-			if (!d) return;
-			uint16_t offs = row_ofs[by] + (uint16_t)bx;
-			d[0] = (uint8_t)so; d[1] = (uint8_t)(so >> 8); d[2] = sp;
-			d[3] = (uint8_t)offs; d[4] = (uint8_t)(offs >> 8); d[5] = row_page[by];
-			d[6] = (uint8_t)(w1 / 2 - 1);
-			d[7] = 0;
-		}
-		if (w2) {
-			uint16_t so2 = so + w1;
-			uint8_t sp2 = sp;
-			if (so2 >= 0x4000) { so2 -= 0x4000; sp2++; }
-			d = dl_put();
-			if (!d) return;
-			uint16_t offs = row_ofs[by];
-			d[0] = (uint8_t)so2; d[1] = (uint8_t)(so2 >> 8); d[2] = sp2;
-			d[3] = (uint8_t)offs; d[4] = (uint8_t)(offs >> 8); d[5] = row_page[by];
-			d[6] = (uint8_t)(w2 / 2 - 1);
-			d[7] = 0;
-		}
-		so += step;
-		if (so >= 0x4000) { so -= 0x4000; sp++; }
-		by++;
-		h--;
+		TS_DMASAL = (uint8_t)o; TS_DMASAH = (uint8_t)(o >> 8); TS_DMASAX = pg + sd;
+		TS_DMADAL = (uint8_t)o; TS_DMADAH = (uint8_t)(o >> 8); TS_DMADAX = pg + dd;
+		TS_DMALEN = (uint8_t)(w / 2 - 1);
+		TS_DMANUM = (uint8_t)(y1 - y0);
+		TS_DMACTRL = copy ? DMA_RAM_RAM | DMA_S_ALGN | DMA_D_ALGN | DMA_ASZ : DMA_FILL | DMA_D_ALGN | DMA_ASZ;
+		dma_wait();
+		n -= part;
+		c0 = 0;
 	}
 }
+
+// Погасить весь буфер карты холста tgt_d (512x256 = 128 КБ, gfx_fill режет по видимому экрану)
+#define fill_buf() ring_op(-BIAS, BUF_W - 1 - BIAS, 0, BUF_H - 1, 0)
+
+// Кадр (запись tile_tab/unit_tab) -> команды списка: scr_battle_s.s. Вызывать, когда в Win3
+// подключена страница списка (build_range переключает по рядам). dl_blit — кадр целиком (x —
+// мировая, y — строка буфера), dl_blit_clip — в прямоугольнике [cx0, cx1) x [cy0, cy1)
+void dl_blit(const uint8_t *e, int16_t x, int16_t y);
+void dl_blit_clip(const uint8_t *e, int16_t x, int16_t y, int16_t cx0, int16_t cx1, int16_t cy0, int16_t cy1);
+uint16_t dl_over;                        // сколько команд не влезло в список (диагностика)
+void dl_run(void);                       // прогон списка в холст tgt_d (scr_battle_s.s)
 
 // Кадр карты по номеру части: вертикальное смещение части (MCD.P_Level) учтено вызывающим
 static void dl_tile(uint8_t t, int16_t x, int16_t y)
@@ -363,13 +296,17 @@ static void clamp_cam(void)
 }
 
 // Камера в центр карты: середина поля попадает в середину окна
-static void center(void)
+static void center_at(int16_t cx, int16_t cy)
 {
-	int16_t cx = m_sx / 2, cy = m_sy / 2;
 	cam_x = 160 - (cx - cy) * 16;
 	cam_y = VIEW_H / 2 - ((cx + cy) * 8 - (int16_t)level * 24);
 	dl_ok = 0;
 	clamp_cam();
+}
+
+static void center(void)
+{
+	center_at(m_sx / 2, m_sy / 2);
 }
 
 // Разложить вид в дисплей-лист: уровни снизу вверх, ряды Y, внутри ряда X, внутри клетки —
@@ -379,16 +316,8 @@ static void center(void)
 // то есть буфер по горизонтали кольцевой и при движении камеры ничего не переезжает — надо лишь
 // дорисовать въехавшую полосу. Полоса берётся с запасом в ширину спрайта: клетка рисуется
 // целиком, поэтому в неё должны попасть и соседи, чьи спрайты в неё заезжают.
-// Кадр юнита в дисплей-лист (как dl_tile, но кадры берутся из своего листа)
-static void dl_unit_frame(uint8_t fr, int16_t x, int16_t y)
-{
-	const uint8_t *e = unit_tab + (uint16_t)fr * TE_SIZE;
-	if (!e[7]) return;
-	dl_blit(e, x, y);
-}
 
-// Стоит ли в клетке живой боец (цвет рамки курсора)
-// Номер бойца в клетке + 1 (0 — никого): по нему и рисуют, и выбирают щелчком
+// Номер бойца в клетке + 1 (0 — никого): по нему выбирают щелчком и красят рамку курсора
 static uint8_t unit_no(uint8_t z, uint8_t y, uint8_t x)
 {
 	for (uint8_t i = 0; i < nunits; i++) {
@@ -399,30 +328,77 @@ static uint8_t unit_no(uint8_t z, uint8_t y, uint8_t x)
 	return 0;
 }
 
-static uint8_t unit_at(uint8_t z, uint8_t y, uint8_t x)
+// Части бойца в порядке наложения по направлению (UnitSprite::drawRoutine0, без предметов в
+// руках): 0 — левая рука, 1 — правая, 2 — ноги, 3 — торс
+static const uint8_t part_order[8][4] = {
+	{ 0, 2, 3, 1 }, { 0, 2, 3, 1 }, { 0, 2, 3, 1 }, { 2, 3, 0, 1 },
+	{ 2, 1, 3, 0 }, { 1, 2, 3, 0 }, { 1, 2, 3, 0 }, { 0, 1, 2, 3 },
+};
+static const int8_t walk_bob[8] = { 1, 0, -1, 0, 1, 0, -1, 0 };   // YoffWalk: торс при ходьбе
+
+// Боец (кадр в точке px, py): стоя — руки, ноги и торс листа; на колене — свои ноги, остальное
+// ниже; идущий — кадры фазы ходьбы (40 + 24·d: руки и ноги по восемь фаз, читаются из рабочей
+// страницы), торс качается, всё обрезано маской клетки [cx0, cx1) x [cy0, cy0 + 72)
+static void draw_unit(const unit_t *u, uint8_t walking, int16_t px, int16_t py, int16_t cx0, int16_t cx1, int16_t cy0)
 {
-	return unit_no(z, y, x) != 0;
+	uint8_t d = u->dir & 7, ph = wk_ph & 7, e[TE_SIZE];
+	int16_t dy = walking ? walk_bob[ph] + u_tftd : u->kneel ? KNEEL_DY + u_tftd : 0;
+	for (uint8_t k = 0; k < 4; k++) {
+		uint8_t p = part_order[d][k];
+		const uint8_t *f;
+		int16_t y = py;
+		if (p == 3) { f = unit_tab + (uint16_t)(24 + d) * TE_SIZE; y += dy; }
+		else if (walking) {
+			far_read(FAR(pf_page + 1, TL_SHEET) + (uint16_t)(40 + p * 8 + 24 * d + ph) * TE_SIZE, e, TE_SIZE);
+			f = e;
+		} else if (p == 2) f = u->kneel ? kneel_tab + (uint16_t)d * TE_SIZE : unit_tab + (uint16_t)(16 + d) * TE_SIZE;
+		else { f = unit_tab + (uint16_t)(p * 8 + d) * TE_SIZE; y += dy; }
+		if (walking) dl_blit_clip(f, px, y, cx0, cx1, cy0, cy0 + 72);
+		else dl_blit(f, px, y);
+	}
 }
 
-// Боец в этой клетке (если он тут есть): ноги, торс, руки по направлению
-static void draw_unit_at(uint8_t z, uint8_t y, uint8_t x, int16_t px, int16_t py)
+// Маска идущего бойца в клетке (x, y) — Map::drawUnit: 1 — вся колонка клетки, 2 — левая
+// половина, 3 — правая, 0 — эта клетка его не рисует. В клетку назначения он входит, из прежней
+// выходит; соседние по диагонали (направления 1 и 5) рисуют его целиком.
+static const uint8_t wm_dest[8] = { 3, 3, 1, 1, 1, 2, 2, 0 };
+static const uint8_t wm_last[8] = { 1, 2, 2, 0, 3, 3, 1, 1 };
+
+static uint8_t walk_mask(uint8_t x, uint8_t y, uint8_t d)
 {
-	if (!nunits || unit_page == PG_NONE) return;
-	for (uint8_t i = 0; i < nunits; i++) {
+	uint8_t lx = wk_lx, ly = wk_ly, dx = wk_dx, dy = wk_dy;   // сравнения — с копиями (SDCC 4.5)
+	if (x == dx && y == dy) return wm_dest[d];
+	if (x == lx && y == ly) return wm_last[d];
+	if (d == 1 && ((dx == x && dy + 1 == y) || (lx + 1 == x && ly == y))) return 1;
+	if (d == 5 && ((dx + 1 == x && dy == y) || (lx == x && ly + 1 == y))) return 1;
+	return 0;
+}
+
+// Бойцы, которых рисует клетка (Map::drawTerrain). После её содержимого (back = 0) — стоящий в
+// ней и идущий, если он числится в ней или в клетке «перед» ней (frontPos: (-1,+1), (0,+1),
+// (+1,+1), (+1,0), (+1,-1)); сразу после пола (back = 1) — идущий из клеток «за» ней (backPos:
+// (0,-1), (-1,-1), (-1,0)). Так идущего между клетками закрывает то, что ближе к зрителю.
+// Наборы — биты по (ay + 1) * 3 + ax + 1.
+static uint8_t __at(0xB340) rl[MAX_UNITS];   // бойцы текущего ряда сборки (build_range) — память банка
+static uint8_t __at(0xB34C) rn;
+
+static void draw_units_cell(uint8_t y, uint8_t x, int16_t px, int16_t py, uint8_t back)
+{
+	uint8_t wu = wk_u;
+	uint16_t set = back ? 0x00B : 0x1F4;
+	for (uint8_t k = 0; k < rn; k++) {
+		uint8_t i = rl[k];
 		const unit_t *u = &units[i];
-		if (!u->alive || u->z != z || u->y != y || u->x != x) continue;
-		uint8_t d = u->dir & 7;
-		int16_t dy = 0;
-		if (u->kneel) {                      // на колене: свои ноги, остальное ниже
-			const uint8_t *e = kneel_tab + (uint16_t)d * TE_SIZE;
-			if (e[7]) dl_blit(e, px, py);
-			dy = KNEEL_DY;
-		} else
-			dl_unit_frame(16 + d, px, py);   // ноги
-		dl_unit_frame(24 + d, px, py + dy);  // торс
-		dl_unit_frame(0 + d, px, py + dy);   // левая рука
-		dl_unit_frame(8 + d, px, py + dy);   // правая рука
-		return;
+		int8_t ax = (int8_t)(u->x - x), ay = (int8_t)(u->y - y);
+		if (i != wu) {
+			if (!back && !ax && !ay) draw_unit(u, 0, px, py, 0, 0, 0);
+			continue;
+		}
+		if (ax < -1 || ax > 1 || ay < -1 || ay > 1 || !((set >> ((ay + 1) * 3 + ax + 1)) & 1)) continue;
+		uint8_t m = walk_mask(x, y, u->dir & 7);
+		if (!m) continue;
+		draw_unit(u, 1, px + (ax - ay) * 16 + wk_ox, py + (ax + ay) * 8 + wk_oy,
+			  m == 3 ? px + 16 : px, m == 2 ? px + 16 : px + TILE_W, py - 32);
 	}
 }
 
@@ -433,6 +409,7 @@ static int16_t clip_y0, clip_y1 = BUF_H - 1;
 
 static void build_range(int16_t lo, int16_t hi)
 {
+	uint8_t wu = wk_u;
 	dl_n = 0;
 	int16_t dlo = (lo - TILE_W + 1 + 15) >> 4, dhi = hi >> 4;   // x - y для краёв полосы
 	for (uint8_t z = all_levels ? 0 : level; z <= level; z++) {
@@ -463,20 +440,32 @@ static void build_range(int16_t lo, int16_t hi)
 			uint8_t old = pg_map3(dl_n >= DL_PAGE_N ? dl_page + 1 : dl_page);
 			const uint8_t *p = row;
 			int16_t px = rx + x0 * 16, py = ry + x0 * 8;
+			// Кого рисовать в этом ряду: бойцы ряда и идущий из соседнего — клетка перебирает
+			// только их (раньше — всех бойцов на каждую клетку, треть времени шага)
+			uint8_t ru = 0;
+			for (uint8_t i = 0; i < nunits && unit_page != PG_NONE; i++) {
+				const unit_t *u = &units[i];
+				uint8_t uy = u->y;
+				if (u->alive && u->z == z && (uy == y || (i == wu && (uy + 1 == y || uy == y + 1)))) rl[ru++] = i;
+			}
+			rn = ru;
 			for (int16_t x = x0; x <= x1; x++, p += 4, px += 16, py += 8) {
 				uint8_t cx = cur_cx, cy = cur_cy;   // сравнения байтов — с копиями (SDCC 4.5)
 				uint8_t here = cur_on && z == level && (uint8_t)x == cx && (uint8_t)y == cy;
 				// на клетке боец — рамка жёлтая, пустая клетка — красная (как в оригинале)
-				uint8_t cf = here && unit_at(z, (uint8_t)y, (uint8_t)x) ? 1 : 0;
-				if (here) dl_blit(cur_tab + cf * TE_SIZE, px, py);          // задняя половина
+				uint8_t cf = here && unit_no(z, (uint8_t)y, (uint8_t)x) ? 1 : 0;
 				for (uint8_t k = 0; k < 4; k++) {
 					uint8_t t = p[k];
-					if (!t) continue;
-					dl_tile((uint8_t)(t - 1), px, py - (int16_t)tile_y[t - 1]);   // px — мировая X
+					if (t) dl_tile((uint8_t)(t - 1), px, py - (int16_t)tile_y[t - 1]);   // px — мировая X
+					if (k) continue;
+					// после пола (Map.cpp:668-721): задняя половина рамки курсора и идущий боец
+					// из клеток «за» этой — до её стен, чтобы стены его закрывали
+					if (here) dl_blit(cur_tab + cf * TE_SIZE, px, py);
+					if (ru && wu != 0xFF) draw_units_cell((uint8_t)y, (uint8_t)x, px, py, 1);
 				}
 				// Боец идёт сразу за своей клеткой: клетки правее и ниже рисуются позже и
 				// закрывают его — иначе он виден сквозь стены и закрытые двери.
-				draw_unit_at(z, (uint8_t)y, (uint8_t)x, px, py);
+				if (ru) draw_units_cell((uint8_t)y, (uint8_t)x, px, py, 0);
 				if (here) dl_blit(cur_tab + (2 + cf) * TE_SIZE, px, py);    // передняя половина
 			}
 			pg_map3(old);
@@ -506,57 +495,6 @@ static void show_cam(void)
 	__asm__("ei");
 }
 
-// Очистить в кольце прямоугольник: мировой диапазон [lo, hi] по X, строки буфера
-// [y0, y1] по Y. На завороте кольца получается два куска.
-static void fill_cols(int16_t lo, int16_t hi, int16_t y0, int16_t y1)
-{
-	uint16_t c0 = (uint16_t)(lo + BIAS) & (BUF_W - 1);
-	uint16_t n = (uint16_t)(hi - lo + 1);
-	if (n > BUF_W) n = BUF_W;
-	while (n) {
-		uint16_t part = BUF_W - c0;      // до конца строки буфера
-		if (part > n) part = n;
-		uint16_t w = (part + 1) & ~1;
-		far_t base = FAR(row_page[y0] + tgt_d, row_ofs[y0] + c0);
-		uint16_t zero = 0;
-		far_write(base, &zero, 2);
-		dma_wait();
-		TS_DMASAL = (uint8_t)FAR_OFFS(base); TS_DMASAH = (uint8_t)(FAR_OFFS(base) >> 8);
-		TS_DMASAX = FAR_PAGE(base);
-		TS_DMADAL = (uint8_t)FAR_OFFS(base); TS_DMADAH = (uint8_t)(FAR_OFFS(base) >> 8);
-		TS_DMADAX = FAR_PAGE(base);
-		TS_DMALEN = (uint8_t)(w / 2 - 1);
-		TS_DMANUM = (uint8_t)(y1 - y0);
-		TS_DMACTRL = DMA_FILL | DMA_D_ALGN | DMA_ASZ;
-		dma_wait();
-		n -= part;
-		c0 = 0;
-	}
-}
-
-// Тот же прямоугольник кольца — из скрытого холста в видимый: 2D DMA, у обоих шаг строки 512,
-// обрезка по X получается сама (на завороте кольца — два куска)
-static void copy_cols(int16_t lo, int16_t hi, int16_t y0, int16_t y1)
-{
-	uint16_t c0 = (uint16_t)(lo + BIAS) & (BUF_W - 1);
-	uint16_t n = (uint16_t)(hi - lo + 1);
-	uint8_t pg = row_page[y0], hd = vis_d ^ CANVAS_D, vd = vis_d;
-	if (n > BUF_W) n = BUF_W;
-	while (n) {
-		uint16_t part = BUF_W - c0;
-		if (part > n) part = n;
-		uint16_t w = (part + 1) & ~1, o = row_ofs[y0] + c0;
-		dma_wait();
-		TS_DMASAL = (uint8_t)o; TS_DMASAH = (uint8_t)(o >> 8); TS_DMASAX = pg + hd;
-		TS_DMADAL = (uint8_t)o; TS_DMADAH = (uint8_t)(o >> 8); TS_DMADAX = pg + vd;
-		TS_DMALEN = (uint8_t)(w / 2 - 1);
-		TS_DMANUM = (uint8_t)(y1 - y0);
-		TS_DMACTRL = DMA_RAM_RAM | DMA_S_ALGN | DMA_D_ALGN | DMA_ASZ;
-		dma_wait();
-		n -= part;
-		c0 = 0;
-	}
-}
 
 
 // Лист юнита в память и в готовые для блита записи (как тайлсет карты)
@@ -579,7 +517,10 @@ static uint8_t load_sheet(uint16_t res, uint8_t *pg, uint8_t *np, uint8_t n,
 static uint8_t load_unit_sheet(uint16_t id)
 {
 	if (unit_page != PG_NONE) { pg_free(unit_page, unit_np); unit_page = PG_NONE; }
-	if (!load_sheet(id, &unit_page, &unit_np, 40, 0, unit_tab, 32)) return 0;
+	u_tftd = res_game() == 2;
+	// 232 кадра: стойка и колено (0..39) — в память банка, ходьба (40..231) остаётся в рабочей
+	// странице (TL_SHEET) и читается при сборке вида
+	if (!load_sheet(id, &unit_page, &unit_np, 232, 0, unit_tab, 32)) return 0;
 	far_read(FAR(pf_page + 1, TL_SHEET) + 32 * TE_SIZE, kneel_tab, sizeof kneel_tab);
 	return 1;
 }
@@ -596,10 +537,7 @@ static void center_on_unit(void)
 {
 	if (!nunits) return;
 	const unit_t *u = &units[sel < nunits ? sel : 0];
-	cam_x = 160 - ((int16_t)u->x - (int16_t)u->y) * 16;
-	cam_y = VIEW_H / 2 - (((int16_t)u->x + (int16_t)u->y) * 8 - (int16_t)level * 24);
-	dl_ok = 0;
-	clamp_cam();
+	center_at(u->x, u->y);
 }
 
 // Высадка отряда: экипаж корабля миссии и его места на карте считает units.c (банк 30) —
@@ -614,11 +552,13 @@ static void place_squad(uint8_t debug_n)
 	q.craft = mis_crew; q.debug_n = debug_n;
 	uint8_t n = crew_deploy(&q, cu, MAX_UNITS);
 	for (uint8_t i = 0; i < n; i++) {
-		units[i].x = cu[i].x; units[i].y = cu[i].y; units[i].z = cu[i].z;
-		units[i].dir = 0; units[i].alive = 1; units[i].kneel = 0;
-		units[i].tu = units[i].tu_max = cu[i].tu;
-		units[i].hp = units[i].hp_max = cu[i].hp;
-		units[i].en = cu[i].en; units[i].mor = cu[i].mor;
+		unit_t *u = &units[i];
+		const cunit_t *c = &cu[i];
+		u->x = c->x; u->y = c->y; u->z = c->z;
+		u->dir = 0; u->alive = 1; u->kneel = 0;
+		u->tu = u->tu_max = c->tu;
+		u->hp = u->hp_max = c->hp;
+		u->en = c->en; u->mor = c->mor;
 	}
 	nunits = n;
 }
@@ -709,7 +649,7 @@ static uint8_t door_try(unit_t *u, uint8_t dir, uint8_t rclick)
 // Сидящего бойца хуже видно и точнее стреляет — это появится вместе с видимостью и стрельбой.
 static void do_kneel(void)
 {
-	if (!nunits) return;
+	if (!nunits || wk_u != 0xFF) return;
 	unit_t *u = &units[sel < nunits ? sel : 0];
 	uint8_t cost = u->kneel ? KNEEL_TU_UP : KNEEL_TU_DOWN;
 	if (u->tu < cost) return;
@@ -748,24 +688,65 @@ static void step_unit(void)
 	if (nx < 0 || ny < 0 || nx >= m_sx || ny >= m_sy) { path_n = 0; return; }
 	uint8_t cost = cell_cost(&bmap, (uint8_t)nx, (uint8_t)ny, u->z, d, STEP_TU);
 	if (u->tu < cost) { path_n = 0; return; }
-	uint8_t ox = u->x, oy = u->y, oz = u->z;   // откуда ушёл — эту клетку тоже перерисовать
-	u->z = cell_step_z(&bmap, ox, oy, oz, (uint8_t)nx, (uint8_t)ny);   // лестница вверх, падение вниз
-	u->x = (uint8_t)nx; u->y = (uint8_t)ny;
+	uint8_t ox = u->x, oy = u->y, oz = u->z;
+	uint8_t nz = cell_step_z(&bmap, ox, oy, oz, (uint8_t)nx, (uint8_t)ny);   // лестница вверх, падение вниз
 	u->tu -= cost;
 	if (u->en > 1) u->en--;              // энергия тратится медленнее времени
 	path_i++;
 	if (path_i >= path_n) path_n = 0;
-	if (u->z != oz) {                    // сменился этаж — камера едет за бойцом (Camera::setViewLevel)
-		level = u->z;
+	if (nz != oz) {                      // сменился этаж — пока скачком, камера едет за бойцом
+		u->x = (uint8_t)nx; u->y = (uint8_t)ny; u->z = nz;   // (Camera::setViewLevel)
+		level = nz;
 		dl_ok = 0;
 		ui_dirty(0);
 		return;
 	}
-	// Перерисовываем не весь вид и даже не полосу, а две клетки — ту, откуда боец ушёл, и
-	// ту, где оказался (17 §2). Гасится и собирается заново только их прямоугольник.
-	uint8_t nxx = u->x, nyy = u->y;
-	cell_repaint(ox, oy);
-	cell_repaint(nxx, nyy);
+	// Шаг — фазами ходьбы (walk_phase): боец числится в прежней клетке до середины пути
+	wk_u = sel < nunits ? sel : 0;
+	wk_lx = ox; wk_ly = oy; wk_z = oz;
+	wk_dx = (uint8_t)nx; wk_dy = (uint8_t)ny;
+	wk_mid = 4 + 4 * (d & 1);
+	wk_end = 8 + 8 * (d & 1);
+	wk_ph = 0;
+	wk_acc = 0;
+	wk_fr = frames;
+	move_wait = 0;                       // между клетками пути паузы нет
+	walk_paint();
+}
+
+// Смещение спрайта на фазе (Map::calculateWalkingOffset, бойцы 1x1, без смены высоты пола):
+// до середины — от прежней клетки к новой, после — от новой, где он уже числится
+static const int8_t wo_x[8] = { 1, 1, 1, 0, -1, -1, -1, 0 };
+static const int8_t wo_y[8] = { 1, 0, -1, -1, -1, 0, 1, 1 };
+
+// Перерисовать прямоугольник обеих клеток шага (и строку-другую на качание торса)
+static void walk_paint(void)
+{
+	if (wk_u != 0xFF) {
+		uint8_t d = units[wk_u].dir & 7;
+		int8_t k = (int8_t)(wk_ph < wk_mid ? wk_ph : wk_ph - wk_end);
+		wk_ox = k * 2 * wo_x[d];
+		wk_oy = -k * wo_y[d];
+	}
+	if (!dl_ok || dl_page == PG_NONE) { ui_dirty(0); return; }
+	int16_t lx = ((int16_t)wk_lx - wk_ly) * 16, dx = ((int16_t)wk_dx - wk_dy) * 16;
+	int16_t ly = ((int16_t)wk_lx + wk_ly) * 8, dy = ((int16_t)wk_dx + wk_dy) * 8;
+	int16_t b = base_y + PAD_Y - (int16_t)wk_z * 24;
+	draw_rect(lx < dx ? lx : dx, (lx > dx ? lx : dx) + TILE_W - 1,
+		  (ly < dy ? ly : dy) + b - 2, (ly > dy ? ly : dy) + b + TILE_H + 1);
+}
+
+// Следующая фаза: на середине боец переходит в новую клетку, на последней — уже стоит в ней
+static void walk_phase(void)
+{
+	unit_t *u = &units[wk_u];
+	wk_ph++;
+	if (wk_ph == wk_mid) { u->x = wk_dx; u->y = wk_dy; }
+	if (wk_ph >= wk_end) {
+		wk_u = 0xFF;
+		if (!path_n) ui_dirty(0);        // путь кончился — обновить панель
+	}
+	walk_paint();
 }
 
 // ---------------------------------------------------------------- сгенерированная карта
@@ -788,6 +769,7 @@ static uint8_t load_gen(uint16_t terrain)
 {
 	gen_free();
 	loaded = 0;
+	wk_u = 0xFF;
 	// Параметры миссии: размер поля, этажи, скрипт и террейн — из развёртывания, если оно
 	// задано геоскейпом; корабль отряда и НЛО — от цели, иначе первые попавшиеся (отладка).
 	uint8_t mods = 4, levels = 4;
@@ -818,7 +800,6 @@ static uint8_t load_gen(uint16_t terrain)
 	cells = mapgen_cells();
 	map_phys = cells;
 	bmap.cells = cells; bmap.sx = m_sx; bmap.sy = m_sy; bmap.sz = m_sz; bmap.page = pf_page;
-	rows_init();
 	level = 0;                           // камера начинается на земле, как в оригинале
 	gen_mode = 1;
 	dl_ok = 0;
@@ -844,18 +825,19 @@ static void draw_rect(int16_t lo, int16_t hi, int16_t y0, int16_t y1)
 	if (y1 > BUF_H - 1) y1 = BUF_H - 1;
 	if (y0 > y1) return;
 	tgt_d = vis_d ^ CANVAS_D;
-	fill_cols(lo, hi, y0, y1);
-	// Сборка берёт клетки чуть шире прямоугольника: соседи заезжают в него своими спрайтами,
-	// а части с P_Level подняты вверх (до 24 точек), поэтому клетки ниже прямоугольника тоже
-	// могут в него нарисовать — их и добираем снизу.
+	ring_op(lo, hi, y0, y1, 0);
+	// Сборка берёт все клетки, чей спрайт (32 точки от X клетки) задевает прямоугольник —
+	// build_range отбирает их сама; части с P_Level подняты вверх (до 24 точек), поэтому клетки
+	// ниже прямоугольника тоже могут в него нарисовать — их добираем снизу. (Прежний запас
+	// ещё по 32 точки с боков удваивал число блитов, ничего не меняя в прямоугольнике.)
 	clip_y0 = y0;
 	clip_y1 = y1 + 24;
-	build_range(lo - TILE_W, hi + TILE_W);
+	build_range(lo, hi);
 	clip_y0 = 0;
 	clip_y1 = BUF_H - 1;
 	dl_run();
 	dma_wait();
-	copy_cols(lo, hi, y0, y1);
+	ring_op(lo, hi, y0, y1, 1);
 }
 
 static void draw_strip(int16_t lo, int16_t hi)
@@ -874,7 +856,6 @@ static void cell_repaint(uint8_t x, uint8_t y)
 
 static void draw_map(void)
 {
-	res_t r;
 	if (!loaded || dl_page == PG_NONE) return;
 	if (dl_ok) {
 		// Вид уже в буфере: если камера ушла по горизонтали, дорисовать въехавшую полосу —
@@ -993,9 +974,19 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			if (move_wait) move_wait--;
 			else if (u->dir != turn_dir) { turn_to(u, turn_dir); move_wait = 2; }
 			else { door_try(u, turn_dir, 1); turn_dir = 0xFF; ui_dirty(0); }
-		} else if (path_n) {                 // идём по пути: шаг раз в несколько кадров
+		} else if (wk_u != 0xFF) {           // идёт: фаза раз в 30 мс, кадр — 20 мс; отставшая
+			uint16_t f = frames;             //   перерисовка не копит фазы — не больше одной за такт
+			uint16_t a = wk_acc + (uint16_t)(f - wk_fr) * 20;
+			wk_fr = f;
+			if (a >= 30) {
+				a -= 30;
+				if (a >= 30) a = 29;
+				walk_phase();
+			}
+			wk_acc = (uint8_t)a;
+		} else if (path_n) {                 // идём по пути: поворот раз в несколько кадров
 			if (move_wait) move_wait--;
-			else { step_unit(); move_wait = 3; if (!path_n) ui_dirty(0); }   // в конце — обновить панель
+			else { move_wait = 3; step_unit(); if (!path_n) ui_dirty(0); }   // в конце — обновить панель
 		}
 		break;
 	case EVT_DRAW:
@@ -1027,6 +1018,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		if (pf_page != PG_NONE) { pg_free(pf_page, 2); pf_page = PG_NONE; }
 		path_n = 0;
 		turn_dir = 0xFF;
+		wk_u = 0xFF;
 		// Карта боя рисуется в строки холста 200.., а там же задний буфер глобуса (globe.s,
 		// BACK_Y 280): после боя геоскейп обязан нарисовать планету заново, иначе на экране
 		// остаются тайлы поля боя.
@@ -1038,7 +1030,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	case EVT_BUTTON:
 		switch (arg) {
 		case 0: {                            // клик по карте
-			if (!gen_mode || !nunits || cursor_y >= VIEW_H) break;
+			if (!gen_mode || !nunits || cursor_y >= VIEW_H || wk_u != 0xFF) break;   // идёт — ждать
 			uint8_t tx, ty;
 			if (!screen_to_cell(cursor_x, cursor_y, &tx, &ty)) break;
 			unit_t *u = &units[sel < nunits ? sel : 0];
@@ -1097,7 +1089,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		case 'q': case 'Q': if (level + 1 < m_sz) { level++; center(); } break;
 		case 'd': case 'D': {               // отладка: поставить бойца к первой двери
 			uint8_t dx, dy, ds;
-			if (!gen_mode || !nunits || !door_find(&bmap, level, &dx, &dy, &ds)) break;
+			if (!gen_mode || !nunits || wk_u != 0xFF || !door_find(&bmap, level, &dx, &dy, &ds)) break;
 			unit_t *u = &units[sel < nunits ? sel : 0];
 			uint8_t ox = u->x, oy = u->y;
 			u->x = dx; u->y = dy; u->z = level;

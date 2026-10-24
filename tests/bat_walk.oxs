@@ -1,0 +1,43 @@
+# Наземный бой: ходьба бойца фазами (BattleUnit::keepWalking, Map::calculateWalkingOffset,
+# UnitSprite::drawRoutine0 — кадры 40+24d рук и ног, качание торса; Map::drawUnit — боец между
+# клетками рисуется кусками в колонках задетых клеток, после пола и после содержимого). Боец идёт
+# из корабля на запад: в начале его закрывает корпус, потом он выходит на песок. Курсор скрыт.
+# Снимки — tmp/shots/bat_walk/ (каждые 4 кадра). Точность перерисовки при ходьбе — bat_exact.oxs.
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_walk.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+poke _cursor_off 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+shot tmp/shots/bat_walk/00.png
+pokew _cursor_x 64
+pokew _cursor_y 40
+click L
+wait 2
+shot tmp/shots/bat_walk/01.png
+wait 2
+shot tmp/shots/bat_walk/02.png
+wait 2
+shot tmp/shots/bat_walk/03.png
+wait 2
+shot tmp/shots/bat_walk/04.png
+wait 2
+shot tmp/shots/bat_walk/05.png
+wait 2
+shot tmp/shots/bat_walk/06.png
+wait 2
+shot tmp/shots/bat_walk/07.png
+wait 2
+shot tmp/shots/bat_walk/08.png
+wait 2
+shot tmp/shots/bat_walk/09.png
+wait 2
+shot tmp/shots/bat_walk/10.png
+wait 2
+shot tmp/shots/bat_walk/11.png
+wait 2
+shot tmp/shots/bat_walk/12.png
+echo battle walk OK
+exit 0
