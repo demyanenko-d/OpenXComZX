@@ -1533,3 +1533,10 @@
   данные — UFO-танк 288 кадров = 10 КБ. UNITS.PAK: UFO 212 → 986 КБ, TFTD 285 → 1176 КБ.
   `MAPBLK_*` получили хвост с узлами RMP (MAPS.PAK: UFO 252 → 257 КБ, TFTD 963 → 985 КБ),
   `alienDeployments` — поля `race` и `data`.
+- **REF стёрт и частично восстановлен (2026-10-24).** Агент конвертера работал в отдельном git
+  worktree и создал в нём junction `REF` на настоящий каталог; `git worktree remove --force` прошёл
+  по ссылке и удалил содержимое `D:\ProjectWork\OpenXComZX\REF`. Пользователь вернул OpenXcom, fpga,
+  frontend, src_sdcc, tsbios, vdac1/2, WC и часть test_service; утрачены books, tr-dos, Unreal
+  (эмулятор — в рабочей копии `unreal/`), z88dk и файлы корня. Состав — 01 «Состав REF». Правило:
+  перед удалением каталогов снимать в них ссылки (reparse points), агентам junction на REF/Steam
+  не создавать — абсолютные пути.

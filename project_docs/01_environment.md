@@ -54,7 +54,7 @@ uint8_t f(uint8_t k) { if (k == g) return 0; g = k; return k; }
 | robimg.exe | `D:\ProjectWork\SoundSinth\scripts\robimg.exe` | сборка FAT-образа SD для эмулятора |
 | `mkhobeta.js`, `mksna.js`, `cutbin.js`, `ihx2wmf.js` | `D:\ProjectWork\SoundSinth\scripts\tools\` | упаковщики (копии в `D:\ProjectWork\Backup\scripts`) |
 | `build_sd.bat`, `build_trdos.bat`, `build_z80fw.bat` | `D:\ProjectWork\SoundSinth\scripts\` | образцы скриптов сборки |
-| Unreal Speccy | только исходники `REF/Unreal` (VS2022), конфиг `REF/Unreal/cfg/Unreal.ini` уже под TS-Config + MoonSound | эмулятор |
+| Unreal Speccy | рабочая копия `unreal/` (свой git, CMake); конфиг `unreal/Unreal/cfg/Unreal.ini` под TS-Config + MoonSound. Снимок `REF/Unreal` (VS2022) утрачен 2026-10-24 | эмулятор |
 | UnrealRemix | `D:\ProjectWork\UnrealRemix` — похоже, CMake-версия Unreal (есть `out/build/x64-Debug`, но exe не собран) | альтернативный источник эмулятора |
 | ZXMAK2 | `D:\ProjectWork\ZXMAK2` | другой эмулятор (поддержку TS-Config не проверял) |
 
@@ -141,7 +141,7 @@ cmake --build unreal/build/oxz -j 2
   `app/emul.cpp` (ключи), `app/mainloop.cpp` (конец кадра, без паузы),
   `devices/io/io.cpp` (порты), `CMakeLists.txt`.
 
-### Снимок `REF/Unreal` (для справки)
+### Снимок `REF/Unreal` (для справки; сам снимок утрачен 2026-10-24)
 
 Что выяснилось при попытке собрать снимок `REF/Unreal`:
 - проект `Unreal2017.vcxproj`, тулсет v142; на машине есть только v145
@@ -161,16 +161,20 @@ cmake --build unreal/build/oxz -j 2
 
 ## Состав REF
 
+2026-10-24 содержимое REF было стёрто (удаление рабочей копии агента прошло по junction на REF —
+findings_log); пользователь восстановил то, что нашёл. Сейчас:
+
 | Папка | Файлов | МБ | Что это |
 |---|---:|---:|---|
-| `books/` | 636 | 5.7 | ZXDN (статьи: coding, graphic, hardware, music, software), volkov |
-| `frontend/` | 599 | 2.8 | Z80-сторона другого проекта: клиент шины, WC-плагин, TR-DOS-приложение, `z80_fw` (SD, FAT, экран, клавиатура, прерывания) |
-| `OpenXcom/` | 1118 | 16.5 | исходники OpenXcom (C++), правила, моды; **без оригинальных данных** |
-| `src_sdcc/` | 416 | 2.0 | VGM-плеер на SDCC с OPL3: `tsconf.h`, `wc_api.h`, `opl3.s`, `isr.s`, `inflate.asm`, crt0, скрипты сборки |
-| `test_service/` | 105 | 1.5 | сервисный тест (уточнить) |
-| `tr-dos/` | 18 | 0.7 | дизассемблированный TR-DOS |
-| `tsbios/` | 33 | 1.5 | TS-BIOS: исходники, FAT engine |
-| `Unreal/` | 343 | 24.1 | исходники эмулятора Unreal Speccy |
-| `WC/` | 117 | 1.1 | исходники Wild Commander и плагинов, описание API плагинов |
-| `z88dk/` | 20835 | 36.7 | z88dk (библиотеки, заголовки) |
-| корень | — | — | TR-DOS описание (PDF/TXT), «Тайники ZX Spectrum» (PDF/TXT) |
+| `OpenXcom/` | 1117 | 19 | исходники OpenXcom (C++), правила, моды; **без оригинальных данных** (было 1118 файлов) |
+| `fpga/` | 150 | 7.3 | исходники ПЛИС TS-Config (видео, DMA и т. д.) |
+| `frontend/` | 671 | 5.1 | Z80-сторона другого проекта: клиент шины, WC-плагин, TR-DOS-приложение, `z80_fw` (SD, FAT, экран, клавиатура, прерывания) |
+| `src_sdcc/` | 416 | 2.6 | VGM-плеер на SDCC с OPL3: `tsconf.h`, `wc_api.h`, `opl3.s`, `isr.s`, `inflate.asm`, crt0, скрипты сборки |
+| `test_service/` | 46 | 0.3 | сервисный тест — неполный (было 105 файлов, 1.5 МБ) |
+| `tsbios/` | 33 | 1.6 | TS-BIOS: `bin/`, `src/` (исходники, FAT engine `pff/`), `txt/` |
+| `vdac1/`, `vdac2/` | 18, 20 | 1.1, 1.5 | VDAC |
+| `WC/` | 153 | 2.2 | исходники Wild Commander и плагинов, описание API плагинов |
+
+Утрачены (не нашлись): `books/` (ZXDN, volkov), `tr-dos/` (дизассемблированный TR-DOS),
+`Unreal/` (снимок исходников эмулятора — эмулятор есть в рабочей копии `unreal/`), `z88dk/`,
+файлы корня (описание TR-DOS, «Тайники ZX Spectrum»).
