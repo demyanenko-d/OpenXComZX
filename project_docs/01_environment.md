@@ -54,7 +54,7 @@ uint8_t f(uint8_t k) { if (k == g) return 0; g = k; return k; }
 | robimg.exe | `D:\ProjectWork\SoundSinth\scripts\robimg.exe` | сборка FAT-образа SD для эмулятора |
 | `mkhobeta.js`, `mksna.js`, `cutbin.js`, `ihx2wmf.js` | `D:\ProjectWork\SoundSinth\scripts\tools\` | упаковщики (копии в `D:\ProjectWork\Backup\scripts`) |
 | `build_sd.bat`, `build_trdos.bat`, `build_z80fw.bat` | `D:\ProjectWork\SoundSinth\scripts\` | образцы скриптов сборки |
-| Unreal Speccy | рабочая копия `unreal/` (свой git, CMake); конфиг `unreal/Unreal/cfg/Unreal.ini` под TS-Config + MoonSound. Снимок `REF/Unreal` (VS2022) утрачен 2026-10-24 | эмулятор |
+| Unreal Speccy | только исходники `REF/Unreal` (VS2022), конфиг `REF/Unreal/cfg/Unreal.ini` уже под TS-Config + MoonSound | эмулятор |
 | UnrealRemix | `D:\ProjectWork\UnrealRemix` — похоже, CMake-версия Unreal (есть `out/build/x64-Debug`, но exe не собран) | альтернативный источник эмулятора |
 | ZXMAK2 | `D:\ProjectWork\ZXMAK2` | другой эмулятор (поддержку TS-Config не проверял) |
 
@@ -141,7 +141,7 @@ cmake --build unreal/build/oxz -j 2
   `app/emul.cpp` (ключи), `app/mainloop.cpp` (конец кадра, без паузы),
   `devices/io/io.cpp` (порты), `CMakeLists.txt`.
 
-### Снимок `REF/Unreal` (для справки; сам снимок утрачен 2026-10-24)
+### Снимок `REF/Unreal` (для справки)
 
 Что выяснилось при попытке собрать снимок `REF/Unreal`:
 - проект `Unreal2017.vcxproj`, тулсет v142; на машине есть только v145
@@ -176,5 +176,5 @@ findings_log); пользователь восстановил то, что на
 | `WC/` | 153 | 2.2 | исходники Wild Commander и плагинов, описание API плагинов |
 
 Утрачены (не нашлись): `books/` (ZXDN, volkov), `tr-dos/` (дизассемблированный TR-DOS),
-`Unreal/` (снимок исходников эмулятора — эмулятор есть в рабочей копии `unreal/`), `z88dk/`,
+`Unreal/`, `z88dk/`,
 файлы корня (описание TR-DOS, «Тайники ZX Spectrum»).
