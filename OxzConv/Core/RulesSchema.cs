@@ -165,6 +165,8 @@ namespace OxzConv
 					Fn("invImage", "res", (e, k, rs) => ArmorImage(rs, k, 5), "кукла инвентаря: spriteInv + M0.SPK / .SPK"),
 					F("stats", "stats"),
 					F("spriteInv", "str", comment: "имя куклы инвентаря (MAN_*), пока через таблицу строк"),
+					Fn("sheet", "res", (e, k, rs) => ArmorSheet(rs, k),
+						"готовые кадры юнита ASHEET_* (UNITS.PAK, BattleData.cs/UnitFrames.cs); 0 — листа нет"),
 				},
 				Flags = { "allowInv=true", "constantAnimation", "drawBubbles" },
 			});
@@ -545,6 +547,14 @@ namespace OxzConv
 			foreach (var n in new[] { inv + "M0.SPK", inv + ".SPK", inv })
 				if (rs.ResFind(n) >= 0) return n;
 			return null;
+		}
+
+		// Имя ресурса кадров брони: его кладёт BattleData (шаг боя идёт раньше правил), карту
+		// «тип брони -> имя» Converter.Rules передаёт через rs.Cache["armorSheets"].
+		static object ArmorSheet(RuleSet rs, string id)
+		{
+			if (!rs.Cache.TryGetValue("armorSheets", out var m) || !(m is Dictionary<string, string> map)) return null;
+			return map.TryGetValue(id, out var n) && rs.ResFind(n) >= 0 ? n : null;
 		}
 
 		static List<object> RectList(object r) => r == null ? null : new List<object> { Y.Get(r, "x"), Y.Get(r, "y"), Y.Get(r, "width"), Y.Get(r, "height") };
