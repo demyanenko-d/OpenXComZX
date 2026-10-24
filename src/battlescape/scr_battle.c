@@ -7,6 +7,7 @@
 // TAB и SHIFT); стрелки — камера, Q/A — этаж, G — пересобрать карту, ESC — выход.
 #include <stdint.h>
 #include <string.h>
+#include <stddef.h>
 #include "memmap.h"
 #include "res.h"
 #include "res_ids.h"
@@ -32,6 +33,7 @@
 #include "bspr.h"
 #include "bmenu.h"
 #include "state.h"
+#include "bstats.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 
@@ -56,6 +58,7 @@ static uint8_t nsold;                    // бойцы X-COM — первые ns
 static uint8_t bt_turn = 1, bt_side;     // номер хода и чей ход (FACTION_*)
 static uint8_t bt_reserve, bt_res_kneel; // резерв времени (RES_*) и «на колено» — BattlescapeGame
 static void next_turn_close(void);       // окно хода (ниже)
+static void unit_armor(unit_t *u, uint16_t arm);   // броня бойца (ниже)
 static uint16_t ufo_deploy(uint8_t utype);   // развёртывание по типу НЛО (ниже)
 static uint8_t sel;                      // выбранный боец (панель показывает его состояние)
 #define KNEEL_TU_DOWN  4                 // цена приседания и вставания (BattlescapeGame::kneel)
@@ -88,6 +91,14 @@ static const wdef_t w_battle[] = {
 	HOT(96, 177, 10, 23, A_CUSTOM, 15, 0),           // резерв на колено (btnReserveKneelClick)
 	HOT(8, 148, 32, 48, A_CUSTOM, 16, 0),            // предмет в левой руке (btnLeftHandItemClick)
 	HOT(280, 148, 32, 48, A_CUSTOM, 17, 0),          // в правой
+	HOT(107, 177, 164, 23, A_CUSTOM, 19, 0),         // показатели — окно характеристик (btnStatsClick)
+};
+
+// UnitInfoState: экран рисует bstats.c, «<<» и «>>» — соседний боец, клик ниже — закрыть
+static const wdef_t w_uinfo[] = {
+	CUS(0, 20, 320, 180, DYN(0), A_CUSTOM, 1),
+	BTN(2, 2, 14, 18, UI_EL_BUTTON, DYN(1), A_CUSTOM, 2, 0),
+	BTN(304, 2, 14, 18, UI_EL_BUTTON, DYN(2), A_CUSTOM, 3, 0),
 };
 
 // ActionMenuState: окно поверх боя без своего фона — пункты рисует bmenu.c, клики и наведение
@@ -123,6 +134,7 @@ static const scr_t tab[] = {
 	SCR(SCR_NEXT_TURN, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_RAWPAL, w_next),
 	SCR(SCR_ACTION_MENU, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, 0, SF_POPUP | SF_RAWPAL, w_amenu),
 	SCR(SCR_ABORT, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_POPUP | SF_RAWPAL, w_abort),
+	SCR(SCR_UNIT_INFO, UI_SCR_STATS, RES_PAL_BATTLESCAPE, 0, SF_RAWPAL, w_uinfo),
 };
 
 // Запись юнита для вида — в рабочую страницу; bv_sync переносит их виду
@@ -419,6 +431,7 @@ static uint8_t load_gen(uint16_t terrain)
 	}
 	for (uint8_t i = 0; i < nsold; i++) {   // боевые показатели: солдат кампании или отладочные
 		unit_t *u = &units[i];
+		uint16_t arm;
 		u->hand = 1;                         // активная рука — правая (BattleUnit: STR_RIGHT_HAND)
 		if (u->sol != 0xFF) {
 			soldier_t s;
@@ -426,10 +439,14 @@ static uint8_t load_gen(uint16_t terrain)
 			u->bravery = s.cur.bravery; u->reactions = s.cur.reactions; u->firing = s.cur.firing;
 			u->throwing = s.cur.throwing; u->strength = s.cur.strength; u->psi_str = s.cur.psi_strength;
 			u->psi_skill = s.cur.psi_skill; u->melee = s.cur.melee;
+			arm = s.armor == 0xFF ? 0xFFFF : s.armor;
 		} else {
 			u->bravery = 50; u->reactions = 50; u->firing = 60; u->throwing = 60;
 			u->strength = 30; u->melee = 40;
+			rtab_t t;                        // броня солдата по умолчанию (soldiers.armor)
+			arm = rtab_open(RES_RULE_SOLDIERS, &t) && t.n ? rtab_word(&t, 0, offsetof(r_soldiers_t, armor)) : 0xFFFF;
 		}
+		unit_armor(u, arm);
 	}
 	bt_reserve = RES_NONE;
 	bt_res_kneel = 0;
@@ -525,6 +542,37 @@ static uint8_t in_craft(const unit_t *u)
 	return c >= m_cbase && c;
 }
 
+// Броня бойца (BattleUnit(Soldier*)): значения по сторонам и прибавка к характеристикам
+// (_stats += armor->getStats())
+static void unit_armor(unit_t *u, uint16_t arm)
+{
+	rtab_t t;
+	r_armors_t a;
+	if (!rtab_open(RES_RULE_ARMORS, &t) || arm >= t.n) return;
+	rtab_get(&t, arm, &a);
+	u->armor[0] = a.front_armor; u->armor[1] = u->armor[2] = a.side_armor;
+	u->armor[3] = a.rear_armor; u->armor[4] = a.under_armor;
+	u->tu += a.stats.tu; u->tu_max += a.stats.tu; u->en += a.stats.stamina; u->en_max += a.stats.stamina;
+	u->hp += a.stats.health; u->hp_max += a.stats.health; u->bravery += a.stats.bravery;
+	u->reactions += a.stats.reactions; u->firing += a.stats.firing; u->throwing += a.stats.throwing;
+	u->strength += a.stats.strength; u->psi_str += a.stats.psi_strength; u->psi_skill += a.stats.psi_skill;
+	u->melee += a.stats.melee;
+}
+
+// ---------------------------------------------------------------- характеристики
+static void uinfo_draw(void)
+{
+	const unit_t *u = &units[sel < nsold ? sel : 0];
+	ustat_t s;
+	s.sol = u->sol; s.type = u->type;
+	s.tu = u->tu; s.tu_max = u->tu_max; s.en = u->en; s.en_max = u->en_max;
+	s.hp = u->hp; s.hp_max = u->hp_max; s.stun = u->stun; s.mor = u->mor;
+	s.bravery = u->bravery; s.reactions = u->reactions; s.firing = u->firing; s.throwing = u->throwing;
+	s.melee = u->melee; s.strength = u->strength; s.psi_str = u->psi_str; s.psi_skill = u->psi_skill;
+	memcpy(s.armor, u->armor, 5);
+	stats_draw(&s);
+}
+
 // ---------------------------------------------------------------- меню действий
 // BattlescapeState::handleItemClick -> ActionMenuState: пункты — по предмету в руке (bmenu.c),
 // выбранное действие ждёт цели (прицел и выстрел — дальше)
@@ -596,6 +644,10 @@ void bat_text(uint8_t id, uint8_t slot, uint8_t line, char *buf) __banked
 {
 	(void)line;
 	buf[0] = 0;
+	if (id == SCR_UNIT_INFO) {
+		if (slot) { buf[0] = slot == 1 ? '<' : '>'; buf[1] = buf[0]; buf[2] = 0; }
+		return;
+	}
 	if (id == SCR_ABORT) {               // бойцы на полу своего корабля (START_POINT) и прочие
 		uint8_t in = 0, out = 0;
 		for (uint8_t i = 0; i < nsold; i++) {
@@ -626,6 +678,17 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		return 0;
 	}
 	if (id == SCR_ACTION_MENU) { amenu_event(ev, arg); return 0; }
+	if (id == SCR_UNIT_INFO) {
+		if (ev == EVT_DRAW) uinfo_draw();
+		else if (ev == EVT_BUTTON) {
+			if (arg == 1) UI_GO(A_POP, 0);
+			else {                       // btnPrevClick / btnNextClick
+				if (arg == 3) sel_next(); else sel_prev();
+				ui_dirty(0);
+			}
+		} else if (ev == EVT_KEY && arg == KEY_ESC) UI_GO(A_POP, 0);
+		return 0;
+	}
 	if (id == SCR_ABORT) {               // OK: finishBattle(aborted) — разбора ещё нет, просто выход
 		if (ev == EVT_BUTTON && arg == 1) UI_GO(A_POP2, 0);
 		return 0;
@@ -761,6 +824,12 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			ui_dirty(0);
 			break;
 		case 15: bt_res_kneel = !bt_res_kneel; ui_dirty(0); break;
+		case 19:                             // характеристики выбранного бойца
+			if (!nsold || bv_walking() != 0xFF) break;
+			bv_suspend();
+			marks_show(0, 0);
+			UI_GO(A_PUSH, SCR_UNIT_INFO);
+			break;
 		case 18:                             // прервать миссию: окно поверх карты, панель видна
 			if (bv_walking() != 0xFF) break;
 			bv_suspend();
