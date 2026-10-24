@@ -208,9 +208,12 @@ static uint8_t get_wave(uint8_t type, uint8_t w, int16_t *wave)
 	rtab_t t;
 	r_alienMissions_t m;
 	mission_rule(type, &m, &t);
-	uint8_t n = tlist(&t, &m.waves, lb2) / 5;
+	// число волн — без чтения списка (как tlist: не больше 64 слов); сама волна — 10 байт прямо
+	// из хвоста таблицы, а не весь список в lb2 ради одной (perf/logic.md П3). lb2 после
+	// get_wave никто не читает — каждый читатель заполняет его сам
+	uint8_t n = (uint8_t)((m.waves.n < 64 ? m.waves.n : 64) / 5);
 	if (w >= n) return n;
-	memcpy(wave, lb2 + w * 5, 10);
+	rtab_tail(&t, m.waves.off + (uint16_t)w * 10, wave, 10);
 	return n;
 }
 
@@ -594,9 +597,10 @@ static uint8_t mission_over(uint8_t mi)
 	rtab_t t;
 	r_alienMissions_t mr;
 	mission_t *m = &ST->mission[mi];
+	if (m->live_ufos) return 0;                  // ответ тот же, без двух чтений правила (perf/logic.md П3)
 	mission_rule(m->type, &mr, &t);
 	if (mr.objective == OBJ_INFILTRATION) return 0;
-	return m->next_wave >= wave_count(m->type) && !m->live_ufos;
+	return m->next_wave >= wave_count(m->type);
 }
 
 // GeoscapeState::time30Minutes: миссии думают, законченные удаляются

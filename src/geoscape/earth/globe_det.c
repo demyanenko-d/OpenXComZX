@@ -47,6 +47,9 @@ static uint16_t __at(0xBFE2) dl_yb;             // globe_det_s.s: строка �
 // Метки (globe_marks): кадры GlobeMarkers, фаза мигания, позиции и кадры последнего вывода
 #define MK_MAX    64
 #define MK_OK     0xC3
+#define GC_OK     0xC5
+static uint32_t __at(0xBD00) gc_phys;            // grec/gstr прочитаны из ресурса по этому адресу
+static uint8_t __at(0xBD04) gc_ok;               // GC_OK — годны (globe_det, perf/details.md П5а)
 static uint8_t __at(0xB940) mk_spr[81];
 static uint8_t __at(0xB991) mk_ok;             // MK_OK — кадры и список годны (память банка при старте не обнулена)
 static uint8_t __at(0xB992) mk_blink;
@@ -138,12 +141,22 @@ void globe_det(uint8_t fresh, uint8_t z, uint8_t work) __banked
 	uint16_t n;
 	uint8_t i, k, *p;
 	if (fresh) {
+		det_hdr_t h;
 		dp_ok = 0;
 		if (!res_find(RES_GLOBEDET, &r)) return;
-		far_read(r.phys, &dh, sizeof dh);
-		if (dh.ngroup > G_MAX || dh.nvert > V_MAX) return;
-		far_read(r.phys + sizeof dh, grec, dh.ngroup * 16);
-		far_read(r.phys + sizeof dh + dh.ngroup * 28, gstr, dh.nvert * 2);
+		// Записи групп и строки подписей от вида не зависят: читать их только при смене ресурса.
+		// Годность — маркер, тот же адрес и тот же заголовок (память банка при старте — мусор):
+		// −9.5 тыс. тактов на смену вида (perf/details.md П5а)
+		far_read(r.phys, &h, sizeof h);
+		if (gc_ok != GC_OK || gc_phys != r.phys || memcmp(&h, &dh, sizeof dh)) {
+			gc_ok = 0;
+			memcpy(&dh, &h, sizeof dh);
+			if (dh.ngroup > G_MAX || dh.nvert > V_MAX) return;
+			far_read(r.phys + sizeof dh, grec, dh.ngroup * 16);
+			far_read(r.phys + sizeof dh + dh.ngroup * 28, gstr, dh.nvert * 2);
+			gc_phys = r.phys;
+			gc_ok = GC_OK;
+		}
 		far_read(FAR(work, DT_VIS), gvis, sizeof gvis);
 		if (gvis[0] > G_MAX) return;
 		for (n = 0, i = 0; i < gvis[0]; i++) n += grec[(gvis[i + 1] & 0x7F) * 16 + 2];
@@ -209,6 +222,12 @@ void globe_det_check(void) __banked
 		for (uint8_t i = 0; i < NAME_LEN && b->name[i]; i++) h = (h << 3 | h >> 13) ^ (uint8_t)b->name[i];
 	}
 	if (h != base_sig) { base_sig = h; globe_invalidate(); }
+}
+
+// Память банка отдана другому режиму (бой): записи групп перечитать при следующей смене вида
+void globe_det_reset(void) __banked
+{
+	gc_ok = 0;
 }
 
 // ---------------------------------------------------------------- метки (Globe::drawMarkers, blink)

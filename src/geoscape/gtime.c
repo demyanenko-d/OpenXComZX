@@ -15,6 +15,8 @@
 #include "state.h"
 #include "game.h"
 
+#define SOLD ((soldier_t *)0xC000)          // при подключённой SOLDIER_PAGE (как econ.c)
+
 gevent_t gev[GEV_MAX];                   // очередь событий для окон (Win1)
 uint8_t gev_n;
 
@@ -72,10 +74,11 @@ static void t30min(void)
 static void refuel(void)
 {
 	rtab_t t;
-	rtab_open(RES_RULE_CRAFTS, &t);
-	for (uint8_t c = 0; c < MAX_CRAFTS; c++) {
-		craft_t *cr = &ST->craft[c];
+	uint8_t topen = 0;                           // таблица — при первом заправляемом (обычно никого)
+	craft_t *cr = ST->craft;                     // указателем, без умножения на размер на каждый слот
+	for (uint8_t c = 0; c < MAX_CRAFTS; c++, cr++) {
 		if (cr->type == NONE8 || cr->transit || cr->status != CS_REFUEL) continue;
+		if (!topen) { rtab_open(RES_RULE_CRAFTS, &t); topen = 1; }
 		// Craft::refuel: +refuelRate; с предметом-топливом — 1 предмет за тик; предмета
 		// нет — окно один раз (_lowFuel), с остатком топлива — готов, без — «мало топлива»
 		uint16_t fmax = craft_word(&t, cr->type, offsetof(r_crafts_t, fuel_max));
@@ -145,15 +148,16 @@ static void craft_rearm(uint8_t c)
 static void t1hour(void)
 {
 	rtab_t t;
-	rtab_open(RES_RULE_CRAFTS, &t);
-	for (uint8_t c = 0; c < MAX_CRAFTS; c++) {
-		craft_t *cr = &ST->craft[c];
+	uint8_t topen = 0;                           // таблица — при первом ремонте (perf/logic.md П1)
+	craft_t *cr = ST->craft;
+	for (uint8_t c = 0; c < MAX_CRAFTS; c++, cr++) {
 		if (cr->type == NONE8) continue;
 		if (cr->transit) {                         // корабль в пути на базу
 			if (!--cr->transit) { event(GE_ARRIVED, cr->base, TK_CRAFT_ARRIVED, c); craft_checkup(c); }
 			continue;
 		}
 		if (cr->status == CS_REPAIR) {
+			if (!topen) { rtab_open(RES_RULE_CRAFTS, &t); topen = 1; }
 			uint8_t rr = (uint8_t)rtab_word(&t, cr->type, offsetof(r_crafts_t, repair_rate));
 			if (!rr) rr = 1;
 			cr->damage = cr->damage > rr ? cr->damage - rr : 0;
@@ -162,8 +166,8 @@ static void t1hour(void)
 			craft_rearm(c);
 	}
 	// поставки
-	for (uint8_t i = 0; i < MAX_TRANSFERS; i++) {
-		transfer_t *tr = &ST->transfer[i];
+	transfer_t *tr = ST->transfer;
+	for (uint8_t i = 0; i < MAX_TRANSFERS; i++, tr++) {
 		if (tr->base == NONE8) continue;
 		if (tr->hours > 1) { tr->hours--; continue; }
 		base_t *b = &ST->base[tr->base];
@@ -173,16 +177,18 @@ static void t1hour(void)
 		event(GE_ARRIVED, tr->base, tr->kind == TK_ITEM ? tr->item : (tr->kind == TK_SCIENTIST ? TK_SCI_ARRIVED : TK_ENG_ARRIVED), tr->qty);
 		tr->base = NONE8;
 	}
-	// солдаты в пути
+	// солдаты в пути: страница солдат прямо в Win3, как soldiers_count (econ.c). soldier_get/put
+	// на каждую запись — две дальние копии всей записи: при 250 солдатах −2.9 кадра на игровой
+	// час (perf/logic.md П2). ST в это время не виден — event() пишет только gev[] (Win1)
 	{
 		uint8_t n = ST->nsoldiers;
-		soldier_t s;
+		uint8_t o = pg_map3(SOLDIER_PAGE);
 		for (uint8_t i = 0; i < n; i++) {
-			soldier_get(i, &s);
-			if (s.base == NONE8 || !s.transit) continue;
-			if (!--s.transit) event(GE_ARRIVED, s.base, TK_SOLDIER_ARRIVED, i);
-			soldier_put(i, &s);
+			soldier_t *s = &SOLD[i];
+			if (s->base == NONE8 || !s->transit) continue;
+			if (!--s->transit) event(GE_ARRIVED, s->base, TK_SOLDIER_ARRIVED, i);
 		}
+		pg_map3(o);
 	}
 	prod_hour();
 	sites_hour();                                // первое не обнаруженное место миссии — окно
@@ -213,13 +219,13 @@ static void t1day(void)
 	}
 	// лечение: солдаты баз (Base::getSoldiers — и на кораблях), в пути — нет
 	uint8_t n = ST->nsoldiers;
-	soldier_t s;
+	uint8_t o = pg_map3(SOLDIER_PAGE);           // прямо в странице солдат (см. t1hour)
 	for (uint8_t i = 0; i < n; i++) {
-		soldier_get(i, &s);
-		if (s.base == NONE8 || s.transit || !s.recovery) continue;
-		s.recovery--;
-		soldier_put(i, &s);
+		soldier_t *s = &SOLD[i];
+		if (s->base == NONE8 || s->transit || !s->recovery) continue;
+		s->recovery--;
 	}
+	pg_map3(o);
 	abases_day();                                // очки баз пришельцев, снабжение
 	uint8_t d = ST->day;                         // автосохранение Ironman 10-го и 20-го
 	if (d == 10 || d == 20) st_ironsave();
@@ -244,6 +250,17 @@ static void clock_add(uint16_t s)
 	if (++ST->month > 12) { ST->month = 1; ST->year++; }
 }
 
+// minute % 10 и second / 5 на каждом макрошаге — таблицами: байт SDCC расширяет до int, и деление
+// идёт через __divu8 -> __divu16, ~220 тактов, 4 на шаг (perf/logic.md П1)
+static const uint8_t min10[60] = {
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+};
+static const uint8_t sec5[60] = {
+	0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5,
+	6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11,
+};
+
 // Ход времени на sec + min*60 секунд (кратно 5). Возвращает 1, если появились события
 // (остаток хода отброшен — как timerReset при окне).
 uint8_t game_advance(uint16_t sec, uint16_t min) __banked
@@ -254,16 +271,17 @@ uint8_t game_advance(uint16_t sec, uint16_t min) __banked
 	if (ST->months < 0) return 0;              // до первой базы время стоит
 	while (left) {
 		// шагов до границы 10 минут (граница — на последнем шаге)
-		uint16_t to10 = 120 - ((ST->minute % 10) * 12 + ST->second / 5);   // то же без деления на 5
+		uint16_t to10 = 120 - ((uint16_t)min10[ST->minute] * 12 + sec5[ST->second]);   // то же без деления на 5
 		uint16_t k = left < to10 ? left : to10;
 		k = ufo_limit(k);                        // прибытие / взлёт — не раньше k-го шага
 		k = craft_limit(k);
 		if (k > 1) { clock_add((k - 1) * 5); ufo_advance(k - 1); craft_advance(k - 1); }
 		clock_add(5);
 		left -= k;
-		if (!ST->second && !(ST->minute % 10)) {
+		if (!ST->second && !min10[ST->minute]) {
 			// граница: TIME_1MONTH -> 1DAY -> 1HOUR -> 30MIN -> 10MIN (switch без break)
-			uint8_t m30 = !(ST->minute % 30), h = m30 && !ST->minute, d = h && !ST->hour;
+			uint8_t mi = ST->minute;
+			uint8_t m30 = mi == 0 || mi == 30, h = m30 && !mi, d = h && !ST->hour;
 			if (d && ST->day == 1) {
 				month_end();                     // month.c (миссии месяца — там же)
 				event(GE_MONTH, 0, 0, 0);

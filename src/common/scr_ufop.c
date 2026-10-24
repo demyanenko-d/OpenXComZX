@@ -48,14 +48,14 @@ static uint8_t reqs_done(const rtab_t *t, const rlist_t *l)
 	return 1;
 }
 
-// Ufopaedia::isArticleAvailable + раздел не STR_NOT_AVAILABLE
-uint8_t ufop_visible(uint8_t i) __banked
+// Ufopaedia::isArticleAvailable + раздел не STR_NOT_AVAILABLE. t — открытая RES_RULE_UFOPAEDIA:
+// таблица одна на проход по статьям (rtab_open с res_find на каждую — 3 кадра, perf/ui.md M)
+uint8_t ufop_visible(const rtab_t *t, uint8_t i) __banked
 {
-	rtab_t t;
 	r_ufopaedia_t a;
-	if (!rtab_open(RES_RULE_UFOPAEDIA, &t) || i >= t.n) return 0;
-	rtab_get(&t, i, &a);
-	return a.section != STR_NOT_AVAILABLE && reqs_done(&t, &a.requires);
+	if (i >= t->n) return 0;
+	rtab_get(t, i, &a);
+	return a.section != STR_NOT_AVAILABLE && reqs_done(t, &a.requires);
 }
 
 // Ufopaedia::getArticleIndex для темы исследования: статья с тем же названием,
@@ -70,12 +70,12 @@ uint8_t ufop_find_topic(uint8_t topic) __banked
 	if (lk < tr.n) topic = (uint8_t)lk;
 	uint16_t name = rtab_word(&tr, topic, 0);
 	rtab_open(RES_RULE_UFOPAEDIA, &t);
-	for (uint8_t i = 0; i < t.n; i++) if (rtab_word(&t, i, 0) == name && ufop_visible(i)) return i;
+	for (uint8_t i = 0; i < t.n; i++) if (rtab_word(&t, i, 0) == name && ufop_visible(&t, i)) return i;
 	for (uint8_t i = 0; i < t.n; i++) {
 		rtab_get(&t, i, &a);
 		uint8_t n = a.requires.n > 16 ? 16 : a.requires.n;
 		if (n) rtab_tail(&t, a.requires.off, v, n * 2);
-		for (uint8_t k = 0; k < n; k++) if (v[k] == topic && ufop_visible(i)) return i;
+		for (uint8_t k = 0; k < n; k++) if (v[k] == topic && ufop_visible(&t, i)) return i;
 	}
 	return NONE8;
 }
@@ -717,7 +717,7 @@ static void step(int8_t dir)
 	uint8_t i = art;
 	for (uint8_t n = 0; n < t.n; n++) {
 		i = dir > 0 ? (i + 1 >= t.n ? 0 : i + 1) : (i ? i - 1 : t.n - 1);
-		if (ufop_visible(i)) { art = i; return; }
+		if (ufop_visible(&t, i)) { art = i; return; }
 	}
 }
 

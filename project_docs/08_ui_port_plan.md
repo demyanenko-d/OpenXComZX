@@ -303,7 +303,7 @@ SPG** (mkspg `--data`); большие (фоны окон, картинки Уф
 | `src/kernel/win0/crt0.s`, `input.s`, `dbg.s` | Win0, ассемблер | старт, прерывание кадра (`frames`, `input_on`), защёлка нажатий (`input_isr`, матрица клавиатуры), отладочный вывод |
 | `src/kernel/win0/pages.s` | Win0, ассемблер | менеджер страниц (`pg_alloc/free/map3/win3`), `gfx_map` |
 | `src/kernel/gfx.c` | банк 11 (#3A) | заливки, фон, блиттер картинок (`gfx_key` — DMA BLT1, цвет 0 прозрачный), спрайты наборов, линии, палитра (бит 15 CRAM для VDAC, 02 §4); все функции восстанавливают Win3; `gfx_map` — в `pages.c`, не восстанавливает |
-| `src/kernel/win0/far.s`, `mul32.s` | Win0, ассемблер | дальняя память (`far_read/write/fill/byte/word`, `far_copy` — DMA до 128 КБ, `near_phys`), замена `__mulsint2slong` SDCC |
+| `src/kernel/win0/far.s`, `mul32.s`, `div32.s` | Win0, ассемблер | дальняя память (`far_read/write/fill/byte/word`, `far_copy` — DMA до 128 КБ, `near_phys`); 32-битные умножение и деление вместо библиотеки SDCC (`__mulsint2slong`, `__muluint2ulong`, `__mullong`, `__divulong`, `__modulong`, `__divslong`, `__modslong`) |
 | `src/kernel/bios.c` | банк 7 (#36) | служба файлов «BIOS» (только для `save.c`) |
 | `src/kernel/win0/res.s` | Win0, ассемблер | поиск ресурса (кэш 8 последних, каталоги пакетов через Win3, иначе банковый `sdres_find`), таблицы правил `rtab_*`, игра из заголовка пакета |
 

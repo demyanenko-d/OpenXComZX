@@ -339,17 +339,18 @@ rec_addr:
 	ld	(rt_addr + 3), a
 	ret
 
-;; HL = DE * BC (младшие 16 бит)
+;; HL = DE * C (младшие 16 бит). C — размер записи таблицы правил, он меньше 256 (сейчас до 91;
+;; конвертер Rules.Build падает на записи шире 255): 8 итераций по байту вместо 16 по слову —
+;; −~130 тактов на каждый rtab_get/rtab_word, и код на 3 байта короче (perf/logic.md П8)
 mul16:
 	ld	hl, #0
-	ld	a, #16
+	ld	a, c
+	ld	b, #8
 1$:	add	hl, hl
-	rl	e
-	rl	d
+	rla
 	jr	nc, 2$
-	add	hl, bc
-2$:	dec	a
-	jr	nz, 1$
+	add	hl, de
+2$:	djnz	1$
 	ret
 
 ;; void rtab_get(const rtab_t *t /*HL*/, uint16_t i /*DE*/, void *dst /*стек*/)

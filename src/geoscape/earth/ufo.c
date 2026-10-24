@@ -177,11 +177,21 @@ static int8_t visibility(const ufo_t *p)
 	}
 }
 
-// cos угла радиуса радара (мили) — угол = мили / 60 градусов
+// cos угла радиуса радара (мили) — угол = мили / 60 градусов. Радиусов во всей игре три (обе
+// игры: 1695, 2577, 2759 миль), а звали на каждую постройку каждой базы на каждое НЛО — с 32-битным
+// делением: запоминаем пары «мили -> cos», значения те же (perf/logic.md П4)
+#define RC_N 4
+static uint16_t rc_miles[RC_N];
+static int16_t rc_cos[RC_N];
+static uint8_t rc_n;                             // _DATA обнуляет crt0.s
 static int16_t range_cos(uint16_t miles)
 {
+	for (uint8_t i = 0; i < rc_n; i++)
+		if (rc_miles[i] == miles) return rc_cos[i];
 	uint32_t a = (uint32_t)miles * 65536ul / 21600ul;
-	return a >= 16384 ? -16384 : icos((uint16_t)a);
+	int16_t c = a >= 16384 ? -16384 : icos((uint16_t)a);
+	if (rc_n < RC_N) { rc_miles[rc_n] = miles; rc_cos[rc_n] = c; rc_n++; }
+	return c;
 }
 
 // Base::detect (радары баз): 0 нет, 1 обычный, 2 гиперволновой
@@ -218,9 +228,10 @@ static uint8_t craft_detect(uint8_t b, const ufo_t *p, uint8_t only_range)
 {
 	rtab_t t;
 	r_crafts_t r;
-	rtab_open(RES_RULE_CRAFTS, &t);
-	for (uint8_t c = 0; c < MAX_CRAFTS; c++) {
-		craft_t *cr = &ST->craft[c];
+	if (!ST->ncraft_out) return 0;               // никого в воздухе — обход 32 слотов и таблица зря
+	rtab_open(RES_RULE_CRAFTS, &t);              //   (на счётчик опирается и craft_limit; perf/logic.md П4)
+	craft_t *cr = ST->craft;
+	for (uint8_t c = 0; c < MAX_CRAFTS; c++, cr++) {
 		if (cr->type == NONE8 || cr->base != b || cr->status != CS_OUT || cr->transit) continue;
 		uint8_t type = cr->type;
 		geo_t cp = cr->pos, up = p->pos;

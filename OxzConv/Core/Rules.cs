@@ -158,6 +158,9 @@ namespace OxzConv
 		public (byte[] data, int count, int recSize) Build(TableSchema t)
 		{
 			int recSize = RecordSize(t);
+			// Движок умножает номер записи на размер байтом (src/kernel/win0/res.s mul16, 8 итераций):
+			// запись правил шире 255 байт дала бы неверные адреса (2026-10-24, сейчас — до 91)
+			if (recSize > 255) throw new InvalidDataException($"rules table {t.Name}: record {recSize} bytes > 255 (res.s mul16)");
 			var recs = new MemoryStream();
 			var tail = new MemoryStream();
 			foreach (var kv in Entries[t.Name])

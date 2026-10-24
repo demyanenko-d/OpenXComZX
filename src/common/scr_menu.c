@@ -13,6 +13,7 @@
 #include "scrdef.h"
 #include "music.h"
 #include "sddiag.h"
+#include "../test/banktest.h"
 #include "fat.h"
 
 static uint8_t ng_diff, ng_iron;
@@ -198,7 +199,7 @@ static void ufop_scan(void)
 	if (!rtab_open(RES_RULE_UFOPAEDIA, &upt)) return;
 	for (uint16_t i = 0; i < upt.n; i++) {
 		uint16_t s = rtab_word(&upt, i, offsetof(r_ufopaedia_t, section));
-		if (!ufop_visible((uint8_t)i)) continue;      // раздел виден, если в нём есть видимая статья
+		if (!ufop_visible(&upt, (uint8_t)i)) continue;      // раздел виден, если в нём есть видимая статья
 		uint8_t k = 0;
 		while (k < nsec && sec[k] != s) k++;
 		if (k == nsec && nsec < MAX_SEC) sec[nsec++] = s;
@@ -209,7 +210,7 @@ static void ufop_articles(void)
 {
 	nart = 0;
 	for (uint16_t i = 0; i < upt.n && nart < MAX_ART; i++)
-		if (rtab_word(&upt, i, offsetof(r_ufopaedia_t, section)) == sec[cur_sec] && ufop_visible((uint8_t)i)) art[nart++] = i;
+		if (rtab_word(&upt, i, offsetof(r_ufopaedia_t, section)) == sec[cur_sec] && ufop_visible(&upt, (uint8_t)i)) art[nart++] = i;
 }
 
 // ---------------------------------------------------------------- отладка: все окна
@@ -423,6 +424,12 @@ uint8_t menu_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			if (sddiag_bad()) ui_request = SCR_SDINFO;
 		}
 		if (ev == EVT_MUSIC) mus_play(mus_kind(MK_MENU));   // GMSTORY / GMWAITLO (18 §2)
+		if (ev == EVT_TICK && math_req) {         // самотест арифметики по запросу сценария (tests/math.oxs)
+			uint16_t n = math_req;
+			math_req = 0;
+			math_test(n);
+			OXZ_DBG_MARK = 250;
+		}
 		if (ev == EVT_BUTTON && arg == 1) {       // выход: в эмуляторе — код 0
 			OXZ_DBG_EXIT = 0;
 			for (;;) __asm__("halt");

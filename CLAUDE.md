@@ -27,7 +27,8 @@
   `powershell -File tools\run.ps1 -Script tests\selftest.oxs -Headless`,
   `powershell -File tools\run.ps1 -Script tests\ui_geoscape.oxs -Headless`,
   `powershell -File tools\run.ps1 -Script tests\campaign.oxs -Headless`,
-  также `tests\lab.oxs`, `transfer.oxs`, `craft.oxs`, `ufopaedia.oxs`, `month.oxs`,
+  также `tests\lab.oxs`, `math.oxs` (32-битная арифметика ядра), `transfer.oxs`,
+  `craft.oxs`, `ufopaedia.oxs`, `month.oxs`,
   `aliens.oxs`, `dogfight.oxs`, `dogfight2.oxs`, `basedefense.oxs`, `ironman.oxs`,
   `globe.oxs` (скорость глобуса по зумам — `tools\globeprof.ps1`), `bat_render.oxs`,
   `sdinfo*.oxs` (окно диагностики SD: норма, отказ DMA, SDHC, нет карты; настройки
@@ -45,8 +46,10 @@
   значение нужно дальше (`if (k == g) …; g = k;`): сравнивать с локальной
   копией. `tools/checkasm.js` ловит это при сборке. Библиотечный
   `__mulsint2slong` SDCC 4.5 неверен (знак по младшему байту) — заменён
-  `src/kernel/win0/mul32.s`. Литеральный указатель на структуру с массивом
-  (`((state_t *)0xC000)->base[0]`) роняет SDCC — только `__at`-переменные.
+  `src/kernel/win0/mul32.s`; все 32-битные умножения и деления SDCC — свои, на
+  ассемблере (`mul32.s`, `div32.s`; проверка — `tests/math.oxs`). Литеральный
+  указатель на структуру с массивом (`((state_t *)0xC000)->base[0]`) роняет SDCC —
+  только `__at`-переменные.
 - Состояние кампании — `src/inc/state.h` (`ST`, страницы #06–#07, в Win3 на
   время вызовов экранов), логика — `src/geoscape/` (банки 7–8, 16–22: месяц, сфера,
   пришельцы, НЛО — 08 §6.1), сохранение —

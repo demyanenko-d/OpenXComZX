@@ -56,6 +56,7 @@ void globe_marks(void) __banked;       // метки GlobeMarkers поверх �
 // 1 — метки нарисованы заново (значки свёрнутых боёв рисовать поверх)
 uint8_t globe_marks_tick(void) __banked;
 void globe_det_check(void) __banked;   // базы изменились — подписи в заднем буфере устарели: globe_invalidate
+void globe_det_reset(void) __banked;   // после боя: кэш записей деталей недействителен
 void gview_reset(void) __banked;                                                // рёберный рендер затёр
 // Привязка углов вида к сетке предрасчёта (scr_geo.c): 1 — углы поправлены
 uint8_t globe_snap(uint8_t zoom, uint16_t *lon, int16_t *lat) __banked;

@@ -133,10 +133,14 @@ static void draw(void)
 	uint8_t gc = ui_color(UI_EL_GRAPH, 0);
 	if (!gfx_bg(RES_GRAPH_BDY, 0, 0, 320, 200)) gfx_bg(RES_GRAPHS_SPK, 0, 0, 320, 200);
 	gfx_fill(125, 49, 188, 127, gc);
+	// Девять рядов ячеек одинаковы: один ряд (11 ячеек × 5 слоёв), остальные 8 — копиями полосы
+	// 49..62 (строка основы + ряд) на 49 + 14·k, 2D DMA экран -> экран. Столбцы 125 и 312 — цвет
+	// основы во всех строках, копия попиксельно та же. Было 495 заливок на каждое открытие и
+	// клик — ~10 кадров (perf/ui.md K)
 	for (uint8_t g = 0; g <= 4; g++)
-		for (int16_t y = 50 + g; y <= 163 + g; y += 14)
-			for (int16_t x = 126 + g; x <= 297 + g; x += 17)
-				gfx_fill(x, y, 16 - 2 * g, 13 - 2 * g, g == 4 ? 0 : gc + g + 1);
+		for (int16_t x = 126 + g; x <= 297 + g; x += 17)
+			gfx_fill(x, 50 + g, 16 - 2 * g, 13 - 2 * g, g == 4 ? 0 : gc + g + 1);
+	for (uint8_t k = 1; k < 9; k++) gfx_copy(126, 49, 49 + 14 * k, 186, 14);
 	if (mode == M_FINANCE) {
 		for (uint8_t b = 0; b < 5; b++)
 			if (pressed(b)) line(b, (uint8_t)(16 * (b / 2 + 1) + (b & 1 ? 8 : 0)), 0);

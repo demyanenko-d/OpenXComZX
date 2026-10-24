@@ -1,0 +1,13 @@
+# Самотест 32-битной арифметики ядра (src/kernel/win0/div32.s, mul32.s; src/test/mathtest.c,
+# банк 14): деление и остаток без знака и со знаком, умножение 32 x 32 и 16 x 16 -> 32 против
+# эталона на сдвигах. Все пары 32 краевых значений + 3 x 300 случайных пар.
+# Итог — страница #3E с #3400: +0 ошибок, +2 пар, +4 x, +8 y, +C операция первой ошибки.
+# Запуск: powershell -File tools\run.ps1 -Script tests\math.oxs -Headless
+
+waitmark 1 600
+pokew _math_req 300
+waitmark 250 6000
+expectw 3E:3400 0
+expectw 3E:3402 1924
+echo math scenario OK
+exit 0

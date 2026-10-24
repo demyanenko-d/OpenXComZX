@@ -460,15 +460,23 @@ static void make_unit(prod_t *p)
 // Час производства всех баз (Production::step + GeoscapeState::time1Hour)
 void prod_hour(void) __banked
 {
-	rtab_open(RES_RULE_MANUFACTURE, &tmf);
-	for (uint8_t i = 0; i < MAX_PRODS; i++) {
-		prod_t *p = &ST->prod[i];
+	uint8_t topen = 0;                           // таблица — при первом производстве (perf/logic.md П1)
+	prod_t *p = ST->prod;
+	for (uint8_t i = 0; i < MAX_PRODS; i++, p++) {
 		if (p->base == NONE8) continue;
+		if (!topen) { rtab_open(RES_RULE_MANUFACTURE, &tmf); topen = 1; }
 		rtab_get(&tmf, p->manuf, &mr);
 		uint32_t t = mr.time;
-		uint16_t done0 = t ? (uint16_t)(p->spent / t) : p->amount;
+		uint16_t done0, now;
+		if (t) {
+			// одно деление вместо двух (perf/logic.md П12): now = (spent + e) / t = q + (r + e) / t,
+			// остаток — вычитаниями, их столько, сколько изделий за этот час
+			uint32_t q = p->spent / t, r = p->spent - q * t + p->engineers;
+			done0 = now = (uint16_t)q;
+			while (r >= t) { r -= t; now++; }
+		} else
+			done0 = now = p->amount;
 		p->spent += p->engineers;
-		uint16_t now = t ? (uint16_t)(p->spent / t) : p->amount;
 		uint8_t res = 0;                           // 0 — идёт, GE_* — снять
 		if (done0 < now) {
 			uint16_t produced = (p->flags & PF_INFINITE) ? now - done0 : (now < p->amount ? now : p->amount) - done0;

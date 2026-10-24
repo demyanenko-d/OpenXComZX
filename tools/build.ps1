@@ -23,7 +23,7 @@ $MUSIC_LOC = '0x2000'; $MUSIC_END = '0x3010'
 $RES_PAGE = 0x50; $RES_LAST = 0xAF          # пакеты данных (memmap.h RES_PAGE..RES_LAST)
 
 # Общий код (Win0): ассемблер ядра и C-модули без банка.
-$asm_common = @('kernel\win0\crt0', 'kernel\win0\bank', 'kernel\dmabuf', 'kernel\win0\glyph', 'kernel\win0\mul32', 'kernel\sd', 'kernel\win0\pages', 'kernel\win0\far', 'kernel\win0\res', 'kernel\win0\dbg', 'kernel\win0\input', 'kernel\win0\music_s', 'kernel\win0\scrutil', 'kernel\win0\text')   # crt0 — первым: порядок областей; kernel\win0 — код окна 0; dmabuf (буферы DMA в Win1) и sd (код в банке 12) — ассемблер ядра вне Win0
+$asm_common = @('kernel\win0\crt0', 'kernel\win0\bank', 'kernel\dmabuf', 'kernel\win0\glyph', 'kernel\win0\mul32', 'kernel\win0\div32', 'kernel\sd', 'kernel\win0\pages', 'kernel\win0\far', 'kernel\win0\res', 'kernel\win0\dbg', 'kernel\win0\input', 'kernel\win0\music_s', 'kernel\win0\scrutil', 'kernel\win0\text')   # crt0 — первым: порядок областей; kernel\win0 — код окна 0; dmabuf (буферы DMA в Win1) и sd (код в банке 12) — ассемблер ядра вне Win0
 $c_common   = @()   # Win0 — только ассемблер (14_todo.md §1.3)
 
 # Банки кода (Win2): номер -> физическая страница и файлы C.
@@ -42,7 +42,7 @@ $banks = @(
     @{ n = 11; page = 0x3A; files = @('kernel\gfx', 'kernel\cursor', 'kernel\boot'); ram = 0xBF00 }   # графика, опрос ввода, запуск; с #BF00 — фон под всплывающими окнами (gfx.c)
     @{ n = 12; page = 0x3B; files = @('kernel\fat', 'kernel\sdres', 'kernel\music'); ram = 0xBB00 }   # музыка: состояние плеера с #BF00, каталог и кэш SD (sdres.c) — с #BB00
     @{ n = 13; page = 0x3C; files = @('common\scr_ufop') }
-    @{ n = 14; page = 0x3E; files = @('test\bank_a', 'kernel\sddiag'); ram = 0xB000 }   # служебный: самотест джампера, диагностика SD (с #B000 — её результаты)
+    @{ n = 14; page = 0x3E; files = @('test\bank_a', 'test\mathtest', 'kernel\sddiag'); ram = 0xB000 }   # служебный: самотест джампера, диагностика SD (с #B000 — её результаты)
     @{ n = 15; page = 0x3F; files = @('test\bank_b') }
     @{ n = 16; page = 0x3D; files = @('geoscape\month') }   # конец месяца
     @{ n = 17; page = 0x40; files = @('geoscape\earth\world', 'geoscape\earth\geo') }   # ГСЧ, регионы, сфера, маска суши

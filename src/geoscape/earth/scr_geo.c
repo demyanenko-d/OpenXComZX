@@ -44,7 +44,7 @@ static uint8_t rep_arg;
 static uint16_t rep_at;
 static uint8_t spd_shown;                        // какая скорость показана на переключателях
 static uint8_t df_shown = 0xFF;                  // состояние боёв, уже выведенное в журнал
-static const uint8_t rep_box[6][4] = {
+static const uint16_t rep_box[6][4] = {        // x до 300 — не байт (было uint8_t: автоповтор не срабатывал)
 	{ 259, 176, 12, 10 }, { 283, 176, 12, 10 }, { 271, 162, 13, 12 }, { 271, 187, 13, 12 },
 	{ 295, 156, 23, 23 }, { 300, 182, 13, 17 },
 };
@@ -335,6 +335,11 @@ static void draw_globe(void)
 {
 	globe_det_check();
 	globe_draw();
+	// globe_draw перерисовывает и при смене эпохи солнца: картинка уже под текущее солнце.
+	// Без этого после поворота/зума такт тени видел «новую эпоху» и сразу заказывал вторую
+	// полную перерисовку (3–9 кадров, ввод ждал её; perf/pipeline.md П1)
+	geo_sun = (uint8_t)(globe_sunlon() >> 7);
+	sun_at = frames;
 	globe_marks();
 	if (df_count || icons_on) {                  // значки свёрнутых боёв (поверх глобуса; старые стёрла копия заднего буфера)
 		icons_on = df_count != 0;
@@ -906,7 +911,7 @@ uint8_t geo_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			if (globe_marks_tick() && icons_on) df_draw_icons();   // значки свёрнутых боёв — поверх меток
 			if (rep_arg) {                           // кнопка поворота / зума держится
 				uint8_t a = rep_arg;
-				const uint8_t *r = rep_box[a - 30];
+				const uint16_t *r = rep_box[a - 30];
 				if (!(mouse_buttons & 1)) rep_arg = 0;
 				else if ((int16_t)(frames - rep_at) >= 0 && cursor_x >= r[0] && cursor_x < r[0] + r[2] &&
 					cursor_y >= r[1] && cursor_y < r[1] + r[3]) {

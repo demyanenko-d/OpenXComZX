@@ -4,6 +4,7 @@
 #define SCREENS_H
 
 #include <stdint.h>
+#include "res.h"
 #include "ui.h"
 
 // --- меню, Уфопедия (банк 2)
@@ -171,7 +172,7 @@ uint8_t ufop_get(uint8_t id, sdef_t *s, wdef_t *w) __banked;
 void ufop_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked;
 uint8_t ufop_rows(uint8_t id, uint8_t slot) __banked;
 uint8_t ufop_event(uint8_t id, uint8_t ev, uint8_t arg) __banked;
-uint8_t ufop_visible(uint8_t rec) __banked;        // статья видна (requires, раздел)
+uint8_t ufop_visible(const rtab_t *t, uint8_t rec) __banked;        // статья видна (requires, раздел)
 uint8_t ufop_find_topic(uint8_t topic) __banked;   // статья темы исследования или NONE8
 void ufop_open(uint8_t rec) __banked;              // статья для SCR_ARTICLE
 extern uint8_t ufop_next;                          // статья после закрытия текущей (бонус «Отчётов») или NONE8

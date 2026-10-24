@@ -17,7 +17,7 @@
 	.module globe_view
 	.optsdcc -mz80 sdcccall(1)
 
-	.globl	_gview_open, _gview_pick, _gview_load, _gview_reset, _globe_snap
+	.globl	_gview_open, _gview_pick, _gview_load, _gview_reset, _globe_snap, _gview_ofs
 	.globl	b_gview_open, b_gview_pick, b_gview_load, b_gview_reset, b_globe_snap
 	.globl	_fat_mount, _fat_open, _fat_read, b_fat_mount, b_fat_open, b_fat_read
 	.globl	_far_read, _res_game
@@ -54,6 +54,7 @@ gv_ep:		.ds	1		; страница рёбер текущего вызова
 gv_z:		.ds	1
 gv_iv:		.ds	2
 gv_s0:		.ds	8		; смещения вида и следующего (u32, u32)
+_gview_ofs::	.ds	2		; начало потока вида в EP_VIEW (s0 & 511: вид читается целыми секторами)
 gv_tmp4:	.ds	4
 pk_n:		.ds	1		; выбор вида: nLon, k, i, шаг наклона, j
 pk_k:		.ds	1
@@ -564,6 +565,55 @@ ld_view:
 	or	a, a
 	sbc	hl, de
 	jp	c, ld_fail
+	;; Целыми секторами: [s0 & ~511, (s1 + 511) & ~511) в EP_VIEW — приёмник чётный, позиция кратна
+	;; сектору, и fat_read идёт одной CMD18 + DMA на весь кусок. Раньше при нечётном s0 (половина
+	;; видов) все секторы шли через secbuf по одному, ~0.1 кадра на сектор (perf/pipeline.md П2).
+	;; Поток кусков тогда — с EP_VIEW + (s0 & 511): _gview_ofs (globe_s.s). Длина с выравниванием —
+	;; 16 бит по младшим словам (вид короче VIEW_MAX); не влезла в VIEW_MAX — по-старому, с нуля.
+	push	de			; DE = s1 − s0 — на случай «по-старому»
+	ld	hl, (gv_s0 + 4)
+	ld	bc, #511
+	add	hl, bc			; s1 + 511
+	ld	a, h
+	and	a, #0xFE
+	ld	h, a
+	ld	l, #0			; HL = (s1 + 511) & ~511
+	ld	a, (gv_s0 + 1)
+	and	a, #0xFE
+	ld	d, a
+	ld	e, #0			; DE = s0 & ~511
+	or	a, a
+	sbc	hl, de
+	ex	de, hl			; DE = длина целыми секторами
+	ld	hl, #VIEW_MAX
+	or	a, a
+	sbc	hl, de
+	jr	c, 70$
+	pop	hl			; прежняя длина не нужна
+	ld	a, (gv_s0)		; ofs = s0 & 511
+	ld	(_gview_ofs), a
+	ld	a, (gv_s0 + 1)
+	and	a, #1
+	ld	(_gview_ofs + 1), a
+	ld	hl, #0
+	push	hl			; len
+	push	de
+	ld	de, #EP_VIEW		; dst
+	call	gv_fard
+	push	hl
+	push	de
+	ld	hl, (gv_s0 + 2)		; pos = s0 & ~511
+	push	hl
+	ld	a, (gv_s0 + 1)
+	and	a, #0xFE
+	ld	h, a
+	ld	l, #0
+	push	hl
+	jr	71$
+70$:	pop	de			; len = s1 − s0 как есть, поток с нуля
+	xor	a, a
+	ld	(_gview_ofs), a
+	ld	(_gview_ofs + 1), a
 	ld	hl, #0
 	push	hl			; len
 	push	de
@@ -575,7 +625,7 @@ ld_view:
 	push	hl
 	ld	hl, (gv_s0)
 	push	hl
-	ld	hl, #gvf
+71$:	ld	hl, #gvf
 	push	hl
 	ld	e, #b_fat_read
 	ld	hl, #_fat_read

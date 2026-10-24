@@ -176,16 +176,16 @@ uint8_t gfx_sprite(uint16_t res_id, uint16_t frame, int16_t x, int16_t y) __bank
 	uint8_t sp = FAR_PAGE(src);
 	uint16_t so = FAR_OFFS(src);
 	if (!(x & 1) && x >= 0 && y >= 0 && x + w <= SCREEN_W && y + h <= SCREEN_H) {
-		for (; h > 0; h--, y++) {
-			dma_wait();
-			TS_DMASAL = (uint8_t)so; TS_DMASAH = (uint8_t)(so >> 8); TS_DMASAX = sp;
-			dma_dst(x, y);
-			TS_DMALEN = (uint8_t)(w / 2 - 1);
-			TS_DMANUM = 0;
-			TS_DMACTRL = DMA_BLT1 | DMA_ASZ;
-			so += w;
-			if (so >= 0x4000) { so -= 0x4000; sp++; }
-		}
+		// Весь кадр одним 2D DMA, как bg_copy: источник подряд (строки по w байт, через границу
+		// страницы адрес DMA идёт сам), приёмник — строки экрана через 512 (D_ALGN), h пачек по
+		// w/2 слов. Раньше — запуск на строку: 81 спрайт базы = 2224 запуска, ~340 тактов
+		// процессора каждый при ~100 тактах пересылки — 11 кадров из 23 открытия базы (perf/ui.md)
+		dma_wait();
+		TS_DMASAL = (uint8_t)so; TS_DMASAH = (uint8_t)(so >> 8); TS_DMASAX = sp;
+		dma_dst(x, y);
+		TS_DMALEN = (uint8_t)(w / 2 - 1);
+		TS_DMANUM = (uint8_t)(h - 1);
+		TS_DMACTRL = DMA_BLT1 | DMA_ASZ | DMA_D_ALGN;
 		dma_wait();
 		return 1;
 	}

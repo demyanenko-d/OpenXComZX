@@ -37,6 +37,7 @@
 
 	.globl	_gl_edges, edge1, edge1s, e_rows, e_fast, hclip, lerpz, xclip, lerpx, div32, eslope, bord_ev, e_store
 	.globl	win3_real
+	.globl	_gview_ofs
 	.globl	_gl_bands, _gl_nb, _gl_bl, gb_end, ai_put, ai_redo, rw_emit_s, em_run_s
 	.globl	_gl_rows, ael_ins, ai_fix2, f2_near, f2_score, ai_cmp, ael_fix, fx_pair, rw_emit, rw_band, rw_pfill, rw_flush, ael_step, ael_sort
 	.globl	_gl_rows_pre, _gl_rows_edg, eg_row, eg_walk, eg_step, eg_end, eg_last, eg_starts, eg_piece, eg_emit, _gl_rows_cap, _gl_capok, _gl_capwant, rp_row, rp_next, em_run_p, cap_begin, cap_row, cap_end
@@ -2960,10 +2961,13 @@ mulu16:
 ;; без тени — через em_run_p (копия узора). Геометрии в кадре нет вовсе.
 ;; Win3 — страница рёбер; IX — запись строки, IY — флаг тени строки, DE — поток.
 _gl_rows_pre::
-	xor	a, a			; поток с EP_VIEW подряд; запись отрезков страницы рёбер — затёрта
+	xor	a, a			; поток с EP_VIEW + _gview_ofs подряд; запись отрезков страницы рёбер — затёрта
 	ld	(_gl_capok), a
 	ld	(rp_tab), a
+	ld	hl, (_gview_ofs)	; вид читается целыми секторами — начало внутри первого (globe_view.s)
 	ld	de, #EP_VIEW
+	add	hl, de
+	ex	de, hl
 	jr	rp_go
 ;; То же по записи отрезков рёберного прохода (_gl_capok = 1): строка — по таблице адресов
 ;; cap_tab (0 — строки не было)
@@ -3115,7 +3119,9 @@ _gl_rows_edg::
 	inc	a
 	djnz	1$
 	ld	(eg_nfree), a
-	ld	hl, #EP_VIEW		; текстура левого края: число, пары (строка, текстура)
+	ld	hl, (_gview_ofs)	; текстура левого края: число, пары (строка, текстура); поток — с
+	ld	de, #EP_VIEW		;   EP_VIEW + _gview_ofs (вид читается целыми секторами, globe_view.s)
+	add	hl, de
 	ld	a, (hl)
 	inc	hl
 	ld	(eg_seedn), a

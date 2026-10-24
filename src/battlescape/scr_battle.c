@@ -969,6 +969,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		// BACK_Y 280): после боя геоскейп обязан нарисовать планету заново, иначе на экране
 		// остаются тайлы поля боя.
 		globe_invalidate();
+		globe_det_reset();
 		gview_reset();
 		globe_prepare();                 // собрать планету в задний буфер целиком, поверх следов боя
 		break;
