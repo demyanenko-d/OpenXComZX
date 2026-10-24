@@ -6,7 +6,7 @@
 #include "far.h"
 
 // Боец на карте: клетка и показатели, как их берёт BattleUnit оригинала из солдата базы
-typedef struct { uint8_t x, y, z, tu, hp, en, mor; } cunit_t;
+typedef struct { uint8_t x, y, z, tu, hp, en, mor, sol; } cunit_t;   // sol — запись солдата (#FF — нет)
 
 // Боец экрана боя (scr_battle.c, память банка 28): клетка, направление, жив, на колене, показатели
 #define MAX_UNITS 12            // бойцов X-COM
@@ -29,7 +29,10 @@ typedef struct {
 	uint8_t seen;              // виден стороне X-COM
 	uint16_t node;             // узел маршрута, на котором поставлен (#FFFF — нет)
 	uint8_t en_rec;            // энергии за ход (BattleUnit::recoverTimeUnits)
+	uint8_t sol;               // запись солдата кампании (имя, звание, снаряжение), #FF — нет
+	uint8_t pad[9];            // запас: запись — 48 байт, адреса полей в тестах не плывут
 } unit_t;
+_Static_assert(sizeof(unit_t) == 48, "unit_t");
 
 // Загрузка миссии для экрана боя (bload.c): генератор карты, наборы частей, листы бойца и
 // курсора, отряд, стрелка выбранного. Таблицы — в рабочей странице (loader.h TL_*), экран
@@ -57,10 +60,5 @@ typedef struct {
 // out — буфер вызывающего на стеке: страница банка вызывающего при вызове отключена.
 uint8_t crew_deploy(const crew_req_t *q, cunit_t *out, uint8_t max) __banked;
 
-// Панель боя (BattlescapeState.cpp:147-155): картинка ICONS и показатели выбранного
-// бойца. Рисуется здесь, а не в банке боя, — тот забит отрисовкой карты. n == 0 —
-// отряда нет, рисуется одна панель.
-typedef struct { uint8_t n, tu, tu_max, en, hp, hp_max, mor, level; } bpanel_t;
-void bat_panel(const bpanel_t *p) __banked;
 
 #endif

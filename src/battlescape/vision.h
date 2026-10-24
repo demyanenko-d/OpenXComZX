@@ -20,5 +20,7 @@ void vis_free(void) __banked;
 // Пришельцы (u[nsold..n)), которых сейчас видит кто-то из отряда (u[0..nsold)): им ставится
 // VU_SEEN, номера впервые замеченных — в list (до max); вернёт их число
 uint8_t vis_seen(vu_t *u, uint8_t n, uint8_t nsold, uint8_t *list, uint8_t max) __banked;
+// Кого из пришельцев видит юнит sel сейчас (getVisibleUnits): номера в list, вернёт их число
+uint8_t vis_list(vu_t *u, uint8_t n, uint8_t nsold, uint8_t sel, uint8_t *list, uint8_t max) __banked;
 
 #endif

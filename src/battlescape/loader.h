@@ -22,8 +22,8 @@
 #define TL_UDIDX  4608         // 256 байт: часть «створка в движении» -> номер типа двери НЛО
 #define TL_UDFR   4864         // кадры 1..7 створок по типам дверей НЛО: TL_UDMAX x 7 x TE_SIZE
 #define TL_UDMAX  24
-#define TL_UNITS  6208         // юниты миссии в виде unit_t (units.h), MAX_BUNITS записей (до #1A20)
-#define TL_RUNITS 6688         // они же для вида: runit_t (bview.h), MAX_BUNITS по 8 байт (до #1B60)
+#define TL_UNITS  6208         // отряд в виде unit_t (units.h), MAX_UNITS записей по 48 байт (до #1A80)
+#define TL_RUNITS 6848         // юниты для вида: runit_t (bview.h), MAX_BUNITS по 8 байт (до #1C00)
 // Собранные кадры юнитов по броне (UNITS.PAK ASHEET_*, конвертер собирает их как UnitSprite):
 // лист s (1..ASH_MAX) — ASH_N записей с (s - 1) * ASH_N. Броня 1x1: 0..7 стоя по направлению,
 // 8 + d*8 + фаза — ходьба, 72 + d — на колене; 2x2: d*4 + четверть (стоя; ходьбы пока нет).
@@ -31,6 +31,8 @@
 #define ASH_N     80
 #define ASH_MAX   6            // до #2B00
 #define TL_BIGW   11264        // 256 байт: MCD.Big_Wall части по номеру (Pathfinding::bigWallTypes)
+#define TL_BITEMS 11520        // предметы боя: bitem_t (bitems.h), BI_MAX по 10 байт (до #3700)
+#define TL_AUNITS 14080        // пришельцы от расстановки (deploy.c): unit_t, до 28 записей (до #3C40)
 
 typedef struct {
 	uint16_t set[TL_SETS];     // ресурсы MCDSET наборов миссии

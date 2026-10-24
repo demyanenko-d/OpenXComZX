@@ -1,4 +1,4 @@
-// Расстановка пришельцев на карте миссии (банк 31, вместе с экраном боя): порт
+// Расстановка пришельцев на карте миссии (банк 34): порт
 // BattlescapeGenerator::deployAliens / addAlien (REF/OpenXcom/src/Battlescape/BattlescapeGenerator.cpp:1045,
 // :1178) и SavedBattleGame::getSpawnNode (REF/OpenXcom/src/Savegame/SavedBattleGame.cpp:1245).
 //
@@ -45,8 +45,12 @@ static const uint8_t aim_tftd[5] = { 40, 70, 100, 110, 120 };
 // Узлы, пригодные для появления (priority > 0), — в память банка: перебор по дальней памяти на
 // каждого пришельца и каждый ранг стоил бы секунды
 typedef struct { uint8_t x, y, z, type, rank, priority; uint16_t idx; } snode_t;
-#define SN_MAX 300
-static snode_t __at(0xB600) sn[SN_MAX];   // до #BF60
+#define SN_MAX 256
+// Память банка (build.ps1 ram = #A000): юниты миссии (отряд — копия из рабочей страницы),
+// узлы появления, состояние расстановки и листы брони
+static unit_t __at(0xA000) du[MAX_BUNITS];   // до #A780
+static snode_t __at(0xA800) sn[SN_MAX];      // до #B000
+static adep_t __at(0xB000) adq;
 static uint16_t nsn;
 
 static uint8_t cell_free(const unit_t *u, uint8_t n, uint8_t x, uint8_t y, uint8_t z, uint8_t size)
@@ -103,8 +107,14 @@ static uint8_t sheet_of(adep_t *q, uint16_t res, uint8_t size)
 	return (uint8_t)(s + 1);
 }
 
-void aliens_free(adep_t *q)
+void aliens_reset(void) __banked
 {
+	adq.nsh = 0;                         // память банка при старте не обнулена (aliens_free)
+}
+
+void aliens_free(void) __banked
+{
+	adep_t *q = &adq;
 	for (uint8_t s = 0; s < q->nsh; s++)
 		if (q->shp[s] != PG_NONE) pg_free(q->shp[s], q->shn[s]);
 	q->nsh = 0;
@@ -120,6 +130,7 @@ static uint16_t alien_make(unit_t *a, uint16_t type, uint8_t rank, uint8_t diff,
 	memset(a, 0, sizeof *a);
 	a->type = type; a->rank = rank; a->faction = FACTION_HOSTILE;
 	a->node = 0xFFFF;
+	a->sol = 0xFF;
 	a->alive = 1; a->size = 1;
 	uint16_t sheet = 0;
 	if (!rtab_open(RES_RULE_UNITS, &t) || type >= t.n) return 0;
@@ -151,8 +162,13 @@ static uint16_t alien_make(unit_t *a, uint16_t type, uint8_t rank, uint8_t diff,
 	return sheet;
 }
 
-uint8_t aliens_deploy(unit_t *u, uint8_t n, uint8_t max, adep_t *q, uint8_t sx, uint8_t sy)
+uint8_t aliens_deploy(const adreq_t *r, uint8_t nsold, uint8_t sx, uint8_t sy) __banked
 {
+	adep_t *q = &adq;
+	unit_t *u = du;
+	uint8_t n = nsold, max = MAX_BUNITS;
+	q->deploy = r->deploy; q->race = r->race; q->ufo = r->ufo; q->page = r->page;
+	far_read(FAR(q->page + 1, TL_UNITS), du, (uint16_t)nsold * sizeof(unit_t));   // отряд: занятые клетки
 	rtab_t t;
 	r_alienDeployments_t d;
 	uint8_t diff = ST->difficulty;
@@ -220,5 +236,6 @@ uint8_t aliens_deploy(unit_t *u, uint8_t n, uint8_t max, adep_t *q, uint8_t sx, 
 		}
 	}
 	dbg_puts(" aliens "); dbg_dec(n - n0); dbg_puts("\n");
-	return n;
+	if (n > n0) far_write(FAR(q->page + 1, TL_AUNITS), du + n0, (uint16_t)(n - n0) * sizeof(unit_t));
+	return n - n0;
 }

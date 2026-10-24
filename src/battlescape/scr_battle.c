@@ -27,6 +27,9 @@
 #include "vision.h"
 #include "rules.h"
 #include "text.h"
+#include "bitems.h"
+#include "bhud.h"
+#include "bspr.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 
@@ -48,8 +51,8 @@ static unit_t __at(0xB000) units[MAX_BUNITS];
 static uint8_t nunits;
 static uint8_t nsold;                    // бойцы X-COM — первые nsold юнитов, дальше пришельцы
 static uint8_t bt_turn = 1, bt_side;     // номер хода и чей ход (FACTION_*)
+static uint8_t bt_reserve, bt_res_kneel; // резерв времени (RES_*) и «на колено» — BattlescapeGame
 static void next_turn_close(void);       // окно хода (ниже)
-static adep_t __at(0xBF60) adq;          // расстановка пришельцев и их листы (deploy.c; до #BF80)
 static uint16_t ufo_deploy(uint8_t utype);   // развёртывание по типу НЛО (ниже)
 static uint8_t sel;                      // выбранный боец (панель показывает его состояние)
 #define KNEEL_TU_DOWN  4                 // цена приседания и вставания (BattlescapeGame::kneel)
@@ -74,6 +77,12 @@ static const wdef_t w_battle[] = {
 	HOT(208, 144, 32, 16, A_CUSTOM, 9, 0),           // показывать все этажи или только текущий
 	HOT(240, 144, 32, 16, A_CUSTOM, 8, 0),           // конец хода
 	HOT(240, 160, 32, 16, A_POP, 0, ESC),          // выйти из боя
+	// резерв времени (BattlescapeState::btnReserveClick): не резервировать, навскидку, очередь, прицельный
+	HOT(60, 177, 17, 11, A_CUSTOM, 11, 0),
+	HOT(78, 177, 17, 11, A_CUSTOM, 12, 0),
+	HOT(78, 189, 17, 11, A_CUSTOM, 13, 0),
+	HOT(60, 189, 17, 11, A_CUSTOM, 14, 0),
+	HOT(96, 177, 10, 23, A_CUSTOM, 15, 0),           // резерв на колено (btnReserveKneelClick)
 };
 
 // NextTurnState (REF/OpenXcom/src/Battlescape/NextTurnState.cpp): окно 320x200 на фоне TAC00.SCR,
@@ -116,6 +125,12 @@ static void unit_changed(uint8_t i)
 
 // Видимость (vision.c): кого из пришельцев отряд заметил впервые — показать (запись виду и
 // перерисовка их клеток; крупный — все четыре)
+static uint8_t nmarks, marks_u[10];     // значки замеченных: сколько и чьи
+static void marks_on(void)
+{
+	marks_show(nmarks, ui_color_in(UI_SCR_BATTLESCAPE, UI_EL_VISIBLEUNITS, 0));
+}
+
 static void see_update(void)
 {
 	uint8_t list[16];
@@ -126,6 +141,10 @@ static void see_update(void)
 		v[i].flags = (u->alive ? VU_ALIVE : 0) | (u->size > 1 ? VU_BIG : 0) | (u->seen ? VU_SEEN : 0);
 	}
 	uint8_t n = vis_seen(v, nunits, nsold, list, sizeof list);
+	// значки над панелью — кого видит выбранный боец (updateSoldierInfo: getVisibleUnits)
+	for (uint8_t i = 0; i < nunits; i++) if (units[i].seen) v[i].flags |= VU_SEEN;
+	nmarks = sel < nsold ? vis_list(v, nunits, nsold, sel, marks_u, sizeof marks_u) : 0;
+	marks_on();
 	if (!n) return;
 	for (uint8_t i = 0; i < n; i++) units[list[i]].seen = 1;
 	for (uint8_t i = 0; i < n; i++) ru_put(list[i]);
@@ -135,6 +154,15 @@ static void see_update(void)
 		for (uint8_t q = 0; q < a->size * a->size; q++)
 			bv_cell((uint8_t)(a->x + (q & 1)), (uint8_t)(a->y + (q >> 1)), a->z);
 	}
+}
+
+// Значок на экране: клетка под курсором — значок i (y = 128 - 13 i, x 300..314, 12 строк)
+static uint8_t mark_at(void)
+{
+	if (cursor_x < 300 || cursor_x >= 315 || cursor_y > 139) return 0xFF;
+	uint8_t i = (uint8_t)((139 - cursor_y) / 13);
+	if (i >= nmarks || cursor_y < 128 - 13 * (int16_t)i) return 0xFF;
+	return i;
 }
 
 // Номер бойца в клетке + 1 (0 — никого): по нему выбирают щелчком
@@ -179,6 +207,7 @@ static void sel_next(void)
 	if (!nsold) return;
 	sel = (uint8_t)((sel + 1) % nsold);
 	path_n = 0;
+	see_update();
 	center_on_unit();
 	ui_dirty(0);
 }
@@ -188,6 +217,7 @@ static void sel_prev(void)
 	if (!nsold) return;
 	sel = (uint8_t)((sel + nsold - 1) % nsold);
 	path_n = 0;
+	see_update();
 	center_on_unit();
 	ui_dirty(0);
 }
@@ -198,6 +228,7 @@ static dmap_t bmap;
 // Створки НЛО едут (doors_anim): следующий кадр в таблицу вида и перерисовка их клеток.
 // 1 — створки есть (их клетки уже перерисованы)
 static uint8_t an_on, an_tm;             // едут; кадр (frames), когда сменили их кадр
+static uint8_t bl_tm;                    // кадр прошлого шага мигания значков
 static uint8_t door_anim_step(void)
 {
 	uint8_t parts[5], cl[15];
@@ -311,17 +342,22 @@ static uint8_t load_gen(uint16_t terrain)
 	loaded = 0;
 	q.terrain = terrain; q.deploy = mis_deploy; q.ufo = mis_ufo; q.craft = mis_craft; q.crew = mis_crew;
 	q.page = pf_page;
-	aliens_free(&adq);                   // листы пришельцев прошлой карты
+	aliens_free();                       // листы пришельцев прошлой карты
 	if (!bat_load(&q)) return 0;
 	nunits = nsold = q.nunits;
 	far_read(FAR(pf_page + 1, TL_UNITS), units, (uint16_t)nunits * sizeof(unit_t));
 	// Пришельцы: состав — развёртывание миссии (у сбитого или севшего НЛО — развёртывание его
 	// типа, BattlescapeGenerator::run), места — узлы маршрутов карты
-	adq.deploy = mis_utype != 0xFF ? ufo_deploy(mis_utype) : mis_deploy;
-	adq.race = mis_race != 0xFF ? mis_race : 0xFFFF;
-	adq.ufo = mis_ufo != 0xFFFF || mis_deploy == 0xFFFF;
-	adq.page = pf_page;
-	nunits = aliens_deploy(units, nunits, MAX_BUNITS, &adq, q.sx, q.sy);
+	{
+		adreq_t ar;
+		ar.deploy = mis_utype != 0xFF ? ufo_deploy(mis_utype) : mis_deploy;
+		ar.race = mis_race != 0xFF ? mis_race : 0xFFFF;
+		ar.ufo = mis_ufo != 0xFFFF || mis_deploy == 0xFFFF;
+		ar.page = pf_page;
+		uint8_t na = aliens_deploy(&ar, nsold, q.sx, q.sy);
+		far_read(FAR(pf_page + 1, TL_AUNITS), units + nsold, (uint16_t)na * sizeof(unit_t));
+		nunits = nsold + na;
+	}
 	vis_build(q.cells, q.sx, q.sy, q.sz, pf_page);   // маска обзора (vision.c)
 	ndoors = q.ndoors;
 	m_sx = q.sx; m_sy = q.sy; m_sz = q.sz;
@@ -337,20 +373,32 @@ static uint8_t load_gen(uint16_t terrain)
 	bt_side = FACTION_PLAYER;
 	gen_mode = 1;
 	sel = 0;
+	{                                    // снаряжение отряда (bitems.c): раскладка из кампании
+		uint8_t sol[MAX_UNITS];
+		for (uint8_t i = 0; i < nsold; i++) sol[i] = units[i].sol;
+		bi_crew(pf_page, sol, nsold);
+	}
+	bt_reserve = RES_NONE;
+	bt_res_kneel = 0;
 	if (nunits) center_on_unit();        // камера на первого бойца отряда
 	loaded = 1;
 	return 1;
 }
 
-// Панель бойца рисует банк 30 (units.c)
+// Панель (bhud.c, банк 33): показатели выбранного бойца, предметы в руках, нажатые кнопки
 static void draw_panel(void)
 {
-	bpanel_t p;
-	const unit_t *u = &units[sel < nunits ? sel : 0];
-	p.n = nsold; p.level = bv_level();
-	p.tu = u->tu; p.tu_max = u->tu_max; p.en = u->en;
-	p.hp = u->hp; p.hp_max = u->hp_max; p.mor = u->mor;
-	bat_panel(&p);
+	bhud_t p;
+	uint8_t i = sel < nsold ? sel : 0;
+	const unit_t *u = &units[i];
+	p.on = nsold && u->alive;
+	p.level = bv_level();
+	p.tu = u->tu; p.tu_max = u->tu_max; p.en = u->en; p.en_max = u->en_max;
+	p.hp = u->hp; p.hp_max = u->hp_max; p.stun = u->stun; p.mor = u->mor;
+	p.sol = u->sol; p.unit = i; p.kneel = u->kneel;
+	p.reserve = bt_reserve; p.res_kneel = bt_res_kneel;
+	p.page = pf_page;
+	hud_draw(&p);
 }
 
 // Развёртывание НЛО типа utype — то, что называется как сам НЛО (alienDeployments STR_SMALL_SCOUT
@@ -396,6 +444,7 @@ static void end_turn(void)
 	path_n = 0;
 	turn_dir = 0xFF;
 	bv_suspend();                        // окно рисуется в строки 0–199 основного холста
+	marks_show(0, 0);
 	UI_GO(A_PUSH, SCR_NEXT_TURN);
 }
 
@@ -462,9 +511,11 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	}
 	case EVT_OPEN:
 		bv_open();                           // список вида, холсты, сплит, курсор боя
+		marks_init();                        // плитки значков замеченных (спрайты TSU)
+		nmarks = 0;
 		// Память банка при старте не обнуляется: без этого aliens_free отдавал в пул мусорные
 		// номера страниц (а с ними — каталог SD, и карта не находила своих блоков)
-		adq.nsh = 0;
+		aliens_reset();
 		if (pf_page == PG_NONE) pf_page = pg_alloc(2, 1);   // рабочая память боя: поиск пути и таблицы
 		if (pf_page == PG_NONE) { dbg_puts("battle: no pages\n"); break; }   // иначе — в страницу #FF
 		// Карта миссии собирается генератором (16 §3). Пока миссии нет, террейн берётся
@@ -495,19 +546,22 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			else { move_wait = 3; step_unit(); if (!path_n) ui_dirty(0); }   // в конце — обновить панель
 		}
 		if (an_on && (uint8_t)((uint8_t)frames - an_tm) >= 5) door_anim_step();   // 100 мс (Tile::animate)
+		if ((uint8_t)((uint8_t)frames - bl_tm) >= 5) { bl_tm = (uint8_t)frames; marks_blink(); }   // _animTimer
 		bv_tick(sel);                        // прокрутка, курсор клетки, стрелка над выбранным
 		break;
 	}
 	case EVT_DRAW:
 		bv_draw();
 		draw_panel();
+		marks_on();                          // поверх боя могли открывать окно — значки снова
 		break;
 	case EVT_CLOSE:
 		// Бой отдаёт всю свою память: карту, наборы тайлов, лист юнитов, список вида и
 		// рабочую память поиска пути. Иначе геоскейпу не из чего заводить слоты кэша, и он
 		// перечитывает каждый фон с карты — экран залипает (14 §todo).
 		bv_close();
-		aliens_free(&adq);               // листы брони пришельцев
+		marks_show(0, 0);
+		aliens_free();                   // листы брони пришельцев
 		vis_free();
 		bat_unload();                    // наборы частей, листы бойца и курсора, генератор (bload.c)
 		gen_mode = 0;
@@ -528,6 +582,14 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	case EVT_BUTTON:
 		switch (arg) {
 		case 0: {                            // клик по карте
+			uint8_t mk = mark_at();
+			if (mk != 0xFF) {                // значок пришельца — камера на него (btnVisibleUnitClick)
+				const unit_t *a = &units[marks_u[mk]];
+				if (a->z != bv_level()) bv_set_level(a->z, 0);
+				bv_center(a->x, a->y);
+				ui_dirty(0);
+				break;
+			}
 			if (!gen_mode || !nunits || bv_walking() != 0xFF) break;   // идёт — ждать
 			uint8_t tx, ty;
 			if (!bv_cursor(&tx, &ty)) break;
@@ -542,6 +604,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			if (no && no - 1 != sel && no <= nsold) {   // свой боец — выбрать его (primaryAction оригинала)
 				sel = (uint8_t)(no - 1);
 				path_n = 0;
+				see_update();
 				ui_dirty(0);
 				break;
 			}
@@ -557,11 +620,17 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		case 4: { uint8_t l = bv_level(); if (l) { bv_set_level(l - 1, 1); ui_dirty(0); } break; }
 		case 5:                              // инвентарь: окно рисуется в строки 0–199 основного
 			bv_suspend();                    //   холста — без сплита и с ним на экране
+			marks_show(0, 0);
 			UI_GO(A_PUSH, SCR_INVENTORY);
 			break;
 		case 6: center_on_unit(); ui_dirty(0); break;
 		case 7: sel_next(); break;           // следующий боец
 		case 10: do_kneel(); break;          // присесть и встать
+		case 11: case 12: case 13: case 14:  // резерв времени — группа кнопок
+			bt_reserve = (uint8_t)(arg - 11);
+			ui_dirty(0);
+			break;
+		case 15: bt_res_kneel = !bt_res_kneel; ui_dirty(0); break;
 		case 9:                              // «1/2»: все этажи или только текущий
 			bv_all_levels();
 			ui_dirty(0);

@@ -34,9 +34,12 @@ MOUSE_X		= 0xFBDF		; Kempston: абсолютные счётчики, y раст
 MOUSE_Y		= 0xFFDF
 FMADDR_PORT	= 0x15AF
 FMADDR_C000	= 0x1C			; FM_EN | A[15:12] = #C — окно 4 КБ на #C000
-SFILE_W0	= 0xC200		; спрайт 0: три слова
-SFILE_W1	= 0xC202
-SFILE_W2	= 0xC204
+;; Курсор — дескриптор 30 (три слова): 0..29 — значки боя под ним (bspr.c: спрайты рисуются по
+;; порядку, следующий — поверх); его LEAP кончает слой, дальше в списке нули
+CUR_SPR		= 30
+SFILE_W0	= 0xC200 + CUR_SPR * 6
+SFILE_W1	= 0xC202 + CUR_SPR * 6
+SFILE_W2	= 0xC204 + CUR_SPR * 6
 SCRATCH_PAGE	= 0x0F
 PAGE3_PORT	= 0x13AF
 SCREEN_W	= 320

@@ -232,6 +232,26 @@ uint8_t vis_seen(vu_t *u, uint8_t n, uint8_t nsold, uint8_t *list, uint8_t max) 
 	return cnt;
 }
 
+// Кого из пришельцев видит юнит sel прямо сейчас (BattleUnit::getVisibleUnits после calculateFOV):
+// номера — в list (до max), вернёт их число
+uint8_t vis_list(vu_t *u, uint8_t n, uint8_t nsold, uint8_t sel, uint8_t *list, uint8_t max) __banked
+{
+	uint8_t old = pg_win3(), cnt = 0;
+	vm_cur = old;
+	const vu_t *v = &u[sel];
+	if (vm_page == PG_NONE || !(v->flags & VU_ALIVE)) return 0;
+	for (uint8_t i = nsold; i < n && cnt < max; i++) {
+		const vu_t *a = &u[i];
+		if (!(a->flags & VU_ALIVE)) continue;
+		uint8_t nq = (a->flags & VU_BIG) ? 4 : 1, seen = 0;
+		for (uint8_t q = 0; q < nq && !seen; q++)
+			seen = sees(v, (uint8_t)(a->x + (q & 1)), (uint8_t)(a->y + (q >> 1)), a->z);
+		if (seen) list[cnt++] = i;
+	}
+	if (vm_cur != old) pg_map3(old);
+	return cnt;
+}
+
 // Маска клетки по её частям c[4] и их свойствам (pathfind.h PF_FLAGS: 1 нет пола, 2 держит
 // обзор; loader.h TL_BIGW — большая стена): fl, bw — по части клетки
 static uint8_t cell_mask(const uint8_t *c, const uint8_t *fl, const uint8_t *bw)

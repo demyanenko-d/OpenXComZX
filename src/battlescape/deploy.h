@@ -1,4 +1,5 @@
-// Расстановка пришельцев (deploy.c, банк 31 — вызывается из экрана боя напрямую, тот же банк).
+// Расстановка пришельцев (deploy.c, банк 34): отряд берёт из рабочей страницы (loader.h TL_UNITS),
+// пришельцев кладёт туда же (TL_AUNITS) — память банка экрана боя отсюда не видна.
 #ifndef DEPLOY_H
 #define DEPLOY_H
 
@@ -16,9 +17,11 @@ typedef struct {
 	uint8_t shp[ASH_MAX], shn[ASH_MAX];
 } adep_t;
 
-// Поставить пришельцев после n юнитов массива u (до max); вернёт новое число юнитов.
+typedef struct { uint16_t deploy, race; uint8_t ufo, page; } adreq_t;   // поля — как в adep_t
+// Поставить пришельцев к отряду из nsold бойцов; вернёт их число (записи — TL_AUNITS).
 // sx, sy — размер карты. Листы брони грузятся в страницы пула — отдать aliens_free.
-uint8_t aliens_deploy(unit_t *u, uint8_t n, uint8_t max, adep_t *q, uint8_t sx, uint8_t sy);
-void aliens_free(adep_t *q);
+uint8_t aliens_deploy(const adreq_t *r, uint8_t nsold, uint8_t sx, uint8_t sy) __banked;
+void aliens_free(void) __banked;
+void aliens_reset(void) __banked;          // вход в бой: листов нет (память банка не обнулена)
 
 #endif
