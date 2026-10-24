@@ -14,7 +14,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 # Порядок важен: функция попадает в первую группу, чья регулярка подошла
 $groups = [ordered]@{
-	'raster: GVE2 pieces, runs -> DMA' = '^(eg_|_gl_rows_edg|_gl_rows_pre|_gl_rows$|_gl_edges|rw_|em_run_p|edge1|e_rows|e_fast|hclip|limb_l|lerp|xclip|div32|eslope|bord_ev|e_store|mul8e|mulu16|ael_|ai_cmp|fx_)'
+	'raster: GVE2 pieces, runs -> DMA' = '^(eg_|_gl_rows_edg|_gl_rows_vc|_gl_rows_cap|vc_row|cp_row|rp_|r_vc|_gl_rows_pre|_gl_rows$|_gl_edges|rw_|em_run_p|edge1|e_rows|e_fast|hclip|limb_l|lerp|xclip|div32|eslope|bord_ev|e_store|mul8e|mulu16|ael_|ai_cmp|fx_)'
 	'shadow (bank 25)'       = '^(_sh_|build$|iv_out|lvl_of|add32|globe_sh\$|em_run_s|blk_eval|set_num|row_rng|_globe_shadow|_globe_sunlon|_globe_rows_pl)'
 	'marks'                  = '^(globe_det\$mk_|_globe_marks|_det_marks|_det_unmark|_globe_xy)'
 	'details: projection, tables' = '^(_gl_project|vidx|globe\$project|_gl_ktab|kt_|_gl_ztab|globe\$tables)'
@@ -36,7 +36,7 @@ foreach ($z in $Zooms) {
 	# Время стоит (ST->months = -1, как до первой базы; gtime.c game_advance): иначе каждые ~34
 	# кадра на «5 Secs» солнце сдвигается на эпоху, тень перерисовывается, и нажатие в окне ждёт
 	# её, а waitmark 32 срабатывает по старой отметке — окно закрывается до поворота
-	$lines += @('pokew 06:0030 0xFFFF', 'wait 20', 'key LEFT', 'wait 8', 'waitmark 32 3000', 'wait 30')   # пробный поворот: кэши, таблицы
+	$lines += @('pokew 06:0030 0xFFFF', 'wait 20', 'key RIGHT', 'wait 8', 'waitmark 32 3000', 'wait 30')   # пробный поворот (вправо: обратно — вид мог попасть в кэш отрезков)
 	$lines += @('profile on', 'down RIGHT', 'wait 1', 'up RIGHT', 'waitmark 32 3000', 'profile off 200 ops', 'exit 0')
 	if ($From) { $outp = [IO.File]::ReadAllText((Join-Path $root "$From\prof_z$z.txt")) }
 	else {

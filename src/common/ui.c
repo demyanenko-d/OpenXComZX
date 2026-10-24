@@ -1019,8 +1019,10 @@ void ui_run(uint8_t first_screen) __banked
 	do_push(first_screen);
 	process();
 	mark();
+	// Ожидание кадра — в конце простоя: обработанное событие (continue) сразу берёт следующее
+	// защёлкнутое нажатие, а не спит до границы кадра (perf/pipeline.md П3: −0.5 кадра на
+	// картинку при удержании клавиши)
 	for (;;) {
-		wait_frames(1);
 		if (cur != mus_scr) { mus_scr = cur; scr_event(cur, EVT_MUSIC, 0); }   // тема нового экрана
 		mus_pump();                  // такт музыки: подкачка с карты и долив кольца
 		t_start = frames;
@@ -1062,5 +1064,6 @@ void ui_run(uint8_t first_screen) __banked
 		if (scr_event(cur, EVT_TICK, 0)) redraw_dyn();
 		redraw_dirty();
 		if (process()) mark();
+		wait_frames(1);
 	}
 }

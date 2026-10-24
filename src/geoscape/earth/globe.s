@@ -37,6 +37,7 @@
 	.globl	_res_find, _res_game, _far_read, _far_copy, _far_fill, _far_byte, _pg_map3, _pg_alloc, _pg_win3
 	.globl	_dbg_puts, _dbg_dec, ___mulsint2slong, ___muluint2ulong, _frames, _dma_fill_word, _st_, _ctx
 	.globl	___sdcc_bcall_ehl
+	.globl	_split_on, _split_phase, _split_mark, _split_line, _vblank_line, _map_gx, _map_gy
 	.globl	_globe_sin, b_globe_sin, _globe_shadow, b_globe_shadow, _globe_rows_pl, b_globe_rows_pl
 	.globl	_globe_sunlon, b_globe_sunlon, _gview_open, b_gview_open, _gview_pick, b_gview_pick
 	.globl	_gview_load, b_gview_load, _gview_reset, b_gview_reset
@@ -73,6 +74,7 @@ BACK_DAX	= SCREEN_PAGE + (BACK_Y >> 5)
 NTEX		= 13
 NBLK		= 14			; блоков узора на строку: 13 текстур + океан
 GLOBE_H		= 200
+SPLIT_TOP	= 73			; строк верхнего бордюра (VSInt считает их с картинкой; scr_battle.c)
 GLOBE_SH_FLG	= 0x3000
 PG_NONE		= 0xFF
 SCREEN_PAGE	= 0x10
@@ -2424,12 +2426,24 @@ fill:
 ;; прерывания: копия идёт ~1.35 строки на строку луча и остаётся впереди него (иначе виден разрыв)
 blit:
 	call	dma_wait
-	ld	a, (_frames)
-	ld	b, a
-1$:	ld	a, (_frames)
-	cp	a, b
-	jr	z, 1$
-	ld	bc, #0x1AAF
+	ld	a, (_split_on)			; метка луча ещё не включена (запуск, после боя) — включить:
+	or	a, a				;   второе прерывание на строке 96 окна только переключает
+	jr	nz, 2$				;   фазу (crt0.s _split_mark), работа кадра — как была, в его начале
+	ld	hl, #0
+	ld	(_map_gx), hl
+	ld	(_map_gy), hl
+	ld	(_vblank_line), hl
+	ld	hl, #SPLIT_TOP + 96 - 1
+	ld	(_split_line), hl
+	xor	a, a
+	ld	(_split_phase), a
+	inc	a
+	ld	(_split_mark), a
+	ld	(_split_on), a
+2$:	ld	a, (_split_phase)		; копия — когда луч ниже строки 96 окна или в нижнем бордюре:
+	or	a, a				;   она идёт 1.35–1.45 строки за строку луча и его не догоняет —
+	jr	z, 2$				;   кадр целиком старый, следующий целиком новый. Раньше ждали
+	ld	bc, #0x1AAF			;   начала кадра: в среднем полкадра (perf/pipeline.md П4)
 	xor	a, a
 	out	(c), a				; SAL
 	inc	b

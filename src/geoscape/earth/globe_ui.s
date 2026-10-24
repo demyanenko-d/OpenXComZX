@@ -33,6 +33,8 @@ gu_sd:		.ds	2
 gu_cd:		.ds	2
 gu_sc:		.ds	2		; наклон вида: sin, cos
 gu_cc:		.ds	2
+gu_klat:	.ds	2		; для какого наклона вида они посчитаны в globe_xy; ~он же
+gu_kchk:	.ds	2
 gu_pc:		.ds	2
 gu_r:		.ds	2
 gu_u:		.ds	2
@@ -176,16 +178,37 @@ _globe_xy::
 	ld	(gu_cd), de
 	call	zoom_rad
 	ld	(gu_r), hl
-	ld	hl, (_ctx + CTX_LAT)
+	ld	hl, (_ctx + CTX_LAT)	; наклон вида: sin, cos — раз на вид, а не на каждую метку
+	ld	de, (gu_klat)		;   (perf/details.md П3б); годность — ключ и его дополнение
+	or	a, a			;   (память банка при старте не обнулена)
+	sbc	hl, de
+	jr	nz, 1$
+	ld	hl, (gu_kchk)		; ~ключ: сумма #FFFF (нули памяти её не дают)
+	add	hl, de
+	inc	hl
+	ld	a, h
+	or	a, l
+	jr	z, 2$
+1$:	ld	hl, (_ctx + CTX_LAT)
+	ld	(gu_klat), hl
 	push	hl
 	call	sin16
 	ld	(gu_sc), de
 	pop	hl
+	push	hl
 	ld	de, #0x4000
 	add	hl, de
 	call	sin16
 	ld	(gu_cc), de
-	ld	hl, (gu_cp)		; pc = SHR14(cp · cd)
+	pop	de
+	ld	a, d
+	cpl
+	ld	h, a
+	ld	a, e
+	cpl
+	ld	l, a
+	ld	(gu_kchk), hl
+2$:	ld	hl, (gu_cp)		; pc = SHR14(cp · cd)
 	ld	de, (gu_cd)
 	call	___mulsint2slong
 	call	shr14

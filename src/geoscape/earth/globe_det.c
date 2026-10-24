@@ -7,6 +7,7 @@
 // globe_det_s.s. project_docs/globe.md §12.12.
 #include <stdint.h>
 #include <string.h>
+#include "tsconf.h"
 #include "res.h"
 #include "res_ids.h"
 #include "far.h"
@@ -65,6 +66,7 @@ static uint16_t __at(0xBCE2) mk_lon;           // вид, под который 
 static int16_t __at(0xBCE4) mk_lat;            // экране не перерисован под новый вид (поворот, зум,
 static uint8_t __at(0xBCE6) mk_zoom;           // центр), такт молчит — иначе точки стирались бы не
 extern volatile uint16_t frames;               // там, где нарисованы, и на глобусе оставался мусор
+static uint8_t __at(0xBD80) mk_rp;             // 1 — det_marks перекрашивает: точки под метками не сохраняет (globe_det_s.s)
 static int16_t __at(0xBFF0) dl_x0;
 static int16_t __at(0xBFF2) dl_y0;
 static int16_t __at(0xBFF4) dl_x1;
@@ -134,6 +136,104 @@ static void label(int16_t x, int16_t y, uint8_t color, const char *s)
 	text_draw(&b, s);
 }
 
+// ---------------------------------------------------------------- кэш подписей (perf/details.md П2)
+// Подпись страны или города рисуется text_draw один раз — в страницу пула, той же рамкой 100 x 9
+// (раскладка от места не зависит), — а дальше выводится одним DMA BLT1 (прозрачный 0, как глифы
+// атласа) в задний буфер. Подпись стоила 7–23 тыс. тактов (раскладка, ключи атласа, глифы; на зуме
+// 3+ ключи подписей и панели вытесняли друг друга), теперь ~1 тыс. Ключ — строка, цвет и чётность
+// x рамки (DMA адресует словами: место в кэше рисуется с той же чётностью). Две страницы подряд —
+// 64 строки по 512 байт: 7 полос по 9 строк, в полосе 3 места по LC_W точек (text_draw отсекает
+// по x < 320). Отсечение вывода — как у text_draw: x 0..319, y 0..199 окна.
+#define LC_N   21
+#define LC_W   102
+static uint16_t __at(0xBD10) lc_key[LC_N];      // строка | чётность << 15
+static uint8_t __at(0xBD3A) lc_col[LC_N];
+static uint16_t __at(0xBD50) lc_t[LC_N];        // когда выводилась: вытесняется самая давняя
+static uint16_t __at(0xBD7A) lc_clock;
+static uint8_t lc_page;                         // Win1 (обнуляет crt0): 0 — страниц нет
+static uint8_t lc_ok;                           // 1 — каталог годен
+
+static void lc_wait(void)
+{
+	while (TS_DMASTATUS & 0x80)
+		;
+}
+
+// Строка места k кэша (от начала первой страницы) и его столбец
+#define LC_ROW(k) ((uint16_t)((k) / 3) * 9)
+#define LC_X(k)   ((uint16_t)((k) % 3) * LC_W)
+
+static uint8_t lc_get(uint16_t sid, uint8_t color, uint8_t par)
+{
+	uint16_t key = sid | (uint16_t)par << 15;
+	uint8_t k, old = 0;
+	if (!lc_ok) {
+		if (!lc_page) {
+			uint8_t p = pg_alloc(2, 1);
+			if (p == PG_NONE) return 0xFF;
+			lc_page = p;
+		}
+		memset(lc_col, 0, sizeof lc_col);
+		memset(lc_key, 0xFF, sizeof lc_key);     // #FFFF — пусто (строк меньше 32768)
+		memset(lc_t, 0, sizeof lc_t);
+		lc_clock = 0;
+		lc_ok = 1;
+	}
+	lc_clock++;
+	for (k = 0; k < LC_N; k++) {
+		uint16_t kk = lc_key[k];
+		uint8_t c = lc_col[k];
+		if (kk == key && c == color) { lc_t[k] = lc_clock; return k; }
+		if ((uint16_t)(lc_clock - lc_t[k]) > (uint16_t)(lc_clock - lc_t[old])) old = k;
+	}
+	// Нет — нарисовать на месте самой давней: погасить место, text_draw в страницу кэша
+	// (tx_yb — строка холста, по которой gfx_map_row найдёт страницу пула: #10 + Y >> 5)
+	k = old;
+	uint16_t row = LC_ROW(k), x = LC_X(k);
+	for (uint8_t r = 0; r < 9; r++) {
+		uint16_t y = row + r;
+		far_fill(FAR(lc_page + (uint8_t)(y >> 5), (y & 31) << 9 | x), 0, LC_W);
+	}
+	tbox_t b;
+	b.x = (int16_t)x + par; b.y = 0; b.w = 100; b.h = 9;
+	b.font = FNT_SMALL; b.color = color; b.color2 = color; b.flags = TX_CENTER;
+	uint16_t yb = tx_yb;
+	tx_yb = (uint16_t)(lc_page - 0x10) * 32 + row;
+	text_draw(&b, str_get(sid));
+	tx_yb = yb;
+	lc_key[k] = key;
+	lc_col[k] = color;
+	lc_t[k] = lc_clock;
+	return k;
+}
+
+// Подпись строки sid по центру x в строке y окна (как label)
+static void label_c(int16_t x, int16_t y, uint8_t color, uint16_t sid)
+{
+	int16_t bx = x - 50;
+	uint8_t par = (uint8_t)bx & 1;
+	uint8_t k = lc_get(sid, color, par);
+	if (k == 0xFF) { label(x, y, color, str_get(sid)); return; }
+	// место k: точка c места — это точка bx − par + c окна
+	int16_t dx = bx - par, w = LC_W, h = 9;
+	uint16_t sx = LC_X(k), sy = LC_ROW(k);
+	if (y < 0) { sy += (uint16_t)-y; h += y; y = 0; }
+	if (y + h > 200) h = 200 - y;
+	if (dx < 0) { sx += (uint16_t)-dx; w += dx; dx = 0; }
+	if (dx + w > 320) w = 320 - dx;
+	if (h <= 0 || w <= 0) return;
+	far_t src = FAR(lc_page + (uint8_t)(sy >> 5), (sy & 31) << 9 | sx);
+	uint16_t dy = (uint16_t)y + BACK_Y;
+	far_t dst = FAR(0x10 + (uint8_t)(dy >> 5), (dy & 31) << 9 | (uint16_t)dx);
+	lc_wait();
+	TS_DMASAL = (uint8_t)src; TS_DMASAH = (uint8_t)(src >> 8) & 0x3F; TS_DMASAX = FAR_PAGE(src);
+	TS_DMADAL = (uint8_t)dst; TS_DMADAH = (uint8_t)(dst >> 8) & 0x3F; TS_DMADAX = FAR_PAGE(dst);
+	TS_DMALEN = (uint8_t)(w / 2 - 1);
+	TS_DMANUM = (uint8_t)(h - 1);
+	TS_DMACTRL = DMA_BLT1 | DMA_S_ALGN | DMA_D_ALGN | DMA_ASZ;
+	lc_wait();                                   // дальше в задний буфер пишет процессор (значки, линии)
+}
+
 // fresh — globe.s только что отобрал группы и спроецировал вершины для этого вида (иначе — прошлые)
 void globe_det(uint8_t fresh, uint8_t z, uint8_t work) __banked
 {
@@ -183,7 +283,7 @@ void globe_det(uint8_t fresh, uint8_t z, uint8_t work) __banked
 				if (!FRONT(q)) continue;
 				int16_t x = px(q), y = py(q);
 				if (g[3] == 1) {
-					if (!off_win(x, y)) label(x, y, dh.col[1], str_get(s[0] | s[1] << 8));
+					if (!off_win(x, y)) label_c(x, y, dh.col[1], s[0] | s[1] << 8);
 					continue;
 				}
 				if (off_win(x, y + 2)) continue;
@@ -191,7 +291,7 @@ void globe_det(uint8_t fresh, uint8_t z, uint8_t work) __banked
 				for (int16_t my = y - 1; my <= y + 1; my++)
 					for (int16_t mx = x - 1; mx <= x + 1; mx++, mk++)
 						if (*mk) { dl_x0 = mx; dl_y0 = my; dl_c = *mk; det_pset(); }
-				label(x, y + 2, dh.col[2], str_get(s[0] | s[1] << 8));
+				label_c(x, y + 2, dh.col[2], s[0] | s[1] << 8);
 			}
 		}
 		p += m * 6;
@@ -228,6 +328,7 @@ void globe_det_check(void) __banked
 void globe_det_reset(void) __banked
 {
 	gc_ok = 0;
+	lc_ok = 0;                                   // кэш подписей — заново (страницы остаются за ним)
 }
 
 // ---------------------------------------------------------------- метки (Globe::drawMarkers, blink)
@@ -307,19 +408,25 @@ static void mk_collect_still(void)
 
 // Подвижные метки (порядок Globe::drawMarkers — последними): летящие НЛО и корабли в полёте.
 // Пересчитываются каждый тик, поэтому идут в хвосте списка, а кадры берутся из кэша по типу
-static void mk_collect_moving(void)
+// Список пишется с места at. Нет НЛО или кораблей в воздухе (счётчики nufos / ncraft_out, как
+// ufo.c, craft.c) — их слоты не обходятся (perf/details.md П3в)
+static void mk_collect_moving(uint8_t at)
 {
 	uint8_t k;
-	mk_n = mk_still;
-	for (k = 0; k < MAX_UFOS; k++) {
-		const ufo_t *u = &ST->ufo[k];
-		if (u->type == NONE8 || !(u->flags & UF_DETECTED) || u->status != US_FLYING) continue;
-		mk_add(&u->pos, mk_fr(RES_RULE_UFOS, u->type, offsetof(r_ufos_t, marker), 2, fr_ufo));
+	mk_n = at;
+	if (ST->nufos) {                             // слоты — указателем, без умножения на размер записи
+		const ufo_t *u = ST->ufo;
+		for (k = 0; k < MAX_UFOS; k++, u++) {
+			if (u->type == NONE8 || !(u->flags & UF_DETECTED) || u->status != US_FLYING) continue;
+			mk_add(&u->pos, mk_fr(RES_RULE_UFOS, u->type, offsetof(r_ufos_t, marker), 2, fr_ufo));
+		}
 	}
-	for (k = 0; k < MAX_CRAFTS; k++)
-		if (ST->craft[k].type != NONE8 && ST->craft[k].status == CS_OUT)
-			mk_add(&ST->craft[k].pos,
-			       mk_fr(RES_RULE_CRAFTS, ST->craft[k].type, offsetof(r_crafts_t, marker), 1, fr_craft));
+	if (ST->ncraft_out) {
+		const craft_t *c = ST->craft;
+		for (k = 0; k < MAX_CRAFTS; k++, c++)
+			if (c->type != NONE8 && c->status == CS_OUT)
+				mk_add(&c->pos, mk_fr(RES_RULE_CRAFTS, c->type, offsetof(r_crafts_t, marker), 1, fr_craft));
+	}
 }
 
 void globe_marks(void) __banked
@@ -327,13 +434,14 @@ void globe_marks(void) __banked
 	res_t r;
 	det_hdr_t h;
 	mk_ok = 0;
+	mk_rp = 0;                                   // память банка при старте не обнулена
 	if (!res_find(RES_GLOBEDET, &r)) return;
 	far_read(r.phys, &h, sizeof h);
 	far_read(r.phys + h.r0, mk_spr, sizeof mk_spr);
 	memset(fr_ufo, MK_NOFR, sizeof fr_ufo);
 	memset(fr_craft, MK_NOFR, sizeof fr_craft);
 	mk_collect_still();
-	mk_collect_moving();
+	mk_collect_moving(mk_still);
 	mk_lon = ctx.globe_lon;
 	mk_lat = ctx.globe_lat;
 	mk_zoom = ST->zoom;
@@ -358,11 +466,35 @@ uint8_t globe_marks_tick(void) __banked
 	if (z != mk_zoom || ctx.globe_lon != mk_lon || ctx.globe_lat != mk_lat) return 0;
 	mk_t = frames;
 	dl_yb = 0;
-	det_unmark();
-	pg_map3(STATE_PAGE);
-	mk_collect_moving();                         // неподвижные — из прошлого сбора
+	uint8_t on = mk_n, still = mk_still, mv = on - still;
 	mk_blink = (mk_blink ^ 1) & 1;               // память банка при старте не обнулена
-	mk_draw();
+	pg_map3(STATE_PAGE);
+	if (on + mv + 8 <= MK_MAX) {
+		// Новые подвижные — следом за прошлыми (неподвижные — из прошлого сбора). Ни одна не
+		// сдвинулась (за 100 мс почти всегда) — перекраска: точки под метками в mk_save годны, их
+		// не возвращать и не сохранять, картинка та же (perf/details.md П3г). Иначе — вернуть точки
+		// по прошлому списку и вывести новый.
+		mk_collect_moving(on);
+		uint8_t nn = mk_n - on;
+		uint8_t *o = mk_list + still * 3, *q = mk_list + on * 3;
+		if (nn == mv && !memcmp(o, q, (uint16_t)mv * 3)) {
+			mk_n = on;
+			mk_rp = 1;
+			mk_draw();
+			mk_rp = 0;
+		} else {
+			mk_n = on;
+			det_unmark();
+			memmove(o, q, (uint16_t)nn * 3);
+			mk_n = still + nn;
+			mk_draw();
+		}
+	} else {
+		det_unmark();
+		pg_map3(STATE_PAGE);
+		mk_collect_moving(still);
+		mk_draw();
+	}
 	pg_map3(old3);
 	return 1;
 }

@@ -129,7 +129,7 @@ static uint8_t dl_ok;                // список отвечает текущ
 #define PAD_X   80                   // запас по X: 320 + 2*80 = 480 < 512, кольцо не перекрывается
 #define PAD_Y   ((BUF_H - VIEW_H) / 2)       // 56
 #define BIAS    1024                 // мировая X лежит в ±640; сдвиг делает её положительной
-extern uint8_t split_gx, split_gy, split_on, split_phase;
+extern uint8_t split_gx, split_gy, split_on, split_phase, split_mark;
 extern uint16_t map_gx, map_gy, split_line, vblank_line;
 
 // Адрес начала строки карты в холсте: смещение в странице и сама страница. Считать это в сборке
@@ -153,6 +153,7 @@ static void rows_init(void)
 // Включить сплит: карта видна со строки BUF_Y холста, панель — со своей строки 144
 static void split_start(void)
 {
+	split_on = 0;                        // на геоскейпе сплит включён (метка луча): пока меняем — выкл.
 	map_gx = PAD_X;
 	map_gy = BUF_Y + PAD_Y - SPLIT_LEAD;   // счётчик дорастёт до нужной строки к картинке
 	split_gx = 0;
@@ -160,6 +161,7 @@ static void split_start(void)
 	split_line = SPLIT_TOP + VIEW_H - 1;
 	vblank_line = SPLIT_TOP - 1 - SPLIT_LEAD;
 	split_phase = 0;
+	split_mark = 0;                      // глобус включал метку луча без смещений (globe.s blit)
 	split_on = 1;
 	TS_VSINTL = (uint8_t)split_line;
 	TS_VSINTH = (uint8_t)(split_line >> 8);

@@ -24,6 +24,7 @@ MK_BLINK = 0xB992			;   список (x, y, кадр) и точки под ме�
 MK_N	= 0xB993
 MK_LIST	= 0xB9A0
 MK_SAVE	= 0xBA60
+MK_RP	= 0xBD80			; 1 — перекраска (globe_det.c mk_rp)
 LN_PG	= 0xBFF9			; подключённая страница экрана
 BACK_Y	= 280
 SCREEN_PAGE = 0x10
@@ -226,14 +227,15 @@ _det_unmark::
 
 ;; void det_marks(void) — метки из списка MK_LIST (MK_N штук: x, y — центр в окне 1..254 x 1..198, кадр) на
 ;; экран (DL_YB = 0): кадр 3x3, точка 0 — прозрачна, цвет + фаза мигания (кадр 8 — город — не мигает);
-;; точки под меткой сохраняются в MK_SAVE (вернёт det_unmark перед следующим выводом)
+;; точки под меткой сохраняются в MK_SAVE (вернёт det_unmark перед следующим выводом). MK_RP = 1 —
+;; перекраска (globe_marks_tick: метки не сдвинулись): точки под ними в MK_SAVE уже годны, только вывод
 _det_marks::
 	push	ix
 	push	iy
 	ld	iy, #MK_SAVE
 	ld	a, (MK_N)
 	or	a, a
-	jr	z, 9$
+	jp	z, 9$
 	ld	b, a
 	ld	ix, #MK_LIST
 1$:	push	bc
@@ -266,6 +268,9 @@ _det_marks::
 	call	addr				; HL — адрес (портит BC)
 	pop	bc
 	pop	de				; DE — кадр
+	ld	a, (MK_RP)
+	or	a, a
+	jr	nz, 6$
 	ld	b, #3
 3$:	push	bc
 	ld	b, #3
@@ -288,7 +293,27 @@ _det_marks::
 	call	ystep				; следующая строка (страница — при переходе)
 	pop	bc
 	djnz	3$
-	ld	de, #3
+	jr	8$
+6$:	ld	b, #3				; перекраска: только непрозрачные точки кадра
+61$:	push	bc
+	ld	b, #3
+62$:	ld	a, (de)
+	inc	de
+	or	a, a
+	jr	z, 63$
+	add	a, c
+	ld	(hl), a
+63$:	inc	l
+	djnz	62$
+	dec	l
+	dec	l
+	dec	l
+	pop	bc
+	push	bc
+	call	ystep
+	pop	bc
+	djnz	61$
+8$:	ld	de, #3
 	add	ix, de
 	pop	bc
 	djnz	1$
