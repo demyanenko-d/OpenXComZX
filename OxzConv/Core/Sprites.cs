@@ -45,13 +45,16 @@ namespace OxzConv
 
 		// SPRSET: u16 n, u8 cell_w, u8 cell_h; n x { u8 x, u8 y, u8 w, u8 h, u16 offs/2 };
 		// затем данные кадров (w*h байт, w чётная). Пустой кадр — w = 0.
-		public static byte[] EncodeSprset(List<Img> frames)
+		// share — одинаковые кадры (те же w, h и точки) ссылаются на одни данные: движок берёт
+		// кадр только по смещению (battlescape/loader.c: tile_entry), формат тот же.
+		public static byte[] EncodeSprset(List<Img> frames, bool share = false)
 		{
 			int n = frames.Count, cw = frames[0].W, ch = frames[0].H;
 			if (cw > 255 || ch > 255) throw new InvalidDataException("SPRSET cell too big");
 			var hdr = new byte[4 + n * 6];
 			hdr[0] = (byte)n; hdr[1] = (byte)(n >> 8); hdr[2] = (byte)cw; hdr[3] = (byte)ch;
 			var data = new MemoryStream();
+			var seen = share ? new Dictionary<string, int>(StringComparer.Ordinal) : null;
 			for (int i = 0; i < n; i++)
 			{
 				var box = OpaqueBox(frames[i]);
@@ -59,9 +62,13 @@ namespace OxzConv
 				if (box == null) continue;
 				var d = Crop(frames[i], box);
 				int offs = (int)data.Length;
+				string key = share ? $"{box[2]}x{box[3]}:" + Convert.ToBase64String(d) : null;
+				bool dup = share && seen.TryGetValue(key, out offs);
 				if (offs / 2 > 0xFFFF) throw new InvalidDataException("SPRSET too large");
 				hdr[e] = (byte)box[0]; hdr[e + 1] = (byte)box[1]; hdr[e + 2] = (byte)box[2]; hdr[e + 3] = (byte)box[3];
 				hdr[e + 4] = (byte)(offs / 2); hdr[e + 5] = (byte)(offs / 2 >> 8);
+				if (dup) continue;
+				if (share) seen[key] = offs;
 				data.Write(d, 0, d.Length);
 			}
 			var o = new byte[hdr.Length + data.Length];

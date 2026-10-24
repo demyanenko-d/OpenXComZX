@@ -22,8 +22,14 @@
 //   Байт клетки — сквозной номер части в наборах ТОГО террейна, которому принадлежит блок
 //   (0 — пусто), ровно как в MAP оригинала: движок переводит его в номер части миссии,
 //   вычитая размеры наборов по порядку (RuleTerrain::getMapData).
+//   За клетками — узлы маршрутов ROUTES/<блок>.RMP: u8 n, n x 13 байт { x, y, z (снизу вверх),
+//   type, rank, flags, reserved, priority, link[5] } (RouteNodes ниже; узел вне блока — x = #FF).
 //
 // TILESET_<набор> (Sprset) — кадры набора, 32x40.
+//
+// ASHEET_<лист>_<процедура>[_T2][_F] (Sprset, UNITS.PAK) — готовые кадры юнита по броне, 32x40:
+//   size 1 — 80 кадров (стоя, ходьба, на колене), size 2 — 288 (или 32 без ходьбы), раскладка и
+//   ключ — UnitFrames.cs. Таблица armors ссылается на ресурс полем sheet.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -318,6 +324,130 @@ namespace OxzConv
 			return head.Concat(body).ToArray();
 		}
 
+		// ---------------------------------------------------------------- кадры брони
+		// ASHEET_<лист>_<процедура>[_T2][_F] (Sprset, кадры 32x40) — готовые кадры юнита, собранные
+		// как UnitSprite::draw (раскладка и ключ — UnitFrames.cs). Броня ссылается на свой
+		// ресурс полем sheet таблицы armors (RulesSchema.cs): ArmorSheets — тип брони -> имя.
+		public readonly Dictionary<string, string> ArmorSheets = new Dictionary<string, string>(StringComparer.Ordinal);
+
+		int BuildArmorSheets(PakWriter unitPak, string prevDir, byte[] pal)
+		{
+			bool tftd = game == "TFTD";
+			var done = new HashSet<string>(StringComparer.Ordinal);
+			var sheetCache = new Dictionary<string, List<Img>>(StringComparer.Ordinal);
+			var info = new List<string>();
+			UnitFrames.Lost = UnitFrames.Clipped = UnitFrames.Missing = 0;
+			long lostMax = 0;
+			string lostMaxName = null;
+			int n = 0;
+			// armors.rul: spriteSheet, drawingRoutine (0), size (1), movementType (0), forcedTorso (0) — Armor::load
+			foreach (var o in Y.List(Y.Get(Y.Load(ox.ReadText($"standard/{ruleFolder}/armors.rul")), "armors")) ?? new List<object>())
+			{
+				var a = new UnitFrames.Armor
+				{
+					Type = Y.Str(Y.Get(o, "type")),
+					Sheet = Y.Str(Y.Get(o, "spriteSheet")),
+					Routine = Y.Int(Y.Get(o, "drawingRoutine"), 0),
+					Size = Y.Int(Y.Get(o, "size"), 1),
+					Movement = Y.Int(Y.Get(o, "movementType"), 0),
+					ForcedTorso = Y.Int(Y.Get(o, "forcedTorso"), 0),
+				};
+				if (a.Type == null || a.Sheet == null) continue;
+				if (a.Sheet.EndsWith(".PCK", StringComparison.OrdinalIgnoreCase)) a.Sheet = a.Sheet.Substring(0, a.Sheet.Length - 4);
+				string name = UnitFrames.ResName(a, tftd);
+				if (done.Contains(name)) { ArmorSheets[a.Type] = name; continue; }
+				if (!sheetCache.TryGetValue(a.Sheet, out var src))
+				{
+					if (!gfs.Has($"UNITS/{a.Sheet}.PCK") || !gfs.Has($"UNITS/{a.Sheet}.TAB")) { report.Add($"  battle: armor {a.Type}: no UNITS/{a.Sheet}.PCK"); continue; }
+					src = Formats.DecodePck(gfs.Read($"UNITS/{a.Sheet}.PCK"), gfs.Read($"UNITS/{a.Sheet}.TAB"), TileW, TileH);
+					sheetCache[a.Sheet] = src;
+				}
+				long lost0 = UnitFrames.Lost, clip0 = UnitFrames.Clipped, miss0 = UnitFrames.Missing;
+				UnitFrames.Missing = 0;
+				var frames = UnitFrames.Build(src, a, tftd);
+				byte[] sprset;
+				bool walk = true;
+				try { sprset = Sprites.EncodeSprset(frames, true); }
+				catch (InvalidDataException)
+				{
+					// Ходьба 2x2 не влезла в SPRSET (смещение кадра — u16 в словах, данные до 128 КБ):
+					// остаются 32 кадра «стоя», движок поймёт по числу кадров, что ходьбы нет.
+					walk = false;
+					UnitFrames.Lost = lost0; UnitFrames.Clipped = clip0; UnitFrames.Missing = 0;
+					frames = UnitFrames.Build(src, a, tftd, false);
+					sprset = Sprites.EncodeSprset(frames, true);
+				}
+				if (UnitFrames.Missing != 0) report.Add($"  battle: {name}: {UnitFrames.Missing} missing frame refs (sheet has {src.Count})");
+				UnitFrames.Missing += miss0;
+				long lost = UnitFrames.Lost - lost0;
+				if (lost > lostMax) { lostMax = lost; lostMaxName = name; }
+				unitPak.Add(ids.Id(name), ResType.Sprset, sprset, frames.Count, TileW, TileH);
+				done.Add(name);
+				ArmorSheets[a.Type] = name;
+				n++;
+				info.Add($"{name.Substring(7)} {frames.Count}{(walk ? "" : " (no walk)")} {(sprset.Length + 512) / 1024}K");
+				if (prevDir != null) PreviewArmorSheet(prevDir, name, frames, a.Size, pal);
+			}
+			report.Add($"armor sheets: {string.Join(", ", info)}");
+			report.Add($"armor sheets: {UnitFrames.Lost} px outside 32x40 (max {lostMax} in {lostMaxName}), {UnitFrames.Clipped} px off canvas (as in OpenXcom)");
+			return n;
+		}
+
+		// Лист для глаз: size 1 — строки по 8 кадров (стоя, 8 строк ходьбы, на колене);
+		// size 2 — части собраны в ромб 2x2 (стоя, затем ходьба по направлениям).
+		static void PreviewArmorSheet(string prevDir, string name, List<Img> frames, int size, byte[] pal)
+		{
+			var cells = new List<Img>();
+			if (size <= 1) cells = frames;
+			else for (int i = 0; i + 3 < frames.Count; i += 4) cells.Add(UnitFrames.Compose2x2(frames, i));
+			var sheet = Sprites.Sheet(cells, 8);
+			var big = new Img(sheet.W * 2, sheet.H * 2);        // вдвое крупнее — чтобы разглядеть
+			for (int y = 0; y < big.H; y++)
+				for (int x = 0; x < big.W; x++) big.Px[y * big.W + x] = sheet.Px[(y >> 1) * sheet.W + (x >> 1)];
+			File.WriteAllBytes(Path.Combine(prevDir, name + ".png"), Png.EncodeIndexed(big, Cram.Pal6To8(pal)));
+		}
+
+		// ---------------------------------------------------------------- узлы маршрутов
+		// ROUTES/<блок>.RMP (BattlescapeGenerator::loadRMP, BattlescapeGenerator.cpp:1694): записи
+		// по 24 байта — [0] y, [1] x, [2] z (сверху вниз), [4 + j*3] связь j = 0..4, [19] type,
+		// [20] rank, [21] flags, [22] reserved, [23] priority. В хвост MAPBLK кладётся u8 n и n
+		// записей по 13 байт: x, y, z (снизу вверх: sz-1-z), type, rank, flags, reserved,
+		// priority, link[5]. Связь — как в файле: 0..250 — номер узла этого блока, 251..255 —
+		// особые (255 нет, 254 север, 253 восток, 252 юг, 251 запад; loadRMP: connectID - 256).
+		// Узел вне блока OpenXcom заменяет пустышкой (setDummy), чтобы номера связей не съехали,
+		// а связи на него обрывает (= -1): здесь он остаётся с x = #FF, обрыв — забота движка.
+		int nodesMax, nodesTotal, nodesOut, linksToOut;
+		string nodesMaxBlock;
+
+		byte[] RouteNodes(string block, Battle.MapBlock m)
+		{
+			if (!gfs.Has($"ROUTES/{block}.RMP")) { report.Add($"  battle: no ROUTES/{block}.RMP"); return new byte[] { 0 }; }
+			var f = gfs.Read($"ROUTES/{block}.RMP");
+			int n = f.Length / 24;
+			if (n > 255) { report.Add($"  battle: ROUTES/{block}.RMP: {n} nodes > 255, cut"); n = 255; }
+			var o = new byte[1 + n * 13];
+			o[0] = (byte)n;
+			var outside = new bool[n];
+			for (int i = 0; i < n; i++)
+			{
+				int s = i * 24, d = 1 + i * 13;
+				int y = f[s], x = f[s + 1], z = f[s + 2];
+				bool inside = x < m.Sx && y < m.Sy && z < m.Sz;
+				outside[i] = !inside;
+				o[d] = (byte)(inside ? x : 0xFF); o[d + 1] = (byte)y; o[d + 2] = (byte)(inside ? m.Sz - 1 - z : z);
+				for (int k = 0; k < 5; k++) o[d + 3 + k] = f[s + 19 + k];
+				for (int j = 0; j < 5; j++) o[d + 8 + j] = f[s + 4 + j * 3];
+			}
+			if (n > nodesMax) { nodesMax = n; nodesMaxBlock = block; }
+			nodesTotal += n;
+			for (int i = 0; i < n; i++)
+			{
+				if (outside[i]) { nodesOut++; continue; }
+				for (int j = 0; j < 5; j++) { int l = o[1 + i * 13 + 8 + j]; if (l <= 250 && (l >= n || outside[l])) linksToOut++; }
+			}
+			return o;
+		}
+
 		// ---------------------------------------------------------------- данные
 		public (int sets, int blocks, long mcdBytes, long mapBytes, long tileBytes) Build(string outDir, string prevDir, byte[] pal)
 		{
@@ -369,9 +499,11 @@ namespace OxzConv
 					if (!gfs.Has($"MAPS/{b.Name}.MAP")) { report.Add($"  battle: no MAPS/{b.Name}.MAP"); continue; }
 					var m = Battle.ReadMap(gfs.Read($"MAPS/{b.Name}.MAP"));
 					b.Sz = m.Sz;
-					var data = new byte[4 + m.Cells.Length];
+					var nodes = RouteNodes(b.Name, m);
+					var data = new byte[4 + m.Cells.Length + nodes.Length];
 					data[0] = (byte)m.Sx; data[1] = (byte)m.Sy; data[2] = (byte)m.Sz;
 					Array.Copy(m.Cells, 0, data, 4, m.Cells.Length);
+					Array.Copy(nodes, 0, data, 4 + m.Cells.Length, nodes.Length);
 					mapPak.Add(ids.Id($"MAPBLK_{b.Name}"), ResType.Blob, data, m.Sx, m.Sy, m.Sz);
 					mapBytes += data.Length;
 					nBlocks++;
@@ -420,8 +552,9 @@ namespace OxzConv
 				unitBytes += sprset.Length;
 				nUnits++;
 			}
+			var sheets = BuildArmorSheets(unitPak, prevDir, pal);
 			var ru = unitPak.Write(Path.Combine(outDir, "UNITS.PAK"));
-			report.Add($"UNITS.PAK: {nUnits} sheets, {(ru.bytes + 512) / 1024} KB");
+			report.Add($"UNITS.PAK: {nUnits} sheets + {sheets} armor sheets, {(ru.bytes + 512) / 1024} KB");
 
 			mcdPak.Add(ids.Id("TERRAINS"), ResType.Blob, EncodeTerrains(), Terrains.Count);
 			mcdPak.Add(ids.Id("MAPSCRIPTS"), ResType.Blob, EncodeScripts(), Scripts.Count);
@@ -430,7 +563,7 @@ namespace OxzConv
 			var rb = mapPak.Write(Path.Combine(outDir, "MAPS.PAK"));
 			var rt = tilePak.Write(Path.Combine(outDir, "TILES.PAK"));
 			report.Add($"MCD.PAK: {nSets} sets, {(rm.bytes + 512) / 1024} KB");
-			report.Add($"MAPS.PAK: {nBlocks} blocks, {(rb.bytes + 512) / 1024} KB");
+			report.Add($"MAPS.PAK: {nBlocks} blocks, {(rb.bytes + 512) / 1024} KB; RMP: {nodesTotal} nodes, max {nodesMax} in {nodesMaxBlock}, {nodesOut} outside block, {linksToOut} links to outside/missing nodes");
 			report.Add($"TILES.PAK: {(rt.bytes + 512) / 1024} KB");
 			return (nSets, nBlocks, mcdBytes, mapBytes, tileBytes);
 		}

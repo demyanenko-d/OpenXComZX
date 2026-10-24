@@ -564,6 +564,7 @@ namespace OxzConv
 			var schema = RulesSchema.Tables();
 			var rs = new RuleSet(sections, schema, strIndex, n => ids.Id(n));
 			rs.ResFind = n => ids.Find(n);
+			if (battle != null) rs.Cache["armorSheets"] = battle.ArmorSheets;   // armors.sheet (RulesSchema.ArmorSheet)
 			var parts = new List<string>();
 			for (int i = 0; i < schema.Count; i++)
 			{

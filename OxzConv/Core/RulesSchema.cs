@@ -165,6 +165,8 @@ namespace OxzConv
 					Fn("invImage", "res", (e, k, rs) => ArmorImage(rs, k, 5), "кукла инвентаря: spriteInv + M0.SPK / .SPK"),
 					F("stats", "stats"),
 					F("spriteInv", "str", comment: "имя куклы инвентаря (MAN_*), пока через таблицу строк"),
+					Fn("sheet", "res", (e, k, rs) => ArmorSheet(rs, k),
+						"готовые кадры юнита ASHEET_* (UNITS.PAK, BattleData.cs/UnitFrames.cs); 0 — листа нет"),
 				},
 				Flags = { "allowInv=true", "constantAnimation", "drawBubbles" },
 			});
@@ -320,6 +322,9 @@ namespace OxzConv
 						"пары (alienMissions, вес)"),
 					F("genMissionFreq", "u8", "0"),
 					F("alert", "str", "STR_ALIENS_TERRORISE"), F("alertBackground", "res", "BACK03.SCR"),
+					F("race", "ref:alienRaces", comment: "раса развёртывания (база пришельцев и т.п.); #FFFF — от миссии"),
+					Fn("data", "nums", (e, k, rs) => DeployData(Y.Get(e, "data")),
+						"расстановка: [alienRank, lowQty, highQty, dQty, extraQty, percentageOutsideUfo] x n (DeploymentData)"),
 				},
 			});
 
@@ -545,6 +550,25 @@ namespace OxzConv
 			foreach (var n in new[] { inv + "M0.SPK", inv + ".SPK", inv })
 				if (rs.ResFind(n) >= 0) return n;
 			return null;
+		}
+
+		// alienDeployments.data (AlienDeployment.cpp:58 и :137, YAML::convert<DeploymentData>): по 6 чисел
+		// на запись; отсутствующее поле — 0 (extraQty в OpenXcom тоже 0). itemSets пока не нужны.
+		static List<object> DeployData(object data)
+		{
+			var l = new List<object>();
+			foreach (var d in Y.List(data) ?? new List<object>())
+				foreach (var f in new[] { "alienRank", "lowQty", "highQty", "dQty", "extraQty", "percentageOutsideUfo" })
+					l.Add(Y.Int(Y.Get(d, f)));
+			return l;
+		}
+
+		// Имя ресурса кадров брони: его кладёт BattleData (шаг боя идёт раньше правил), карту
+		// «тип брони -> имя» Converter.Rules передаёт через rs.Cache["armorSheets"].
+		static object ArmorSheet(RuleSet rs, string id)
+		{
+			if (!rs.Cache.TryGetValue("armorSheets", out var m) || !(m is Dictionary<string, string> map)) return null;
+			return map.TryGetValue(id, out var n) && rs.ResFind(n) >= 0 ? n : null;
 		}
 
 		static List<object> RectList(object r) => r == null ? null : new List<object> { Y.Get(r, "x"), Y.Get(r, "y"), Y.Get(r, "width"), Y.Get(r, "height") };
