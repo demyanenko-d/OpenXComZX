@@ -8,6 +8,9 @@
 waitmark 1 600
 poke _alien_off 1
 poke _cursor_off 1
+# курсор — в середину экрана: у края окна камера боя едет (прокрутка мышью, как в оригинале)
+pokew _cursor_x 160
+pokew _cursor_y 100
 poke _ui_request 248
 waitmark 248 900
 wait 150

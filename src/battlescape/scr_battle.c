@@ -51,8 +51,7 @@ static uint8_t level;                // этаж камеры
 // внутрь, но верхние этажи не видны — как в оригинале.
 static uint8_t all_levels = 1;
 static int16_t cam_x, cam_y;         // начало координат карты на экране
-static int16_t base_x, base_y;       // для какого положения камеры построен буфер
-static int16_t vx_lo, vx_hi;         // мировой диапазон X, который сейчас нарисован в буфере
+static int16_t vx_lo, vx_hi;         // мировой диапазон X, который сейчас нарисован (Y — vy_lo, vy_hi)
 static uint8_t __at(0xBC00) tile_y[256];   // вертикальное смещение тайла (MCD.P_Level) — память банка
 static far_t cells;                  // начало клеток карты
 static far_t map_phys;               // где лежит ресурс карты (слот SD мог смениться)
@@ -124,10 +123,10 @@ uint8_t dl_page = PG_NONE;               // первая из двух подр�
 uint16_t dl_n;                       // записей в списке
 static uint8_t dl_ok;                // список отвечает текущему виду
 
-// Сплит-экран (17_battle_render.md §3): карта живёт в строках холста BUF_Y.. и показывается
-// смещением GYOffs, а панель ICONS остаётся на своём месте — на строке VIEW_H-1 строчное
-// прерывание (crt0.s) переключает смещения на панельные. Так камеру можно двигать регистрами,
-// не перерисовывая ни карту, ни панель.
+// Сплит-экран (17_battle_render.md §3): карта живёт в своём холсте и показывается смещениями
+// GXOffs/GYOffs, а панель ICONS остаётся в основном холсте — на строке VIEW_H-1 строчное
+// прерывание (crt0.s) переключает холст и смещения на панельные. Так камеру можно двигать
+// регистрами, не перерисовывая ни карту, ни панель.
 // GYOffs — не постоянное смещение, а значение, которым перезагружается счётчик строки
 // видеопамяти; дальше он растёт сам. Поэтому на разрезе ставится номер строки панели, а
 // смещения карты возвращаются за SPLIT_LEAD строк до картинки (запас на длинный обработчик
@@ -138,55 +137,51 @@ static uint8_t dl_ok;                // список отвечает текущ
 // разрез на панель попадал на строку картинки 141, и под панелью три строки показывали буфер карты.
 #define SPLIT_TOP  76
 #define SPLIT_LEAD 0                 // за сколько строк до картинки вернуть смещения карты
-#define BUF_Y 200                    // первая строка холста под карту (видимое — 0..199)
-// Карта строится с запасом по краям: буфер 512x256 (строка холста — 512 байт), окно 320x144
-// показывается внутри него. Пока камера не вышла за запас, её движение — это только запись
-// GXOffs/GYOffs, без единого блита.
-#define BUF_W   512
-#define BUF_H   256
-#define PAD_X   80                   // запас по X: 320 + 2*80 = 480 < 512, кольцо не перекрывается
-#define PAD_Y   ((BUF_H - VIEW_H) / 2)       // 56
-#define BIAS    1024                 // мировая X лежит в ±640; сдвиг делает её положительной
+// Карта — кольцо 512x512 на весь свой холст (раскладка Б, 17 §3): мировая точка (x, y) лежит в
+// столбце (x + BIAS) & 511 и строке (y + BIAS) & 511, камера — только GXOffs/GYOffs. Нарисован
+// прямоугольник мира [vx_lo, vx_hi] x [vy_lo, vy_hi] (не больше кольца): пока окно внутри него,
+// движение камеры — запись смещений без единого блита, вышло — дорисовываются въехавшие полосы.
+// Полная сборка — окно с запасом PAD (с вылетом спрайтов за край — меньше кольца).
+#define RING    512
+#define PAD_X   80                   // 320 + 2*80 + 32 вылета = 512
+#define PAD_Y   56                   // 144 + 2*56 = 256
+#define STRIP_X 48                   // полоса дорисовывается с запасом вперёд — реже и дешевле
+#define STRIP_Y 32
+#define BIAS    1024                 // мировые X и Y — в ±1024; сдвиг делает их положительными
 extern uint8_t split_gx, split_gy, split_on, split_phase, split_mark, map_canvas;
 extern uint16_t map_gx, map_gy, split_line, vblank_line;
+extern uint8_t in_prev_keys;             // input.s: клавиша, нажатая сейчас (0 — нет)
 
-// Два холста карты (16 §8.3h п. 2): видимый и скрытый — основной (#10) и второй (map.h
-// CANVAS2_PAGE), в обоих карта в строках BUF_Y.. одной раскладки, отличие — сдвиг страниц.
+// Два холста карты (16 §8.3h п. 2, map.h CANVAS2_PAGE и CANVAS3_PAGE): видимый и скрытый.
 // Полная перерисовка собирается в скрытом и показывается сменой холста в прерывании (crt0.s
 // _map_canvas вместе со смещениями) — экран не гаснет и не собирается на глазах. Частичная тоже
 // собирается в скрытом: прямоугольник гасится, все задевающие его клетки рисуются целиком, а в
 // видимый уходит только прямоугольник одним DMA — спрайты соседей за его краем не ложатся поверх
 // уже нарисованного в обход порядка художника. Вне прямоугольника скрытый холст — черновик.
-#define CANVAS_D  (CANVAS2_PAGE - SCREEN_PAGE)
-static uint8_t vis_d;                    // сдвиг страниц видимого холста; скрытый — vis_d ^ CANVAS_D
-uint8_t tgt_d;                           // куда рисуют ring_op (гашение), fill_buf и dl_run
+#define CANVAS_X  (CANVAS2_PAGE ^ CANVAS3_PAGE)   // видимый ^ CANVAS_X — скрытый
+uint8_t vis_pg;                          // первая страница видимого холста (0 — ещё не выбран)
+uint8_t tgt_d;                           // и того, куда рисуют ring_fill и dl_run
 static uint8_t away;                     // поверх боя открывали экран (инвентарь): сплит снят
-
-// Адрес строки буфера y в холсте: страница SCREEN_PAGE + ((y + BUF_Y) >> 5), смещение
-// ((y + BUF_Y) & 31) << 9. Таблицы row_ofs / row_page (768 байт памяти банка) убраны: команды
-// списка считает ассемблер (scr_battle_s.s) парой сдвигов, а место ушло под код банка.
-#define ROW_PAGE(y)  (SCREEN_PAGE + (uint8_t)(((y) + BUF_Y) >> 5))
-#define ROW_OFS(y)   ((uint16_t)(((y) + BUF_Y) & 31) << 9)
+static int16_t vy_lo, vy_hi;             // нарисованный мировой диапазон Y (X — vx_lo, vx_hi)
 
 static void center_on_unit(void);       // определена ниже, вместе с юнитами
-static void draw_strip(int16_t lo, int16_t hi);   // перерисовка полосы вида (ниже)
 static void cell_repaint(uint8_t x, uint8_t y);   // перерисовка одной клетки (ниже)
 static void walk_paint(void);                     // перерисовка шага идущего бойца (ниже)
-static void draw_rect(int16_t lo, int16_t hi, int16_t y0, int16_t y1);
+static void repaint(int16_t lo, int16_t hi, int16_t top, int16_t bot);   // кусок вида (ниже)
 
-// Включить сплит: карта видна со строки BUF_Y холста, панель — со своей строки 144
+// Включить сплит: карта — из её холста, панель — из основного, со своей строки 144
 static void split_start(void)
 {
 	split_on = 0;                        // на геоскейпе сплит включён (метка луча): пока меняем — выкл.
-	map_gx = PAD_X;
-	map_gy = BUF_Y + PAD_Y - SPLIT_LEAD;   // счётчик дорастёт до нужной строки к картинке
+	map_gx = 0;                          // холст пока чёрный целиком — смещения любые
+	map_gy = 0;
 	split_gx = 0;
 	split_gy = VIEW_H;                   // после разреза показываются строки панели (144..199)
 	split_line = SPLIT_TOP + VIEW_H - 1;
 	vblank_line = SPLIT_TOP - 1 - SPLIT_LEAD;
 	split_phase = 0;
 	split_mark = 0;                      // глобус включал метку луча без смещений (globe.s blit)
-	map_canvas = vis_d;
+	map_canvas = vis_pg - SCREEN_PAGE;
 	split_on = 1;
 	TS_VSINTL = (uint8_t)split_line;
 	TS_VSINTH = (uint8_t)(split_line >> 8);
@@ -209,42 +204,17 @@ static void dma_wait(void)
 		;
 }
 
-// Прямоугольник кольца: мировой диапазон [lo, hi] по X, строки буфера [y0, y1] (на завороте
-// кольца — два куска). copy = 0 — погасить его в холсте tgt_d (DMA FILL повторяет слово
-// источника: первое слово куска сперва обнуляется, и оно же источник — втрое дешевле переноса);
-// 1 — перенести из скрытого холста в видимый (2D DMA, у обоих шаг строки 512)
-static void ring_op(int16_t lo, int16_t hi, int16_t y0, int16_t y1, uint8_t copy)
-{
-	uint16_t c0 = (uint16_t)(lo + BIAS) & (BUF_W - 1);
-	uint16_t n = (uint16_t)(hi - lo + 1);
-	uint8_t pg = ROW_PAGE(y0), sd = copy ? vis_d ^ CANVAS_D : tgt_d, dd = copy ? vis_d : tgt_d;
-	if (n > BUF_W) n = BUF_W;
-	while (n) {
-		uint16_t part = BUF_W - c0;      // до конца строки буфера
-		if (part > n) part = n;
-		uint16_t w = (part + 1) & ~1, o = ROW_OFS(y0) + c0;
-		if (!copy) {
-			uint16_t zero = 0;
-			far_write(FAR(pg + dd, o), &zero, 2);
-		}
-		dma_wait();
-		TS_DMASAL = (uint8_t)o; TS_DMASAH = (uint8_t)(o >> 8); TS_DMASAX = pg + sd;
-		TS_DMADAL = (uint8_t)o; TS_DMADAH = (uint8_t)(o >> 8); TS_DMADAX = pg + dd;
-		TS_DMALEN = (uint8_t)(w / 2 - 1);
-		TS_DMANUM = (uint8_t)(y1 - y0);
-		TS_DMACTRL = copy ? DMA_RAM_RAM | DMA_S_ALGN | DMA_D_ALGN | DMA_ASZ : DMA_FILL | DMA_D_ALGN | DMA_ASZ;
-		dma_wait();
-		n -= part;
-		c0 = 0;
-	}
-}
+// Прямоугольник кольца [lo, hi] x [top, bot] (мировые) — scr_battle_s.s: ring_fill гасит его в
+// холсте tgt_d (DMA FILL), ring_copy переносит из скрытого холста в видимый (2D DMA)
+void ring_fill(int16_t lo, int16_t hi, int16_t top, int16_t bot);
+void ring_copy(int16_t lo, int16_t hi, int16_t top, int16_t bot);
 
-// Погасить весь буфер карты холста tgt_d (512x256 = 128 КБ, gfx_fill режет по видимому экрану)
-#define fill_buf() ring_op(-BIAS, BUF_W - 1 - BIAS, 0, BUF_H - 1, 0)
+// Погасить весь холст tgt_d (512x512 = 256 КБ, gfx_fill режет по видимому экрану)
+#define fill_buf() ring_fill(-BIAS, RING - 1 - BIAS, -BIAS, RING - 1 - BIAS)
 
 // Кадр (запись tile_tab/unit_tab) -> команды списка: scr_battle_s.s. Вызывать, когда в Win3
 // подключена страница списка (build_range переключает по рядам). dl_blit — кадр целиком (x —
-// мировая, y — строка буфера), dl_blit_clip — в прямоугольнике [cx0, cx1) x [cy0, cy1)
+// мировая, y — мировая), dl_blit_clip — в прямоугольнике [cx0, cx1) x [cy0, cy1)
 void dl_blit(const uint8_t *e, int16_t x, int16_t y);
 void dl_blit_clip(const uint8_t *e, int16_t x, int16_t y, int16_t cx0, int16_t cx1, int16_t cy0, int16_t cy1);
 uint16_t dl_over;                        // сколько команд не влезло в список (диагностика)
@@ -263,8 +233,8 @@ static const wdef_t w_battle[] = {
 	// Панель ICONS: кнопки на тех же местах, что в оригинале (BattlescapeState.cpp:100-115).
 	HOT(48, 144, 32, 16, A_CUSTOM, 1, 0),            // боец выше по списку
 	HOT(48, 160, 32, 16, A_CUSTOM, 2, 0),            // боец ниже
-	HOT(80, 144, 32, 16, A_CUSTOM, 3, 0),            // этаж вверх
-	HOT(80, 160, 32, 16, A_CUSTOM, 4, 0),            // этаж вниз
+	HOT(80, 144, 32, 16, A_CUSTOM, 3, 'q'),          // этаж вверх (и Q)
+	HOT(80, 160, 32, 16, A_CUSTOM, 4, 'a'),          // этаж вниз (и A)
 	HOT(112, 160, 32, 16, A_CUSTOM, 10, 'k'),        // присесть и встать
 	HOT(144, 144, 32, 16, A_CUSTOM, 5, 'i'),         // инвентарь
 	HOT(144, 160, 32, 16, A_CUSTOM, 6, 'c'),         // центрировать на бойце
@@ -278,21 +248,32 @@ static const scr_t tab[] = {
 	SCR(SCR_BATTLE, UI_SCR_SAVEMENUS, RES_PAL_BATTLESCAPE, 0, SF_RAWPAL, w_battle),
 };
 
-// Камера не должна уводить карту из окна (иначе вид пустой, а перерисовка всё равно идёт):
-// крайние клетки дают X от -(sy-1)*16 до (sx-1)*16 и Y от -level*24 до (sx+sy-2)*8.
+// Точка экрана -> клетка (Camera::convertScreenToMap оригинала: к точке добавляется -32/2 и 24 на
+// каждый этаж, дальше косой пересчёт); 1 — клетка на поле. Клетке принадлежат нижние 16 строк её
+// тайла 32x40 — там же рисуется ромб курсора: клетка ровно та же, что в оригинале.
+static uint8_t screen_cell(int16_t mx, int16_t my, int16_t *ox, int16_t *oy)
+{
+	int16_t a = mx - cam_x;                              // (x - y) * 16
+	int16_t b = my - cam_y + (int16_t)level * 24 - TILE_W / 2;   // (x + y) * 8
+	int16_t x = (a + 2 * b - 32) / 32, y = (2 * b - a) / 32;
+	*ox = x; *oy = y;
+	return x >= 0 && y >= 0 && x < m_sx && y < m_sy;
+}
+
 static void clamp_cam(void)
 {
-	int16_t lo = TILE_W - (int16_t)(m_sx - 1) * 16, hi = SCREEN_W - TILE_W + (int16_t)(m_sy - 1) * 16;
-	if (cam_x < lo) cam_x = lo;
-	if (cam_x > hi) cam_x = hi;
-	lo = TILE_H - (int16_t)(m_sx + m_sy - 2) * 8;
-	hi = VIEW_H - TILE_H + (int16_t)level * 24;
-	if (cam_y < lo) cam_y = lo;
-	if (cam_y > hi) cam_y = hi;
-	cam_x &= ~1;                         // блит DMA адресует словами
-	// по горизонтали буфер кольцевой (дорисовывается полосами), пересборка нужна только
-	// при уходе по вертикали за запас
-	if (cam_y - base_y > PAD_Y || base_y - cam_y > PAD_Y) dl_ok = 0;
+	// Camera::scrollXY: клетка под серединой окна должна быть на поле — иначе камера шаг за шагом
+	// возвращается вдоль осей карты (по экрану ось — 2 точки по X на 1 по Y; X — чётный, DMA)
+	cam_x &= ~1;
+	for (uint8_t i = 0; i < 255; i++) {
+		int16_t x, y;
+		if (screen_cell(SCREEN_W / 2, VIEW_H / 2, &x, &y)) break;
+		if (x < 0) { cam_x -= 2; cam_y--; }
+		else if (x >= m_sx) { cam_x += 2; cam_y++; }
+		else if (y < 0) { cam_x += 2; cam_y--; }
+		else if (y >= m_sy) { cam_x -= 2; cam_y++; }
+		else break;                      // (не бывает: на поле — выход выше)
+	}
 }
 
 // Камера в центр карты: середина поля попадает в середину окна
@@ -309,13 +290,10 @@ static void center(void)
 	center_at(m_sx / 2, m_sy / 2);
 }
 
-// Разложить вид в дисплей-лист: уровни снизу вверх, ряды Y, внутри ряда X, внутри клетки —
-// пол, западная стена, северная стена, объект (порядок художника, Map.cpp:626-966)
-// Разложить в список клетки, чья мировая экранная координата X попадает в [lo, hi]. Мировая X
-// клетки — (x - y) * 16, от камеры не зависит; в буфере ей отвечает колонка (X + BIAS) & 511,
-// то есть буфер по горизонтали кольцевой и при движении камеры ничего не переезжает — надо лишь
-// дорисовать въехавшую полосу. Полоса берётся с запасом в ширину спрайта: клетка рисуется
-// целиком, поэтому в неё должны попасть и соседи, чьи спрайты в неё заезжают.
+// Вид — в дисплей-лист (build_range ниже): уровни снизу вверх, ряды Y, внутри ряда X, внутри
+// клетки — пол, западная стена, северная стена, объект (порядок художника, Map.cpp:626-966).
+// Мировой точке отвечает точка кольца ((X + BIAS) & 511, (Y + BIAS) & 511): при движении камеры
+// ничего не переезжает — дорисовываются только въехавшие полосы.
 
 // Номер бойца в клетке + 1 (0 — никого): по нему выбирают щелчком и красят рамку курсора
 static uint8_t unit_no(uint8_t z, uint8_t y, uint8_t x)
@@ -402,22 +380,21 @@ static void draw_units_cell(uint8_t y, uint8_t x, int16_t px, int16_t py, uint8_
 	}
 }
 
-// Окно буфера по Y для сборки списка: перерисовка клетки (курсор, шаг бойца) трогает
-// полосу не на всю высоту, а только вокруг себя — иначе на каждое движение мыши
-// пересобирался бы весь столбец карты.
-static int16_t clip_y0, clip_y1 = BUF_H - 1;
-
-static void build_range(int16_t lo, int16_t hi)
+// Разложить в список клетки, чей спрайт (32x40 от угла клетки) задевает мировой прямоугольник
+// [lo, hi] x [top, bot]; части с P_Level подняты до 24 точек — берутся и клетки до 24 строк ниже.
+// Мировые X и Y клетки — (x - y) * 16 и (x + y) * 8 - z * 24, от камеры не зависят.
+static void build_range(int16_t lo, int16_t hi, int16_t top, int16_t bot)
 {
 	uint8_t wu = wk_u;
 	dl_n = 0;
+	bot += 24;
 	int16_t dlo = (lo - TILE_W + 1 + 15) >> 4, dhi = hi >> 4;   // x - y для краёв полосы
 	for (uint8_t z = all_levels ? 0 : level; z <= level; z++) {
-		// Какие ряды вообще могут попасть в буфер: по X полоса задаёт x - y = d из [dlo, dhi],
-		// значит by = (2y + d) * 8 - z * 24 + B, и из -40 < by < BUF_H выводятся границы y.
-		int16_t b = base_y + PAD_Y - (int16_t)z * 24;
-		int16_t ylo = (clip_y0 - TILE_H + 1 - 8 * dhi - b + 15) >> 4;
-		int16_t yhi = (clip_y1 - 8 * dlo - b) >> 4;
+		// Какие ряды могут задеть прямоугольник: по X полоса задаёт x - y = d из [dlo, dhi],
+		// значит Y = (2y + d) * 8 - z * 24, и из top - 40 < Y <= bot выводятся границы y.
+		int16_t b = -(int16_t)z * 24;
+		int16_t ylo = (top - TILE_H + 1 - 8 * dhi - b + 15) >> 4;
+		int16_t yhi = (bot - 8 * dlo - b) >> 4;
 		if (ylo < 0) ylo = 0;
 		if (yhi >= m_sy) yhi = m_sy - 1;
 		// Адрес ряда ведётся сложением: 32-битное умножение на каждый ряд стоило дороже,
@@ -425,11 +402,11 @@ static void build_range(int16_t lo, int16_t hi)
 		uint16_t row_bytes = (uint16_t)m_sx * 4;
 		far_t rbase = cells + (uint32_t)(((uint32_t)z * m_sy + ylo) * m_sx) * 4;
 		for (int16_t y = ylo; y <= yhi; y++, rbase += row_bytes) {
-			int16_t ry = (int16_t)y * 8 - (int16_t)z * 24 + base_y + PAD_Y;
+			int16_t ry = (int16_t)y * 8 - (int16_t)z * 24;   // мировая Y клетки x этого ряда: ry + x*8
 			int16_t rx = -(int16_t)y * 16;   // мировая X клетки x этого ряда: rx + x*16
-			// Отрезок ряда: из lo-32 < wx <= hi и -40 < py < BUF_H получаем границы x
+			// Отрезок ряда: из lo-32 < wx <= hi и top-40 < wy <= bot получаем границы x
 			int16_t x0 = (lo - TILE_W + 1 - rx + 15) >> 4, x1 = (hi - rx) >> 4;
-			int16_t t0 = (clip_y0 - TILE_H + 1 - ry + 7) >> 3, t1 = (clip_y1 - ry) >> 3;
+			int16_t t0 = (top - TILE_H + 1 - ry + 7) >> 3, t1 = (bot - ry) >> 3;
 			if (t0 > x0) x0 = t0;
 			if (t1 < x1) x1 = t1;
 			if (x0 < 0) x0 = 0;
@@ -473,28 +450,28 @@ static void build_range(int16_t lo, int16_t hi)
 	}
 }
 
+// Полная сборка: окно камеры с запасом PAD по краям
 static void build_list(void)
 {
-	base_x = cam_x;                      // вид построен для этого положения камеры
-	base_y = cam_y;
-	build_range(-cam_x - PAD_X, -cam_x + SCREEN_W - 1 + PAD_X);
+	vx_lo = -cam_x - PAD_X;
+	vx_hi = -cam_x + SCREEN_W - 1 + PAD_X;
+	vy_lo = -cam_y - PAD_Y;
+	vy_hi = -cam_y + VIEW_H - 1 + PAD_Y;
+	build_range(vx_lo, vx_hi, vy_lo, vy_hi);
 	dl_ok = 1;
 }
 
-// Сначала собирается список (старая картинка ещё на экране), и только потом экран гасится и
-// рисуется заново — иначе чёрный экран висит всё время сборки, а она втрое дольше отрисовки.
-// Камера внутри буфера: показать нужное место одной парой регистров
+// Камера в кольце: показать нужное место парой регистров (и холст — разом с ними)
 static void show_cam(void)
 {
-	uint16_t gx = (uint16_t)(BIAS - cam_x) & (BUF_W - 1);
-	uint16_t gy = (uint16_t)(BUF_Y + PAD_Y - (cam_y - base_y) - SPLIT_LEAD) & 511;
+	uint16_t gx = (uint16_t)(BIAS - cam_x) & (RING - 1);
+	uint16_t gy = (uint16_t)(BIAS - cam_y - SPLIT_LEAD) & (RING - 1);
 	__asm__("di");                       // прерывание берёт холст и смещения одним кадром
 	map_gx = gx;
 	map_gy = gy;
-	map_canvas = vis_d;
+	map_canvas = vis_pg - SCREEN_PAGE;
 	__asm__("ei");
 }
-
 
 
 // Лист юнита в память и в готовые для блита записи (как тайлсет карты)
@@ -595,15 +572,11 @@ static uint8_t pf_get(uint16_t off)
 static const int8_t dir_dx[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
 static const int8_t dir_dy[8] = { -1, -1, 0, 1, 1, 1, 0, -1 };
 
-// Экранная точка -> клетка карты (Camera::convertScreenToMap оригинала: к точке добавляется
-// -32/2 и 24 на каждый этаж, дальше косой пересчёт). Клетке принадлежат нижние 16 строк её
-// тайла 32x40 — там же рисуется ромб курсора: клетка ровно та же, что в оригинале.
+// Клетка под точкой экрана (screen_cell) — номерами, если она на поле
 static uint8_t screen_to_cell(int16_t mx, int16_t my, uint8_t *ox, uint8_t *oy)
 {
-	int16_t a = mx - cam_x;                              // (x - y) * 16
-	int16_t b = my - cam_y + (int16_t)level * 24 - TILE_W / 2;   // (x + y) * 8
-	int16_t x = (a + 2 * b - 32) / 32, y = (2 * b - a) / 32;
-	if (x < 0 || y < 0 || x >= m_sx || y >= m_sy) return 0;
+	int16_t x, y;
+	if (!screen_cell(mx, my, &x, &y)) return 0;
 	*ox = (uint8_t)x; *oy = (uint8_t)y;
 	return 1;
 }
@@ -728,12 +701,11 @@ static void walk_paint(void)
 		wk_ox = k * 2 * wo_x[d];
 		wk_oy = -k * wo_y[d];
 	}
-	if (!dl_ok || dl_page == PG_NONE) { ui_dirty(0); return; }
 	int16_t lx = ((int16_t)wk_lx - wk_ly) * 16, dx = ((int16_t)wk_dx - wk_dy) * 16;
 	int16_t ly = ((int16_t)wk_lx + wk_ly) * 8, dy = ((int16_t)wk_dx + wk_dy) * 8;
-	int16_t b = base_y + PAD_Y - (int16_t)wk_z * 24;
-	draw_rect(lx < dx ? lx : dx, (lx > dx ? lx : dx) + TILE_W - 1,
-		  (ly < dy ? ly : dy) + b - 2, (ly > dy ? ly : dy) + b + TILE_H + 1);
+	int16_t b = -(int16_t)wk_z * 24;
+	repaint(lx < dx ? lx : dx, (lx > dx ? lx : dx) + TILE_W - 1,
+		(ly < dy ? ly : dy) + b - 2, (ly > dy ? ly : dy) + b + TILE_H + 1);
 }
 
 // Следующая фаза: на середине боец переходит в новую клетку, на последней — уже стоит в ней
@@ -814,72 +786,121 @@ static uint8_t load_gen(uint16_t terrain)
 	return 1;
 }
 
-// Перерисовать кусок вида: в скрытом холсте гасим прямоугольник кольца и собираем в него
-// заново все клетки, которые его задевают, а в видимый переносим только сам прямоугольник.
-// Гасить приходится потому, что тайлы кладутся прозрачным блитом (BLT1 пропускает цвет 0) —
-// без гашения под новой картинкой остаётся старая. Полоса на всю высоту (скролл камеры) — это
-// тот же прямоугольник с y0 = 0.
-static void draw_rect(int16_t lo, int16_t hi, int16_t y0, int16_t y1)
+// Перерисовать кусок вида [lo, hi] x [top, bot] (мировые): в скрытом холсте гасим прямоугольник
+// кольца и собираем в него заново все клетки, которые его задевают, а в видимый переносим только
+// сам прямоугольник. Гасить приходится потому, что тайлы кладутся прозрачным блитом (BLT1
+// пропускает цвет 0) — без гашения под новой картинкой остаётся старая.
+static void draw_rect(int16_t lo, int16_t hi, int16_t top, int16_t bot)
 {
-	if (y0 < 0) y0 = 0;
-	if (y1 > BUF_H - 1) y1 = BUF_H - 1;
-	if (y0 > y1) return;
-	tgt_d = vis_d ^ CANVAS_D;
-	ring_op(lo, hi, y0, y1, 0);
-	// Сборка берёт все клетки, чей спрайт (32 точки от X клетки) задевает прямоугольник —
-	// build_range отбирает их сама; части с P_Level подняты вверх (до 24 точек), поэтому клетки
-	// ниже прямоугольника тоже могут в него нарисовать — их добираем снизу. (Прежний запас
-	// ещё по 32 точки с боков удваивал число блитов, ничего не меняя в прямоугольнике.)
-	clip_y0 = y0;
-	clip_y1 = y1 + 24;
-	build_range(lo, hi);
-	clip_y0 = 0;
-	clip_y1 = BUF_H - 1;
+	tgt_d = vis_pg ^ CANVAS_X;
+	ring_fill(lo, hi, top, bot);
+	build_range(lo, hi, top, bot);
 	dl_run();
 	dma_wait();
-	ring_op(lo, hi, y0, y1, 1);
+	ring_copy(lo, hi, top, bot);
 }
 
-static void draw_strip(int16_t lo, int16_t hi)
+// То же внутри нарисованного (курсор клетки, шаг бойца, дверь): за его краем холст — мусор,
+// его дорисуют полосы, когда туда приедет камера
+static void repaint(int16_t lo, int16_t hi, int16_t top, int16_t bot)
 {
-	draw_rect(lo, hi, 0, BUF_H - 1);
+	if (!dl_ok || dl_page == PG_NONE) { ui_dirty(0); return; }
+	if (lo < vx_lo) lo = vx_lo;
+	if (hi > vx_hi) hi = vx_hi;
+	if (top < vy_lo) top = vy_lo;
+	if (bot > vy_hi) bot = vy_hi;
+	if (lo <= hi && top <= bot) draw_rect(lo, hi, top, bot);
 }
 
 // Перерисовать клетку (её спрайт 32x40) — столько и трогаем при переезде курсора и шаге бойца
 static void cell_repaint(uint8_t x, uint8_t y)
 {
-	if (!dl_ok || dl_page == PG_NONE) { ui_dirty(0); return; }
 	int16_t wx = ((int16_t)x - (int16_t)y) * 16;
-	int16_t by = ((int16_t)x + (int16_t)y) * 8 - (int16_t)level * 24 + base_y + PAD_Y;
-	draw_rect(wx, wx + TILE_W - 1, by, by + TILE_H - 1);
+	int16_t wy = ((int16_t)x + (int16_t)y) * 8 - (int16_t)level * 24;
+	repaint(wx, wx + TILE_W - 1, wy, wy + TILE_H - 1);
 }
 
 static void draw_map(void)
 {
 	if (!loaded || dl_page == PG_NONE) return;
 	if (dl_ok) {
-		// Вид уже в буфере: если камера ушла по горизонтали, дорисовать въехавшую полосу —
-		// буфер кольцевой, поэтому переезжать ничему не нужно.
-		int16_t lo = -cam_x - TILE_W, hi = -cam_x + SCREEN_W - 1;
-		if (lo < vx_lo) { draw_strip(lo, vx_lo - 1); vx_lo = lo; }
-		if (hi > vx_hi) { draw_strip(vx_hi + 1, hi); vx_hi = hi; }
-		if (vx_hi - vx_lo > BUF_W - TILE_W) {   // в кольцо больше не влезает — забыть дальний край
-			if (hi > vx_hi - 8) vx_lo = vx_hi - (BUF_W - TILE_W);
-			else vx_hi = vx_lo + (BUF_W - TILE_W);
+		// Вид уже в холсте: камера ушла за нарисованное — дорисовать въехавшие полосы (с запасом
+		// вперёд) по обеим осям; нарисованное держится не больше кольца — дальний край забывается
+		int16_t lo = -cam_x, hi = lo + SCREEN_W - 1, top = -cam_y, bot = top + VIEW_H - 1;
+		if (lo < vx_lo) {
+			draw_rect(lo - STRIP_X, vx_lo - 1, vy_lo, vy_hi);
+			vx_lo = lo - STRIP_X;
+			if (vx_hi - vx_lo >= RING) vx_hi = vx_lo + RING - 1;
+		}
+		if (hi > vx_hi) {
+			draw_rect(vx_hi + 1, hi + STRIP_X, vy_lo, vy_hi);
+			vx_hi = hi + STRIP_X;
+			if (vx_hi - vx_lo >= RING) vx_lo = vx_hi - RING + 1;
+		}
+		if (top < vy_lo) {
+			draw_rect(vx_lo, vx_hi, top - STRIP_Y, vy_lo - 1);
+			vy_lo = top - STRIP_Y;
+			if (vy_hi - vy_lo >= RING) vy_hi = vy_lo + RING - 1;
+		}
+		if (bot > vy_hi) {
+			draw_rect(vx_lo, vx_hi, vy_hi + 1, bot + STRIP_Y);
+			vy_hi = bot + STRIP_Y;
+			if (vy_hi - vy_lo >= RING) vy_lo = vy_hi - RING + 1;
 		}
 		show_cam();
 		return;
 	}
 	build_list();
-	tgt_d = vis_d ^ CANVAS_D;            // собрать в скрытом холсте — на экране пока прежний вид
+	tgt_d = vis_pg ^ CANVAS_X;           // собрать в скрытом холсте — на экране пока прежний вид
 	fill_buf();
 	dl_run();
 	dma_wait();
-	vis_d = tgt_d;                       // показать: холст и смещения сменит прерывание
-	vx_lo = -cam_x - PAD_X;              // буфер покрывает окно плюс запас с обеих сторон
-	vx_hi = -cam_x + SCREEN_W - 1 + PAD_X;
+	vis_pg = tgt_d;                      // показать: холст и смещения сменит прерывание
 	show_cam();
 }
+
+// Прокрутка как в оригинале (Camera::scrollKey / scrollMouse; Map.h SCROLL_INTERVAL = 15 мс,
+// Options::battleScrollSpeed = 8, battleEdgeScroll = SCROLL_AUTO): пока зажата стрелка или мышь у
+// края экрана (Camera.h SCROLL_BORDER = 5), камера едет на 8 точек за 15 мс; у края возле угла
+// (SCROLL_DIAGONAL_EDGE = 60) — по диагонали, вторая ось вдвое медленнее. Кадр — 20 мс: 32/3
+// точки, путь копится в третях точки; по X камера сдвигается на чётное (DMA адресует словами).
+static uint8_t sc_acc;                   // накопленный путь, трети точки
+static uint16_t sc_fr;                   // кадр прошлого такта
+
+static void scroll_tick(void)
+{
+	int8_t sx = 0, sy = 0;               // 2 — полный ход, 1 — половина; знак — куда едет карта
+	uint8_t k = in_prev_keys;
+	int16_t mx = cursor_x, my = cursor_y;
+	uint16_t f = frames;
+	uint8_t n = (uint8_t)(f - sc_fr);
+	sc_fr = f;
+	if (k == KEY_LEFT) sx = 2;
+	else if (k == KEY_RIGHT) sx = -2;
+	else if (k == KEY_UP) sy = 2;
+	else if (k == KEY_DOWN) sy = -2;
+	else {
+		if (mx < 5 || mx >= SCREEN_W - 5) {
+			sx = mx < 5 ? 2 : -2;
+			sy = my < 60 ? 1 : my > 200 - 60 ? -1 : 0;
+		}
+		if (my < 5 || my >= 200 - 5) {
+			sy = my < 5 ? 2 : -2;
+			if (mx < 60 || mx > SCREEN_W - 60) { sx = mx < 60 ? 2 : -2; sy /= 2; }
+		}
+	}
+	if (!sx && !sy) { sc_acc = 0; return; }
+	if (n > 3) n = 3;                    // отставшая перерисовка: путь — не больше чем за три кадра
+	uint16_t a = sc_acc + (uint16_t)n * 32;
+	uint8_t s = (uint8_t)(a / 3) & ~1;
+	sc_acc = (uint8_t)(a - s * 3);
+	int16_t ox = cam_x, oy = cam_y;
+	cam_x += (int16_t)sx * s / 2;
+	cam_y += (int16_t)sy * s / 2;
+	clamp_cam();
+	if (cam_x != ox || cam_y != oy) draw_map();
+}
+
 
 // Замеры DMA (клавиши B/N/V) убраны: их числа записаны в 16 §8.3, а место в банке нужно
 // под сам бой.
@@ -945,8 +966,9 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		// Карта миссии собирается генератором (16 §3). Пока миссии нет, террейн берётся
 		// по очереди — клавиша G дальше пересобирает карту следующего террейна.
 		load_gen(gen_terrain);               // карта миссии: генератор (16 §3)
-		tgt_d = vis_d;                       // до первой сборки видимый холст — чёрный, а не
-		fill_buf();                          //   остатки глобуса или прошлого боя
+		if (!vis_pg) vis_pg = CANVAS2_PAGE;  // _DATA при старте — нули
+		tgt_d = vis_pg;                      // до первой сборки видимый холст — чёрный, а не
+		fill_buf();                          //   остатки прошлого боя
 		away = 0;
 		split_start();
 		// У боя своя палитра: цвета #F0..#FF в ней тёмные, и курсор в них не виден.
@@ -956,6 +978,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		cur_on = 0;
 		break;
 	case EVT_TICK:
+		if (gen_mode && loaded) scroll_tick();
 		// Курсор клетки: рамка вокруг клетки под мышью. Она часть картинки карты (задняя
 		// половина под содержимым клетки, передняя поверх), поэтому при переезде на другую
 		// клетку перерисовываются только две клетки — прежняя и новая.
@@ -1077,16 +1100,8 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		}
 		break;
 	case EVT_KEY: {
-		// Автоповтор за время долгой перерисовки копится (in_reps) — сдвигать сразу на все
-		// шаги, иначе после отпускания клавиши вид ещё несколько раз перерисовывается.
-		int16_t n = in_reps ? in_reps : 1;
-		int16_t ox = cam_x, oy = cam_y;
+		// Стрелки здесь не обрабатываются: камера едет плавно, пока клавиша зажата (scroll_tick)
 		switch (arg) {
-		case KEY_LEFT:  cam_x += 16 * n; clamp_cam(); break;
-		case KEY_RIGHT: cam_x -= 16 * n; clamp_cam(); break;
-		case KEY_UP:    cam_y += 8 * n; clamp_cam(); break;
-		case KEY_DOWN:  cam_y -= 8 * n; clamp_cam(); break;
-		case 'q': case 'Q': if (level + 1 < m_sz) { level++; center(); } break;
 		case 'd': case 'D': {               // отладка: поставить бойца к первой двери
 			uint8_t dx, dy, ds;
 			if (!gen_mode || !nunits || wk_u != 0xFF || !door_find(&bmap, level, &dx, &dy, &ds)) break;
@@ -1101,10 +1116,8 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			center_on_unit();
 			break;
 		}
-		case 'k': case 'K': do_kneel(); break;   // присесть и встать (в оригинале K)
 		case 'n': sel_next(); break;         // следующий боец (в оригинале TAB)
 		case 'N': sel_prev(); break;         // предыдущий (в оригинале SHIFT)
-		case 'a': case 'A': if (level) { level--; center(); } break;
 		case 'g': case 'G': {
 			// Собрать карту очередного террейна генератором и показать её (16 §3)
 			uint8_t ok = load_gen(gen_terrain);
@@ -1119,8 +1132,6 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		}
 		default: return 0;
 		}
-		if (cam_x == ox && cam_y == oy && (arg == KEY_LEFT || arg == KEY_RIGHT || arg == KEY_UP || arg == KEY_DOWN))
-			break;                       // камера упёрлась в край карты — перерисовывать нечего
 		ui_dirty(0);
 		break;
 	}

@@ -1,0 +1,62 @@
+# Наземный бой: прокрутка камеры как в оригинале (Camera::scrollMouse / scrollKey — 8 точек за
+# 15 мс, у края экрана мышью и стрелками) по кольцу 512x512 обоих холстов карты (17 §3,
+# раскладка Б): камера проходит больше кольца по обеим осям, дорисовываются только въехавшие
+# полосы. В конце кадр запоминается (shotmark), вид пересобирается целиком той же камерой
+# («1/2» дважды) — кадр обязан совпасть (shotsame). Курсор мыши скрыт (только спрайт).
+# Снимки — tmp/shots/bat_scroll/. Запуск: powershell -File tools\run.ps1 -Script tests\bat_scroll.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+poke _cursor_off 1
+# курсор — в середину экрана: у края окна камера боя едет
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _ui_request 248
+waitmark 248 900
+wait 150
+shot tmp/shots/bat_scroll/00_start.png
+# мышь у левого и правого края
+pokew _cursor_x 0
+wait 60
+shot tmp/shots/bat_scroll/01_left.png
+pokew _cursor_x 319
+wait 120
+shot tmp/shots/bat_scroll/02_right.png
+# у верхнего и нижнего
+pokew _cursor_x 160
+pokew _cursor_y 0
+wait 60
+shot tmp/shots/bat_scroll/03_up.png
+pokew _cursor_y 199
+wait 120
+shot tmp/shots/bat_scroll/04_down.png
+# углы — по диагонали
+pokew _cursor_x 0
+pokew _cursor_y 0
+wait 40
+pokew _cursor_x 319
+pokew _cursor_y 199
+wait 60
+shot tmp/shots/bat_scroll/05_corners.png
+# стрелки клавиатуры: пока клавиша зажата
+pokew _cursor_x 160
+pokew _cursor_y 100
+key LEFT 30
+key UP 20
+key RIGHT 10
+wait 10
+shot tmp/shots/bat_scroll/06_keys.png
+shotmark
+# полная пересборка той же камерой
+pokew _cursor_x 220
+pokew _cursor_y 150
+click L
+wait 60
+click L
+wait 60
+pokew _cursor_x 160
+pokew _cursor_y 100
+wait 30
+shotsame
+echo battle scroll OK
+exit 0

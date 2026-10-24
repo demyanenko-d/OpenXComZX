@@ -32,7 +32,8 @@
   `aliens.oxs`, `dogfight.oxs`, `dogfight2.oxs`, `basedefense.oxs`, `ironman.oxs`,
   `globe.oxs` (скорость глобуса по зумам — `tools\globeprof.ps1`), `bat_render.oxs`,
   `bat_exact.oxs` (частичная перерисовка боя = полной: команды `shotmark`/`shotsame`),
-  `bat_walk.oxs` (ходьба бойца фазами, снимки),
+  `bat_walk.oxs` (ходьба бойца фазами, снимки), `bat_scroll.oxs` (прокрутка мышью у края и
+  стрелками, кольцо 512x512; курсор в сценариях боя — в середину, у края камера едет),
   `sdinfo*.oxs` (окно диагностики SD: норма, отказ DMA, SDHC, нет карты; настройки
   эмулятора сценарий задаёт строкой `#@set`)
   (`ufopaedia_ufo.oxs` — после сборки `-Game UFO`;

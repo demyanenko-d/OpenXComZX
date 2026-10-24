@@ -1,35 +1,35 @@
 ;; Банк 28: команды дисплей-листа боя (scr_battle.c, 17 §2) — кадр карты или бойца в 8 байт
 ;; регистров DMA (BLT1 | D_ALGN | ASZ): источник подряд (строка — ширина кадра), приёмник — кольцо
-;; 512 x 256 в строках холста BUF_Y.. (страница строки — SCREEN_PAGE + b >> 5, смещение — (b & 31) << 9).
-;; Запись кадра (tile_tab, unit_tab, TE_SIZE = 8): [0] страница, [1..2] смещение, [3] DMALEN,
-;; [4] высота, [5] dx, [6] dy, [7] ширина. Был C: на ассемблере вчетверо короче — банк 28 не
-;; вмещал ходьбу бойцов — и быстрее (обвязка на C — узкое место рендера, 17 §0).
+;; 512 x 512 холста карты (17 §3, раскладка Б): мировая точка (x, y) лежит в столбце
+;; (x + BIAS) & 511 и строке (y + BIAS) & 511; страница строки r — холст + (r >> 5) (холст
+;; добавляет dl_run), смещение — (r & 31) << 9. Запись кадра (tile_tab, unit_tab, TE_SIZE = 8):
+;; [0] страница, [1..2] смещение, [3] DMALEN, [4] высота, [5] dx, [6] dy, [7] ширина. Был C:
+;; на ассемблере вчетверо короче — банк 28 не вмещал ходьбу бойцов — и быстрее (обвязка на C —
+;; узкое место рендера, 17 §0).
 ;;
-;; dl_blit — кадр целиком (вне буфера по Y — строки отсекаются); dl_blit_clip — кадр в
-;; прямоугольнике (маски Map::drawUnit для идущего бойца). Кадр внутри буфера и не на стыке
-;; кольца — одна команда, иначе команда на строку (на стыке — две: конец строки и начало).
+;; dl_blit — кадр целиком; dl_blit_clip — кадр в прямоугольнике (маски Map::drawUnit для
+;; идущего бойца). Кадр не на стыке кольца — одна команда, иначе команда на строку (на стыке по
+;; X — две: конец строки и начало; на стыке по Y строки продолжаются с нулевой).
 
 	.module scr_battle_s
 	.optsdcc -mz80 sdcccall(1)
 
-	.globl	_dl_blit, _dl_blit_clip, _dl_run, _pg_map3
-	.globl	_dl_n, _dl_page, _dl_over, _tgt_d
+	.globl	_dl_blit, _dl_blit_clip, _dl_run, _ring_fill, _ring_copy, _pg_map3
+	.globl	_dl_n, _dl_page, _dl_over, _tgt_d, _vis_pg
 
-BUF_Y	= 200				; строка холста, с которой лежит буфер карты (scr_battle.c)
-SCREEN_PAGE = 0x10
 DR	= 0xB300			; рабочие переменные — начало памяти банка (build.ps1 ram), до tile_tab
 DR_E	= DR + 0			; запись кадра
 DR_BX	= DR + 2			; столбец кольца первой точки (0..511, чётный)
-DR_BY	= DR + 4			; строка буфера первой строки (0..255)
-DR_C0	= DR + 5			; первый столбец кадра
-DR_W	= DR + 6			; ширина (чётная)
-DR_R0	= DR + 7			; первая строка кадра
-DR_N	= DR + 8			; строк
-DR_W1	= DR + 9			; ширина до конца строки буфера
-DR_W2	= DR + 10			;   и остаток с её начала
-DR_SO	= DR + 11			; источник: смещение
-DR_SP	= DR + 13			;   и страница
-DR_STEP	= DR + 14			; шаг строки источника (ширина кадра)
+DR_BY	= DR + 4			; строка кольца первой строки (0..511)
+DR_C0	= DR + 6			; первый столбец кадра
+DR_W	= DR + 7			; ширина (чётная)
+DR_R0	= DR + 8			; первая строка кадра
+DR_N	= DR + 9			; строк
+DR_W1	= DR + 10			; ширина до конца строки кольца
+DR_W2	= DR + 11			;   и остаток с её начала
+DR_SO	= DR + 12			; источник: смещение
+DR_SP	= DR + 14			;   и страница
+DR_STEP	= DR + 15			; шаг строки источника (ширина кадра)
 CL_X	= DR + 16			; dl_blit_clip: аргументы (int16)
 CL_Y	= DR + 18
 CL_CX0	= DR + 20
@@ -38,18 +38,33 @@ CL_CY0	= DR + 24
 CL_CY1	= DR + 26
 CL_FX	= DR + 28			;   левый верхний угол кадра
 CL_FY	= DR + 30
-CL_TOP	= DR + 32			;   первая строка буфера
+CL_TOP	= DR + 32			;   первая строка (мировая)
 CL_LEFT	= DR + 34			;   первый столбец (мировой)
-DR_TD	= DR + 36			; dl_run: сдвиг страниц целевого холста
-DR_PG	= DR + 37			; emit: страница строки приёмника
-BIAS	= 1024
+DR_TD	= DR + 36			; dl_run: первая страница целевого холста
+DR_PG	= DR + 37			; emit: страница строки в холсте (0..15)
+RO_CP	= DR + 38			; ring_*: 1 — копия, 0 — гашение
+RO_C0	= DR + 39			;   столбец куска
+RO_NX	= DR + 41			;   столбцов осталось
+RO_R00	= DR + 43			;   первая строка
+RO_NY0	= DR + 45			;   строк всего
+RO_W	= DR + 47			;   ширина куска
+RO_R0	= DR + 49			;   строка куска
+RO_NY	= DR + 51			;   строк осталось
+RO_H	= DR + 53			;   высота куска
+RO_SD	= DR + 55			;   холсты: источник и приёмник
+RO_DD	= DR + 56
+RO_O	= DR + 57			;   смещение куска в странице
+BIAS	= 1024				; мировые X и Y — в ±1024: сдвиг делает их положительными
+CANVAS_X = 0x30				; map.h CANVAS2_PAGE ^ CANVAS3_PAGE: видимый ^ CANVAS_X — скрытый
 DMA_RUN	= 0x99				; DMA_BLT1 | DMA_D_ALGN | DMA_ASZ (tsconf.h)
+DMA_CPY	= 0x39				; DMA_RAM_RAM | DMA_S_ALGN | DMA_D_ALGN | DMA_ASZ
+DMA_FIL	= 0x1C				; DMA_FILL | DMA_D_ALGN | DMA_ASZ
 
 	.area	_BANK28
 
-;; void dl_run(void) — прогон списка в холст _tgt_d (страницы приёмника в списке — основного
-;; холста): на команду — ожидание DMA (DMAStatus, бит 7) и восемь регистров, порты #1A..#1F
-;; подряд. Список — две страницы подряд: на 2048-й команде адрес переходит через #FFFF.
+;; void dl_run(void) — прогон списка в холст _tgt_d (в списке страница — номер в холсте 0..15):
+;; на команду — ожидание DMA (DMAStatus, бит 7) и восемь регистров, порты #1A..#1F подряд.
+;; Список — две страницы подряд: на 2048-й команде адрес переходит через #FFFF.
 _dl_run::
 	ld	a, (_tgt_d)
 	ld	(DR_TD), a
@@ -152,7 +167,7 @@ dl_put:
 	ld	hl, #0
 	ret
 
-;; Команда: источник DR_SO / DR_SP, приёмник — строка буфера DR_BY, столбец BC; DMALEN = D,
+;; Команда: источник DR_SO / DR_SP, приёмник — строка кольца DR_BY, столбец BC; DMALEN = D,
 ;; DMANUM = E
 emit:
 	push	de
@@ -174,11 +189,7 @@ emit:
 	inc	hl
 	push	de
 	push	hl
-	ld	a, (DR_BY)
-	ld	l, a
-	ld	h, #0
-	ld	de, #BUF_Y
-	add	hl, de				; строка холста b = by + BUF_Y (0..455)
+	ld	hl, (DR_BY)			; строка кольца r (0..511)
 	ld	a, h
 	add	a, a
 	add	a, a
@@ -190,13 +201,12 @@ emit:
 	rlca
 	and	a, #0x07
 	or	a, d
-	add	a, #SCREEN_PAGE
-	ld	(DR_PG), a			; страница — SCREEN_PAGE + (b >> 5)
+	ld	(DR_PG), a			; страница в холсте — r >> 5
 	ld	a, l
 	and	a, #0x1F
 	add	a, a
 	ld	h, a
-	ld	l, #0				; смещение строки — (b & 31) << 9
+	ld	l, #0				; смещение строки — (r & 31) << 9
 	add	hl, bc				; + столбец
 	ex	de, hl
 	pop	hl
@@ -252,7 +262,7 @@ rows:
 	add	hl, de				; + c0 столбцов
 	call	norm
 	ld	(DR_SO), hl
-	ld	hl, #512			; до конца строки буфера: 512 - bx
+	ld	hl, #512			; до конца строки кольца: 512 - bx
 	ld	de, (DR_BX)
 	or	a, a
 	sbc	hl, de
@@ -272,12 +282,24 @@ rows:
 	sub	a, b
 	ld	(DR_W2), a
 	jr	nz, 4$
-	ld	a, (DR_STEP)			; полные строки без стыка — одной командой
+	ld	a, (DR_STEP)			; полные строки без стыков — одной командой
 	ld	b, a
 	ld	a, (DR_W)
 	cp	a, b
 	jr	nz, 4$
-	ld	hl, (DR_E)
+	ld	hl, (DR_BY)			;   и не через низ кольца: by + n <= 512
+	ld	a, (DR_N)
+	ld	e, a
+	ld	d, #0
+	add	hl, de
+	ld	a, h
+	cp	a, #2
+	jr	c, 8$
+	jr	nz, 4$
+	ld	a, l
+	or	a, a
+	jr	nz, 4$
+8$:	ld	hl, (DR_E)
 	inc	hl
 	inc	hl
 	inc	hl
@@ -303,7 +325,7 @@ rows:
 6$:	ld	a, (DR_W2)
 	or	a, a
 	jr	z, 7$
-	ld	hl, (DR_SO)			; остаток строки — с начала строки буфера
+	ld	hl, (DR_SO)			; остаток строки — с начала строки кольца
 	push	hl
 	ld	a, (DR_SP)
 	push	af
@@ -331,15 +353,28 @@ rows:
 	add	hl, de
 	call	norm
 	ld	(DR_SO), hl
-	ld	hl, #DR_BY
-	inc	(hl)
+	ld	hl, (DR_BY)			; строка кольца + 1 (за 511 — нулевая)
+	inc	hl
+	ld	a, h
+	and	a, #1
+	ld	h, a
+	ld	(DR_BY), hl
 	pop	af
 	dec	a
 	jr	nz, 5$
 	ret
 
-;; void dl_blit(const uint8_t *e /*HL*/, int16_t x /*DE*/, int16_t y /*стек*/) — x мировая
-;; (колонка кольца — (x + BIAS) & 511), y — строка буфера угла клетки
+;; HL = (HL + BIAS) & 511 — столбец или строка кольца мировой координаты
+ring:
+	ld	bc, #BIAS
+	add	hl, bc
+	ld	a, h
+	and	a, #1
+	ld	h, a
+	ret
+
+;; void dl_blit(const uint8_t *e /*HL*/, int16_t x /*DE*/, int16_t y /*стек*/) — мировая точка
+;; угла клетки (x, y)
 _dl_blit::
 	pop	bc
 	pop	iy				; y
@@ -357,11 +392,7 @@ _dl_blit::
 	ld	b, #0
 	ex	de, hl				; HL = x, DE = &e[5]
 	add	hl, bc
-	ld	bc, #BIAS
-	add	hl, bc
-	ld	a, h
-	and	a, #1
-	ld	h, a				; & 511
+	call	ring
 	bit	0, l
 	ret	nz				; нечётный столбец — DMA адресует словами
 	ld	(DR_BX), hl
@@ -371,37 +402,27 @@ _dl_blit::
 	ld	b, #0
 	push	iy
 	pop	hl
-	add	hl, bc				; by = y + dy
+	add	hl, bc				; y + dy
+	call	ring
+	ld	(DR_BY), hl
 	ld	de, (DR_E)
 	inc	de
 	inc	de
 	inc	de
 	inc	de
 	ld	a, (de)
-	ld	c, a				; C = высота
+	ld	(DR_N), a			; строк = высота кадра
+	ld	e, a
+	ld	d, #0
+	add	hl, de				; не через низ кольца: by + h <= 512
 	ld	a, h
+	cp	a, #2
+	jr	c, 3$
+	jr	nz, 4$
+	ld	a, l
 	or	a, a
-	jr	z, 2$
-	inc	a
-	ret	nz				; выше -256 или ниже 255
-	ld	a, l				; by < 0: виден, если by > -h
-	add	a, c
-	ret	nc				; by + h <= 0
-	ret	z
-	ld	(DR_N), a			; строк = by + h, с r0 = -by
-	xor	a, a
-	sub	a, l
-	ld	(DR_R0), a
-	xor	a, a
-	ld	(DR_BY), a
-	ld	(DR_C0), a
-	jp	rows
-2$:	ld	a, l				; 0 <= by <= 255
-	ld	(DR_BY), a
-	add	a, c
-	jr	nc, 3$
-	jr	nz, 4$				; by + h > 256 — низ отсечь
-3$:	ld	hl, (DR_BX)			; и по X не на стыке кольца: bx + w <= 512
+	jr	nz, 4$
+3$:	ld	hl, (DR_BX)			; и не через правый край: bx + w <= 512
 	ld	a, (DR_W)
 	ld	e, a
 	ld	d, #0
@@ -424,23 +445,14 @@ _dl_blit::
 	ld	(DR_SO + 1), a
 	inc	hl
 	ld	d, (hl)				; DMALEN
-	ld	a, c
+	ld	a, (DR_N)
 	dec	a
 	ld	e, a				; строк - 1
 	ld	bc, (DR_BX)
 	jp	emit
-4$:	xor	a, a				; низ за буфером или стык кольца — по строкам
+4$:	xor	a, a				; на стыке кольца — по строкам
 	ld	(DR_R0), a
 	ld	(DR_C0), a
-	ld	a, (DR_BY)
-	ld	b, a
-	xor	a, a
-	sub	a, b				; 256 - by (0 — значит 256)
-	jr	z, 6$
-	cp	a, c
-	jr	c, 7$
-6$:	ld	a, c				; строк — min(h, 256 - by)
-7$:	ld	(DR_N), a
 	jp	rows
 
 ;; HL = max(HL, DE) со знаком (DE не меняется)
@@ -475,7 +487,7 @@ scmp:
 
 ;; void dl_blit_clip(const uint8_t *e /*HL*/, int16_t x /*DE*/, int16_t y, int16_t cx0, int16_t cx1,
 ;;                   int16_t cy0, int16_t cy1 /*стек*/) — кадр, обрезанный прямоугольником
-;; [cx0, cx1) x [cy0, cy1) (мировые X, строки буфера; края по X чётные)
+;; [cx0, cx1) x [cy0, cy1) (мировые; края по X чётные)
 _dl_blit_clip::
 	pop	iy				; адрес возврата
 	ld	(DR_E), hl
@@ -513,10 +525,8 @@ _dl_blit_clip::
 	ld	b, #0
 	add	hl, bc
 	ld	(CL_FY), hl			; fy = y + dy
-	; строки: top = max(cy0, fy, 0), bot = min(cy1, fy + h, 256)
+	; строки: top = max(cy0, fy), bot = min(cy1, fy + h)
 	ld	de, (CL_CY0)
-	call	smax
-	ld	de, #0
 	call	smax
 	ld	(CL_TOP), hl
 	ld	hl, (CL_FY)
@@ -525,8 +535,6 @@ _dl_blit_clip::
 	ld	d, #0
 	add	hl, de
 	ld	de, (CL_CY1)
-	call	smin
-	ld	de, #256
 	call	smin				; HL = bot
 	ld	de, (CL_TOP)
 	call	scmp
@@ -536,9 +544,11 @@ _dl_blit_clip::
 	ret	z				; bot = top
 	ld	a, l
 	ld	(DR_N), a			; строк
-	ld	a, e
-	ld	(DR_BY), a			; первая строка буфера = top
-	ex	de, hl
+	ex	de, hl				; HL = top
+	push	hl
+	call	ring
+	ld	(DR_BY), hl			; первая строка кольца
+	pop	hl
 	ld	de, (CL_FY)
 	or	a, a
 	sbc	hl, de
@@ -572,10 +582,195 @@ _dl_blit_clip::
 	ld	a, l
 	ld	(DR_C0), a			; c0 = left - fx
 	pop	hl
-	ld	bc, #BIAS
-	add	hl, bc
+	call	ring
+	ld	(DR_BX), hl			; столбец кольца
+	jp	rows
+
+;; HL = min(HL, DE) без знака
+umin:
+	push	hl
+	or	a, a
+	sbc	hl, de
+	pop	hl
+	ret	c
+	ex	de, hl
+	ret
+
+;; void ring_fill(int16_t lo /*HL*/, int16_t hi /*DE*/, int16_t top, int16_t bot /*стек*/) —
+;; погасить прямоугольник кольца [lo, hi] x [top, bot] (мировые) в холсте _tgt_d: DMA FILL
+;; повторяет слово источника — первое слово куска обнуляется, оно же источник (втрое дешевле
+;; переноса). void ring_copy(...) — тот же прямоугольник из скрытого холста в видимый (2D DMA, у
+;; обоих шаг строки 512). На стыках кольца — до четырёх кусков, за запуск — не больше 256 строк.
+;; Был C (ring_op): на ассемблере вчетверо короче.
+_ring_fill::
+	xor	a, a
+	jr	ro_go
+_ring_copy::
+	ld	a, #1
+ro_go:
+	ld	(RO_CP), a
+	pop	iy				; адрес возврата
+	push	hl				; lo
+	ex	de, hl
+	or	a, a
+	sbc	hl, de
+	inc	hl				; столбцов: hi - lo + 1, не больше кольца
+	ld	de, #512
+	call	umin
+	ld	(RO_NX), hl
+	pop	hl
+	call	ring
+	ld	(RO_C0), hl
+	pop	de				; top
+	pop	hl				; bot
+	push	iy
+	push	de
+	or	a, a
+	sbc	hl, de
+	inc	hl				; строк: bot - top + 1, не больше кольца
+	ld	de, #512
+	call	umin
+	ld	(RO_NY0), hl
+	pop	hl
+	call	ring
+	ld	(RO_R00), hl
+	ld	a, (_tgt_d)			; холсты: гашение — в целевом
+	ld	b, a
+	ld	c, a
+	ld	a, (RO_CP)
+	or	a, a
+	jr	z, 1$
+	ld	a, (_vis_pg)			; копия — из скрытого в видимый
+	ld	c, a
+	xor	a, #CANVAS_X
+	ld	b, a
+1$:	ld	a, b
+	ld	(RO_SD), a
+	ld	a, c
+	ld	(RO_DD), a
+2$:	ld	hl, (RO_NX)			; по столбцам: до конца строки кольца
+	ld	a, h
+	or	a, l
+	ret	z
+	ld	hl, #512
+	ld	de, (RO_C0)
+	or	a, a
+	sbc	hl, de
+	ld	de, (RO_NX)
+	call	umin
+	ld	(RO_W), hl
+	ld	hl, (RO_R00)
+	ld	(RO_R0), hl
+	ld	hl, (RO_NY0)
+	ld	(RO_NY), hl
+3$:	ld	hl, (RO_NY)			; по строкам: до низа кольца, не больше 256
+	ld	a, h
+	or	a, l
+	jp	z, 6$
+	ld	hl, #512
+	ld	de, (RO_R0)
+	or	a, a
+	sbc	hl, de
+	ld	de, (RO_NY)
+	call	umin
+	ld	de, #256
+	call	umin
+	ld	(RO_H), hl
+	ld	hl, (RO_R0)			; страница r0 >> 5, смещение ((r0 & 31) << 9) + c0
+	ld	a, l
+	and	a, #0x1F
+	add	a, a
+	ld	d, a
+	ld	e, #0
+	ld	a, h
+	add	a, a
+	add	a, a
+	add	a, a
+	ld	b, a
+	ld	a, l
+	rlca
+	rlca
+	rlca
+	and	a, #0x07
+	or	a, b
+	ld	(DR_PG), a
+	ld	hl, (RO_C0)
+	add	hl, de
+	ld	(RO_O), hl
+	ld	a, (RO_CP)
+	or	a, a
+	jr	nz, 4$
+	ld	a, (RO_DD)			; гашение: обнулить первое слово куска (через Win3)
+	ld	hl, #DR_PG
+	add	a, (hl)
+	call	_pg_map3			; A — прежняя страница
+	ld	hl, (RO_O)
+	set	7, h
+	set	6, h
+	ld	(hl), #0
+	inc	hl
+	ld	(hl), #0
+	call	_pg_map3
+4$:	ld	bc, #0x27AF
+5$:	in	a, (c)
+	add	a, a
+	jr	c, 5$				; DMA ещё работает
+	ld	hl, (RO_O)
+	ld	de, (DR_PG)			; E — страница в холсте
+	ld	b, #0x1A
+	out	(c), l				; SAL, SAH
+	inc	b
+	out	(c), h
+	inc	b
+	ld	a, (RO_SD)
+	add	a, e
+	out	(c), a				; SAX
+	inc	b
+	out	(c), l				; DAL, DAH
+	inc	b
+	out	(c), h
+	inc	b
+	ld	a, (RO_DD)
+	add	a, e
+	out	(c), a				; DAX
+	ld	hl, (RO_W)
+	inc	hl
+	srl	h
+	rr	l
+	dec	l				; DMALEN = (w + 1) / 2 - 1
+	ld	b, #0x26
+	out	(c), l
+	ld	a, (RO_H)
+	dec	a				; DMANUM = h - 1
+	ld	b, #0x28
+	out	(c), a
+	ld	a, (RO_CP)
+	or	a, a
+	ld	a, #DMA_FIL
+	jr	z, 7$
+	ld	a, #DMA_CPY
+7$:	ld	b, #0x27
+	out	(c), a
+8$:	in	a, (c)
+	add	a, a
+	jr	c, 8$				; дождаться конца
+	ld	hl, (RO_NY)
+	ld	de, (RO_H)
+	or	a, a
+	sbc	hl, de
+	ld	(RO_NY), hl
+	ld	hl, (RO_R0)
+	add	hl, de
 	ld	a, h
 	and	a, #1
 	ld	h, a
-	ld	(DR_BX), hl			; столбец кольца
-	jp	rows
+	ld	(RO_R0), hl
+	jp	3$
+6$:	ld	hl, (RO_NX)			; следующий кусок — с начала строки кольца
+	ld	de, (RO_W)
+	or	a, a
+	sbc	hl, de
+	ld	(RO_NX), hl
+	ld	hl, #0
+	ld	(RO_C0), hl
+	jp	2$
