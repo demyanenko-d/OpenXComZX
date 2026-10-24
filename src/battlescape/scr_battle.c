@@ -65,15 +65,11 @@ static uint8_t __at(0xBD00) row[MAP_MAXX * 4];   // ряд клеток карт
 static uint8_t __at(0xB400) tile_tab[256 * TE_SIZE];
 
 // Юниты на карте (отладка генератора, тумана войны пока нет). Спрайт собирается как в
-// UnitSprite::drawRoutine0 — ноги, торс и руки по направлению; лист UNIT_* даёт 32 кадра
-// в порядке: 0-7 левая рука, 8-15 правая, 16-23 ноги, 24-31 торс.
-#define MAX_UNITS 12
-#define UNIT_PARTS 4
-typedef struct { uint8_t x, y, z, dir, alive, kneel; uint8_t tu, tu_max, hp, hp_max, en, mor; } unit_t;
+// UnitSprite::drawRoutine0 — ноги, торс и руки по направлению (draw_unit).
+// Бойцы — unit_t (units.h); загружает их bload.c (банк 30), сюда переносит load_gen.
 static unit_t __at(0xBE00) units[MAX_UNITS];
 static uint8_t nunits;
 static uint8_t sel;                      // выбранный боец (панель показывает его состояние)
-static uint8_t unit_page = PG_NONE, unit_np;
 // Память банка (08 §4): units до #BE84, поэтому лист кадров начинается с #BF00 и занимает
 // страницу до конца (#BFFF). Раньше он стоял с #BE40 и при семи и больше бойцах затирался
 // ими — кадры блитились из случайной памяти, и отряд выглядел цветным мусором.
@@ -86,6 +82,12 @@ static uint8_t __at(0xBEB0) kneel_tab[8 * TE_SIZE];
 // Бойцы TFTD рисуются правилом 13 (armors.rul STR_NONE_UC drawingRoutine): на колене всё, кроме
 // ног, ниже на offYKneel + 1, при ходьбе торс качается на YoffWalk + 1 (UnitSprite.cpp:341, 493)
 static uint8_t u_tftd;
+// Стрелка над выбранным бойцом (Map::init, Map::drawTerrain): жёлтая (блок 1 палитры) с чёрной
+// каймой, качается с кадром анимации боя (100 мс, arrowBob). Пиксели — в рабочей странице
+// (TL_ARROW), запись для блита — в памяти банка; рисуется последней в сборке вида.
+static uint8_t __at(0xBEF0) arrow_e[TE_SIZE];
+static uint8_t ar_on;
+static int16_t ar_x, ar_y;               // где нарисована (мировые)
 
 // Ходьба (BattleUnit::startWalking / keepWalking): идёт один боец за раз. Фаза растёт раз в
 // 30 мс (Options::battleXcomSpeed); на середине пути позиция бойца уже клетка назначения —
@@ -107,7 +109,6 @@ static uint8_t pf_page = PG_NONE;                // страница под ра
 // Кадры: 0 — задняя половина красной рамки, 1 — жёлтой (на клетке боец), 3 и 4 — передние
 #define CUR_FRAMES 4
 static uint8_t __at(0xBE90) cur_tab[CUR_FRAMES * TE_SIZE];
-static uint8_t cur_page = PG_NONE, cur_np;
 static uint8_t cur_on, cur_cx, cur_cy;   // курсор на клетке (cur_cx, cur_cy) текущего этажа
 
 // Дисплей-лист (17_battle_render.md §2): вид раскладывается в список готовых команд DMA —
@@ -420,7 +421,7 @@ static void build_range(int16_t lo, int16_t hi, int16_t top, int16_t bot)
 			// Кого рисовать в этом ряду: бойцы ряда и идущий из соседнего — клетка перебирает
 			// только их (раньше — всех бойцов на каждую клетку, треть времени шага)
 			uint8_t ru = 0;
-			for (uint8_t i = 0; i < nunits && unit_page != PG_NONE; i++) {
+			for (uint8_t i = 0; i < nunits; i++) {
 				const unit_t *u = &units[i];
 				uint8_t uy = u->y;
 				if (u->alive && u->z == z && (uy == y || (i == wu && (uy + 1 == y || uy == y + 1)))) rl[ru++] = i;
@@ -448,6 +449,11 @@ static void build_range(int16_t lo, int16_t hi, int16_t top, int16_t bot)
 			pg_map3(old);
 		}
 	}
+	if (ar_on) {                         // стрелка над выбранным бойцом — поверх всего (Map.cpp:1185)
+		uint8_t old = pg_map3(dl_n >= DL_PAGE_N ? dl_page + 1 : dl_page);
+		dl_blit(arrow_e, ar_x, ar_y);
+		pg_map3(old);
+	}
 }
 
 // Полная сборка: окно камеры с запасом PAD по краям
@@ -474,41 +480,6 @@ static void show_cam(void)
 }
 
 
-// Лист юнита в память и в готовые для блита записи (как тайлсет карты)
-// Лист спрайтов грузит банк 30 (loader.c): страницу берёт он, таблицу кадров кладёт
-// в дальнюю память, а сюда, в память банка, она переносится одним чтением.
-// n — сколько кадров разобрать, ncopy — сколько записей перенести в tab. Разделены не зря:
-// у листа брони кадров 40, а в unit_tab влезает 32 (хвост #BF00..#BFFF), и копия «на всё»
-// уезжала за #C000 — прямо в окно Win3, где в этот миг лежат таблицы частей миссии.
-static uint8_t load_sheet(uint16_t res, uint8_t *pg, uint8_t *np, uint8_t n,
-			  const uint8_t *want, uint8_t *tab, uint8_t ncopy)
-{
-	if (pf_page == PG_NONE) return 0;
-	// Переменные банка (кроме __at-массивов) лежат в Win1, а он подключён всегда — значит
-	// указатели на них можно отдавать и в другой банк.
-	if (!sheet_load(res, pg, np, n, want, FAR(pf_page + 1, TL_SHEET))) return 0;
-	far_read(FAR(pf_page + 1, TL_SHEET), tab, (uint16_t)ncopy * TE_SIZE);
-	return 1;
-}
-
-static uint8_t load_unit_sheet(uint16_t id)
-{
-	if (unit_page != PG_NONE) { pg_free(unit_page, unit_np); unit_page = PG_NONE; }
-	u_tftd = res_game() == 2;
-	// 232 кадра: стойка и колено (0..39) — в память банка, ходьба (40..231) остаётся в рабочей
-	// странице (TL_SHEET) и читается при сборке вида
-	if (!load_sheet(id, &unit_page, &unit_np, 232, 0, unit_tab, 32)) return 0;
-	far_read(FAR(pf_page + 1, TL_SHEET) + 32 * TE_SIZE, kneel_tab, sizeof kneel_tab);
-	return 1;
-}
-
-// Лист курсора клетки: из CURSOR.PCK берутся четыре кадра — задние и передние половины рамки
-static uint8_t load_cursor(void)
-{
-	uint8_t want[CUR_FRAMES] = { 0, 1, 3, 4 };   // в стеке: банк вызывающего при вызове отключён
-	return load_sheet(RES_CURSOR_PCK, &cur_page, &cur_np, CUR_FRAMES, want, cur_tab, CUR_FRAMES);
-}
-
 // Навести камеру на выбранного бойца (кнопка «центрировать», как в оригинале)
 static void center_on_unit(void)
 {
@@ -516,30 +487,6 @@ static void center_on_unit(void)
 	const unit_t *u = &units[sel < nunits ? sel : 0];
 	center_at(u->x, u->y);
 }
-
-// Высадка отряда: экипаж корабля миссии и его места на карте считает units.c (банк 30) —
-// в банке боя для этого уже нет места. Здесь только перенос в таблицу бойцов вида.
-static void place_squad(uint8_t debug_n)
-{
-	crew_req_t q;
-	cunit_t cu[MAX_UNITS];
-	nunits = 0;
-	mapgen_craft(&q.cx, &q.cy, &q.cw, &q.cl, &q.part_min);
-	q.cells = cells; q.sx = m_sx; q.sy = m_sy;
-	q.craft = mis_crew; q.debug_n = debug_n;
-	uint8_t n = crew_deploy(&q, cu, MAX_UNITS);
-	for (uint8_t i = 0; i < n; i++) {
-		unit_t *u = &units[i];
-		const cunit_t *c = &cu[i];
-		u->x = c->x; u->y = c->y; u->z = c->z;
-		u->dir = 0; u->alive = 1; u->kneel = 0;
-		u->tu = u->tu_max = c->tu;
-		u->hp = u->hp_max = c->hp;
-		u->en = c->en; u->mor = c->mor;
-	}
-	nunits = n;
-}
-
 
 // ---------------------------------------------------------------- ход бойца
 // Поиск пути — волна по клеткам текущего этажа (Pathfinding оригинала считает ещё и
@@ -722,63 +669,40 @@ static void walk_phase(void)
 }
 
 // ---------------------------------------------------------------- сгенерированная карта
-// Генератор (mapgen.c, банк 29) собирает поле из блоков террейна, а здесь собирается всё,
-// что нужно для показа: таблица частей (tile_tab) и тайлсеты наборов в своих страницах.
-// Номер части в клетке — как в MAP оригинала: 0 пусто, иначе номер части миссии; рендер
-// берёт tile_tab[t - 1], поэтому часть t кладётся в строку t - 1.
-#define GEN_SETS 16              // столько же, сколько у генератора (MAX_SETS)
+// Генератор (mapgen.c, банк 29) собирает поле из блоков террейна, загрузка миссии (bload.c, банк
+// 30) — наборы частей, листы бойца и курсора, отряд и стрелку; всё складывается в рабочую
+// страницу, а сюда, в память банка, переносится по таблице за чтение (вид частей и смещения
+// нужны в каждом кадре — дальнее чтение тут не годится). Номер части в клетке — как в MAP
+// оригинала: 0 пусто, иначе номер части миссии; рендер берёт tile_tab[t - 1].
 static uint8_t gen_mode;                 // 1 — показывается сгенерированная карта
-static uint8_t gen_page[GEN_SETS], gen_np[GEN_SETS], gen_ns;
-
-static void gen_free(void)
-{
-	for (uint8_t i = 0; i < gen_ns; i++)
-		if (gen_page[i] != PG_NONE) pg_free(gen_page[i], gen_np[i]);
-	gen_ns = 0;
-}
 
 static uint8_t load_gen(uint16_t terrain)
 {
-	gen_free();
+	bload_t q;
+	far_t t = FAR(pf_page + 1, 0);
 	loaded = 0;
 	wk_u = 0xFF;
-	// Параметры миссии: размер поля, этажи, скрипт и террейн — из развёртывания, если оно
-	// задано геоскейпом; корабль отряда и НЛО — от цели, иначе первые попавшиеся (отладка).
-	uint8_t mods = 4, levels = 4;
-	if (mis_deploy != 0xFFFF) {
-		uint16_t t = mapgen_deploy(mis_deploy, &mods, &levels);
-		if (t != 0xFFFF) terrain = t;
-	}
-	mapgen_set_extra(mis_craft != 0xFFFF ? mis_craft : mapgen_find_kind(1),
-			 mis_ufo != 0xFFFF ? mis_ufo : mapgen_find_kind(2));
-	if (!mapgen_run(terrain, mods, levels)) return 0;
-	tiles_req_t q;
-	mapgen_sets(q.set, q.tset, &q.ns);
-	mapgen_used(q.used);                 // какие части реально попали на карту
+	ar_on = 0;
+	q.terrain = terrain; q.deploy = mis_deploy; q.ufo = mis_ufo; q.craft = mis_craft; q.crew = mis_crew;
 	q.page = pf_page;
-	uint8_t pages[GEN_SETS], nps[GEN_SETS], npg = 0, nd = 0;
-	uint16_t nparts = tiles_load(&q, pages, nps, &npg, &nd);
-	if (!npg) return 0;
-	// Таблицы собраны в дальней памяти — переносим их к себе в банк (вид частей и смещения
-	// нужны в каждом кадре, дальнее чтение тут не годится).
-	far_read(FAR(pf_page + 1, TL_TILES), tile_tab, sizeof tile_tab);
-	far_read(FAR(pf_page + 1, TL_YOFS), tile_y, sizeof tile_y);
-	for (uint8_t i = 0; i < npg; i++) { gen_page[i] = pages[i]; gen_np[i] = nps[i]; }
-	gen_ns = npg;
-	ndoors = nd;
-	if (!gen_ns) return 0;
-	m_sx = (uint8_t)mapgen_sx(); m_sy = (uint8_t)mapgen_sy(); m_sz = mapgen_sz();
-	m_nt = (uint8_t)nparts;
-	cells = mapgen_cells();
+	if (!bat_load(&q)) return 0;
+	far_read(t + TL_TILES, tile_tab, sizeof tile_tab);
+	far_read(t + TL_YOFS, tile_y, sizeof tile_y);
+	far_read(t + TL_SHEET, unit_tab, sizeof unit_tab);           // стойка (0..31)
+	far_read(t + TL_SHEET + 32 * TE_SIZE, kneel_tab, sizeof kneel_tab);   // колено (32..39)
+	far_read(t + TL_CURSOR, cur_tab, sizeof cur_tab);
+	far_read(t + TL_ARROWE, arrow_e, TE_SIZE);
+	far_read(t + TL_UNITS, units, sizeof units);
+	ndoors = q.ndoors;
+	nunits = q.nunits;
+	m_sx = q.sx; m_sy = q.sy; m_sz = q.sz; m_nt = q.nparts;
+	cells = q.cells;
 	map_phys = cells;
 	bmap.cells = cells; bmap.sx = m_sx; bmap.sy = m_sy; bmap.sz = m_sz; bmap.page = pf_page;
+	u_tftd = res_game() == 2;
 	level = 0;                           // камера начинается на земле, как в оригинале
 	gen_mode = 1;
 	dl_ok = 0;
-	// Отряд: экипаж корабля миссии со своими показателями (units.c), а когда бой отладочный
-	// (корабля нет) — шесть фигур. Лист брони X-COM: TDXCOM_0 у TFTD, XCOM_0 у UFO.
-	if (load_unit_sheet(res_game() == 2 ? RES_UNIT_TDXCOM_0 : RES_UNIT_XCOM_0)) place_squad(6);
-	else nunits = 0;
 	sel = 0;
 	center();
 	if (nunits) center_on_unit();        // камера на первого бойца отряда
@@ -901,6 +825,33 @@ static void scroll_tick(void)
 	if (cam_x != ox || cam_y != oy) draw_map();
 }
 
+static const uint8_t arrow_bob[8] = { 0, 1, 2, 1, 0, 1, 2, 1 };   // Map.cpp:500 arrowBob
+uint8_t bat_still;                       // 1 — стрелка не качается (сверка кадров в сценариях: poke _bat_still 1)
+// Стрелка — над головой выбранного бойца: середина клетки, 24 - рост (стоя 22, на колене 14 и
+// ещё 2) - высота стрелки, плюс качание (Map.cpp:1185-1198); у идущего — со смещением шага.
+// Сменилось место или фаза качания — перерисовать прежний и новый прямоугольники
+static void arrow_tick(void)
+{
+	uint8_t on = 0;
+	int16_t x = 0, y = 0;
+	if (sel < nunits) {
+		const unit_t *u = &units[sel];
+		if (u->alive && u->z <= level) {
+			on = 1;
+			x = ((int16_t)u->x - u->y) * 16 + 12;
+			y = ((int16_t)u->x + u->y) * 8 - (int16_t)u->z * 24 + (u->kneel ? -1 : -7)
+				+ (bat_still ? 0 : arrow_bob[(frames / 5) & 7]);
+			if (wk_u == sel) { x += wk_ox; y += wk_oy; }
+		}
+	}
+	int16_t ox = ar_x, oy = ar_y;
+	uint8_t oon = ar_on;                 // сравнения — с копиями (SDCC 4.5)
+	if (on == oon && x == ox && y == oy) return;
+	ar_on = on; ar_x = x; ar_y = y;
+	if (oon) repaint(ox, ox + 9, oy, oy + 8);
+	if (on) repaint(x, x + 9, y, y + 8);
+}
+
 
 // Замеры DMA (клавиши B/N/V) убраны: их числа записаны в 16 §8.3, а место в банке нужно
 // под сам бой.
@@ -974,7 +925,6 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		// У боя своя палитра: цвета #F0..#FF в ней тёмные, и курсор в них не виден.
 		// В оригинале у боя свой цвет курсора (Mod::BATTLESCAPE_CURSOR = 144).
 		cursor_color(CURSOR_BATTLESCAPE);
-		load_cursor();                   // рамка клетки из CURSOR.PCK (рисуется вместе с картой)
 		cur_on = 0;
 		break;
 	case EVT_TICK:
@@ -1011,6 +961,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			if (move_wait) move_wait--;
 			else { move_wait = 3; step_unit(); if (!path_n) ui_dirty(0); }   // в конце — обновить панель
 		}
+		if (gen_mode && loaded) arrow_tick();   // стрелка над выбранным — после шага и прокрутки
 		break;
 	case EVT_DRAW:
 		if (away) {                          // вернулись из окна поверх боя: оно рисовало в строки
@@ -1029,11 +980,8 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		// перечитывает каждый фон с карты — экран залипает (14 §todo).
 		split_stop();
 		cur_on = 0;
-		if (cur_page != PG_NONE) { pg_free(cur_page, cur_np); cur_page = PG_NONE; }
+		bat_unload();                    // наборы частей, листы бойца и курсора, генератор (bload.c)
 		cursor_color(CURSOR_GEOSCAPE);   // вернуть цвет курсора геоскейпа
-		gen_free();
-		if (unit_page != PG_NONE) { pg_free(unit_page, unit_np); unit_page = PG_NONE; }
-		mapgen_free();
 		gen_mode = 0;
 		loaded = 0;
 		nunits = 0;
@@ -1042,6 +990,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		path_n = 0;
 		turn_dir = 0xFF;
 		wk_u = 0xFF;
+		ar_on = 0;
 		// Карта боя рисуется в строки холста 200.., а там же задний буфер глобуса (globe.s,
 		// BACK_Y 280): после боя геоскейп обязан нарисовать планету заново, иначе на экране
 		// остаются тайлы поля боя.

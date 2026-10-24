@@ -8,6 +8,22 @@
 // Боец на карте: клетка и показатели, как их берёт BattleUnit оригинала из солдата базы
 typedef struct { uint8_t x, y, z, tu, hp, en, mor; } cunit_t;
 
+// Боец экрана боя (scr_battle.c, память банка 28): клетка, направление, жив, на колене, показатели
+#define MAX_UNITS 12
+typedef struct { uint8_t x, y, z, dir, alive, kneel; uint8_t tu, tu_max, hp, hp_max, en, mor; } unit_t;
+
+// Загрузка миссии для экрана боя (bload.c): генератор карты, наборы частей, листы бойца и
+// курсора, отряд, стрелка выбранного. Таблицы — в рабочей странице (loader.h TL_*), экран
+// переносит их к себе. Банк боя 28 переполнен — загрузка живёт здесь.
+typedef struct {
+	uint16_t terrain, deploy, ufo, craft, crew;   // миссия (#FFFF — не задано: бой отладочный)
+	uint8_t page;                                 // рабочая страница боя (вторая — page + 1)
+	uint8_t sx, sy, sz, nparts, ndoors, nunits;   // результат
+	far_t cells;
+} bload_t;
+uint8_t bat_load(bload_t *q) __banked;          // 1 — карта собрана
+void bat_unload(void) __banked;                 // отдать страницы наборов, листов и генератора
+
 // Что нужно знать о миссии, чтобы высадить отряд
 typedef struct {
 	far_t cells;            // клетки карты (4 байта на клетку)

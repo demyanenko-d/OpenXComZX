@@ -8,6 +8,7 @@
 waitmark 1 600
 poke _alien_off 1
 poke _cursor_off 1
+poke _bat_still 1
 # курсор — в середину экрана: у края окна камера боя едет
 pokew _cursor_x 160
 pokew _cursor_y 100
