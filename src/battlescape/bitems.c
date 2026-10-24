@@ -34,7 +34,7 @@ static uint8_t sec_named(uint16_t name)
 	return 0xFF;
 }
 
-// Отладочное оружие: первое огнестрельное без исследований, что продаётся, и его обойма
+// Отладочное оружие: первое ручное огнестрельное без исследований, что продаётся, и его обойма
 static uint8_t debug_gun(uint16_t *gun, uint16_t *clip, uint8_t *rounds)
 {
 	rtab_t t;
@@ -42,7 +42,8 @@ static uint8_t debug_gun(uint16_t *gun, uint16_t *clip, uint8_t *rounds)
 	if (!rtab_open(RES_RULE_ITEMS, &t)) return 0;
 	for (uint16_t i = 0; i < t.n; i++) {
 		rtab_get(&t, i, &it);
-		if (it.battle_type != BT_FIREARM || it.requires.n || !it.cost_buy || !it.compatible_ammo.n) continue;
+		if (it.battle_type != BT_FIREARM || it.requires.n || !it.cost_buy || !it.compatible_ammo.n
+		    || (it.flags & ITEMS_F_FIXED_WEAPON)) continue;   // не оружие танка
 		uint16_t a;
 		rtab_tail(&t, it.compatible_ammo.off, &a, 2);
 		*gun = i; *clip = a;

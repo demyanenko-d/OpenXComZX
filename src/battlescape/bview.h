@@ -33,6 +33,7 @@ void bv_cell(uint8_t x, uint8_t y, uint8_t z) __banked;   // перерисов�
 void bv_draw(void) __banked;                 // EVT_DRAW: дорисовать или собрать вид заново
 void bv_redraw(void) __banked;               // собрать вид заново при следующей отрисовке
 void bv_suspend(void) __banked;              // поверх боя открывается окно (инвентарь)
+void bv_snapshot(void) __banked;             // то же, но карта остаётся картинкой под окном
 void bv_tick(uint8_t sel) __banked;          // прокрутка, курсор клетки, стрелка над sel
 void bv_center(uint8_t x, uint8_t y) __banked;   // камера на клетку (этаж — камеры)
 uint8_t bv_level(void) __banked;

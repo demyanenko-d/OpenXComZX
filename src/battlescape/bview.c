@@ -46,10 +46,10 @@ static uint8_t __at(0xB400) tile_tab[256 * TE_SIZE];
 
 // Юниты (runit_t, bview.h): их приносит логика через рабочую страницу (bv_sync). Спрайт бойца
 // X-COM собирается как в UnitSprite::drawRoutine0 — ноги, торс и руки по направлению (draw_unit).
-// Память банка (build.ps1 ram = #AA00): код вида кончается ниже.
-static runit_t __at(0xAA00) units[MAX_BUNITS];
-static uint8_t __at(0xAB40) rl[MAX_BUNITS];   // юниты текущего ряда сборки (build_range)
-static uint8_t __at(0xAB68) rn;
+// Память банка (build.ps1 ram = #B190): код вида кончается ниже, с #B300 — рабочие таблицы.
+static runit_t __at(0xB190) units[MAX_BUNITS];
+static uint8_t __at(0xB2D0) rl[MAX_BUNITS];   // юниты текущего ряда сборки (build_range)
+static uint8_t __at(0xB2F8) rn;
 static uint8_t nunits;
 static uint8_t sel;                      // выбранный боец: над ним стрелка
 static uint8_t __at(0xBF00) unit_tab[32 * TE_SIZE];   // кадры листа в виде для блита
@@ -772,6 +772,23 @@ void bv_suspend(void) __banked
 {
 	split_stop();                        // окно рисуется в строки 0–199 основного холста —
 	away = 1;                            //   без сплита и с ним на экране
+}
+
+// Окно поверх боя, сквозь которое видна карта (меню действий): видимый кусок кольца копируется в
+// строки 0–143 основного холста, сплит снимается — карта остаётся неподвижной картинкой
+void bv_snapshot(void) __banked
+{
+	uint16_t gx = (uint16_t)(BIAS - cam_x) & (RING - 1), gy = (uint16_t)(BIAS - cam_y) & (RING - 1);
+	uint16_t w1 = RING - gx;
+	if (w1 > SCREEN_W) w1 = SCREEN_W;
+	for (uint8_t r = 0; r < VIEW_H; r++) {
+		uint16_t sy = (gy + r) & (RING - 1);
+		far_t src = FAR(vis_pg + (sy >> 5), (sy & 31) << 9), dst = FAR(SCREEN_PAGE + (r >> 5), (uint16_t)(r & 31) << 9);
+		far_copy(dst, src + gx, w1);
+		if (w1 < SCREEN_W) far_copy(dst + w1, src, SCREEN_W - w1);
+	}
+	split_stop();
+	away = 1;
 }
 
 void bv_center(uint8_t x, uint8_t y) __banked

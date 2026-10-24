@@ -30,6 +30,8 @@
 #include "bitems.h"
 #include "bhud.h"
 #include "bspr.h"
+#include "bmenu.h"
+#include "state.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 
@@ -83,6 +85,14 @@ static const wdef_t w_battle[] = {
 	HOT(78, 189, 17, 11, A_CUSTOM, 13, 0),
 	HOT(60, 189, 17, 11, A_CUSTOM, 14, 0),
 	HOT(96, 177, 10, 23, A_CUSTOM, 15, 0),           // резерв на колено (btnReserveKneelClick)
+	HOT(8, 148, 32, 48, A_CUSTOM, 16, 0),            // предмет в левой руке (btnLeftHandItemClick)
+	HOT(280, 148, 32, 48, A_CUSTOM, 17, 0),          // в правой
+};
+
+// ActionMenuState: окно поверх боя без своего фона — пункты рисует bmenu.c, клики и наведение
+// разбирает экран (правая кнопка — закрыть)
+static const wdef_t w_amenu[] = {
+	CUSR(0, 0, 320, 200, DYN(0), A_CUSTOM, 1),
 };
 
 // NextTurnState (REF/OpenXcom/src/Battlescape/NextTurnState.cpp): окно 320x200 на фоне TAC00.SCR,
@@ -99,6 +109,7 @@ static const wdef_t w_next[] = {
 static const scr_t tab[] = {
 	SCR(SCR_BATTLE, UI_SCR_SAVEMENUS, RES_PAL_BATTLESCAPE, 0, SF_RAWPAL, w_battle),
 	SCR(SCR_NEXT_TURN, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_RAWPAL, w_next),
+	SCR(SCR_ACTION_MENU, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, 0, SF_POPUP | SF_RAWPAL, w_amenu),
 };
 
 // Запись юнита для вида — в рабочую страницу; bv_sync переносит их виду
@@ -378,6 +389,19 @@ static uint8_t load_gen(uint16_t terrain)
 		for (uint8_t i = 0; i < nsold; i++) sol[i] = units[i].sol;
 		bi_crew(pf_page, sol, nsold);
 	}
+	for (uint8_t i = 0; i < nsold; i++) {   // боевые показатели: солдат кампании или отладочные
+		unit_t *u = &units[i];
+		if (u->sol != 0xFF) {
+			soldier_t s;
+			far_read(FAR(SOLDIER_PAGE, 0) + (uint16_t)u->sol * sizeof s, &s, sizeof s);
+			u->bravery = s.cur.bravery; u->reactions = s.cur.reactions; u->firing = s.cur.firing;
+			u->throwing = s.cur.throwing; u->strength = s.cur.strength; u->psi_str = s.cur.psi_strength;
+			u->psi_skill = s.cur.psi_skill; u->melee = s.cur.melee;
+		} else {
+			u->bravery = 50; u->reactions = 50; u->firing = 60; u->throwing = 60;
+			u->strength = 30; u->melee = 40;
+		}
+	}
 	bt_reserve = RES_NONE;
 	bt_res_kneel = 0;
 	if (nunits) center_on_unit();        // камера на первого бойца отряда
@@ -461,6 +485,54 @@ static void next_turn_close(void)
 	UI_GO(A_POP, 0);                     // назад в бой: вид соберётся заново (bv_draw)
 }
 
+// ---------------------------------------------------------------- меню действий
+// BattlescapeState::handleItemClick -> ActionMenuState: пункты — по предмету в руке (bmenu.c),
+// выбранное действие ждёт цели (прицел и выстрел — дальше)
+static uint8_t am_hl = 0xFF;             // пункт под курсором
+static uint8_t bt_action, bt_action_tu, bt_hand;   // выбранное действие, его цена и рука
+
+static void amenu_open(uint8_t right)
+{
+	if (!nsold || bv_walking() != 0xFF || bt_side != FACTION_PLAYER) return;
+	uint8_t i = sel < nsold ? sel : 0;
+	const unit_t *u = &units[i];
+	amreq_t r;
+	r.unit = i; r.right = right; r.tu_max = u->tu_max; r.firing = u->firing; r.throwing = u->throwing;
+	r.melee = u->melee; r.psi_skill = u->psi_skill; r.hp = u->hp; r.hp_max = u->hp_max;
+	r.kneel = u->kneel; r.page = pf_page;
+	if (!am_build(&r)) return;
+	bt_hand = right;
+	am_hl = 0xFF;
+	path_n = 0;
+	bv_snapshot();                       // карта остаётся под меню картинкой
+	marks_show(0, 0);
+	UI_GO(A_PUSH, SCR_ACTION_MENU);
+}
+
+static void amenu_event(uint8_t ev, uint8_t arg)
+{
+	(void)arg;
+	switch (ev) {
+	case EVT_DRAW: am_draw(am_hl); break;
+	case EVT_TICK: {
+		uint8_t h = am_hit(cursor_x, cursor_y), o = am_hl;   // ActionMenuItem::mouseIn / mouseOut
+		if (h != o) { am_hl = h; am_hover(o, h); }
+		break;
+	}
+	case EVT_BUTTON: {
+		if (ui_arrow_max) { UI_GO(A_POP, 0); break; }   // правая кнопка — закрыть
+		uint8_t h = am_hit(cursor_x, cursor_y);
+		if (h == 0xFF) break;
+		bt_action = am_action(h, &bt_action_tu);
+		UI_GO(A_POP, 0);
+		break;
+	}
+	case EVT_KEY:
+		if (arg == KEY_ESC) UI_GO(A_POP, 0);
+		break;
+	}
+}
+
 // Геоскейп сообщает, какая миссия начинается: развёртывание (state.h site_t.deployment),
 // террейн НЛО и террейн корабля отряда; #FFFF — не задано. utype — тип НЛО (#FF — не НЛО),
 // race — раса миссии (#FF — из развёртывания).
@@ -502,6 +574,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		if (ev == EVT_BUTTON || ev == EVT_KEY) next_turn_close();
 		return 0;
 	}
+	if (id == SCR_ACTION_MENU) { amenu_event(ev, arg); return 0; }
 	switch (ev) {
 	case EVT_MUSIC: {
 		// Тема боя: роль MK_TACTIC из таблицы MUSGRP (22 §1.3), как GMTACTIC в оригинале
@@ -631,6 +704,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			ui_dirty(0);
 			break;
 		case 15: bt_res_kneel = !bt_res_kneel; ui_dirty(0); break;
+		case 16: case 17: amenu_open((uint8_t)(arg - 16)); break;   // handleItemClick
 		case 9:                              // «1/2»: все этажи или только текущий
 			bv_all_levels();
 			ui_dirty(0);

@@ -1,0 +1,37 @@
+# Меню действий (ActionMenuState, bmenu.c): клик по предмету в правой руке — над панелью пункты
+# «Throw», «Auto Shot», «Snap Shot», «Aimed Shot» с меткостью и ценой; под курсором фон пункта
+# темнее; правая кнопка закрывает, выбор пункта — тоже (дальше — прицел, его пока нет).
+# Отладочный бой: у бойца в правой руке — первое доступное оружие с обоймой (bitems.c).
+# Снимки — tmp/shots/bat_menu/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_menu.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _bat_still 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+shot tmp/shots/bat_menu/00_panel.png
+# правая рука
+pokew _cursor_x 296
+pokew _cursor_y 172
+click L
+wait 40
+waitmark 250 200
+pokew _cursor_x 160
+pokew _cursor_y 20
+wait 20
+shot tmp/shots/bat_menu/01_menu.png
+# наведение на пункт «Auto Shot» (второй снизу: строки 120..159)
+pokew _cursor_y 135
+wait 20
+shot tmp/shots/bat_menu/02_hover.png
+# правая кнопка — закрыть
+click R
+wait 60
+waitmark 248 200
+shot tmp/shots/bat_menu/03_closed.png
+echo battle menu OK
+exit 0
