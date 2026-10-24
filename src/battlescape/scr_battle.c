@@ -118,7 +118,11 @@ static uint8_t dl_ok;                // список отвечает текущ
 // видеопамяти; дальше он растёт сам. Поэтому на разрезе ставится номер строки панели, а
 // смещения карты возвращаются за SPLIT_LEAD строк до картинки (запас на длинный обработчик
 // кадра со счётчиком и вводом) — с поправкой на эти строки.
-#define SPLIT_TOP  73                // строк верхнего бордюра: VSInt считает их с картинкой
+// Строка кадра, с которой идёт картинка 320x200 (50 Гц, кадр 320 строк: 32 гашения + 44 бордюра):
+// REF/fpga/video/video_mode.v:176 (PENT_312 в tune.v выключен), в эмуляторе — raster R_320_200
+// (unreal/.../video/draw.cpp). VSInt = v приходит на строке v, новое GYOffs — со следующей. Было 73:
+// разрез на панель попадал на строку картинки 141, и под панелью три строки показывали буфер карты.
+#define SPLIT_TOP  76
 #define SPLIT_LEAD 0                 // за сколько строк до картинки вернуть смещения карты
 #define BUF_Y 200                    // первая строка холста под карту (видимое — 0..199)
 // Карта строится с запасом по краям: буфер 512x256 (строка холста — 512 байт), окно 320x144
@@ -129,8 +133,20 @@ static uint8_t dl_ok;                // список отвечает текущ
 #define PAD_X   80                   // запас по X: 320 + 2*80 = 480 < 512, кольцо не перекрывается
 #define PAD_Y   ((BUF_H - VIEW_H) / 2)       // 56
 #define BIAS    1024                 // мировая X лежит в ±640; сдвиг делает её положительной
-extern uint8_t split_gx, split_gy, split_on, split_phase, split_mark;
+extern uint8_t split_gx, split_gy, split_on, split_phase, split_mark, map_canvas;
 extern uint16_t map_gx, map_gy, split_line, vblank_line;
+
+// Два холста карты (16 §8.3h п. 2): видимый и скрытый — основной (#10) и второй (map.h
+// CANVAS2_PAGE), в обоих карта в строках BUF_Y.. одной раскладки, отличие — сдвиг страниц.
+// Полная перерисовка собирается в скрытом и показывается сменой холста в прерывании (crt0.s
+// _map_canvas вместе со смещениями) — экран не гаснет и не собирается на глазах. Частичная тоже
+// собирается в скрытом: прямоугольник гасится, все задевающие его клетки рисуются целиком, а в
+// видимый уходит только прямоугольник одним DMA — спрайты соседей за его краем не ложатся поверх
+// уже нарисованного в обход порядка художника. Вне прямоугольника скрытый холст — черновик.
+#define CANVAS_D  (CANVAS2_PAGE - SCREEN_PAGE)
+static uint8_t vis_d;                    // сдвиг страниц видимого холста; скрытый — vis_d ^ CANVAS_D
+static uint8_t tgt_d;                    // куда рисуют fill_buf, fill_cols и dl_run
+static uint8_t away;                     // поверх боя открывали экран (инвентарь): сплит снят
 
 // Адрес начала строки карты в холсте: смещение в странице и сама страница. Считать это в сборке
 // списка (сдвиги 16-битных величин) дороже, чем прочитать из таблицы.
@@ -162,6 +178,7 @@ static void split_start(void)
 	vblank_line = SPLIT_TOP - 1 - SPLIT_LEAD;
 	split_phase = 0;
 	split_mark = 0;                      // глобус включал метку луча без смещений (globe.s blit)
+	map_canvas = vis_d;
 	split_on = 1;
 	TS_VSINTL = (uint8_t)split_line;
 	TS_VSINTH = (uint8_t)(split_line >> 8);
@@ -172,6 +189,8 @@ static void split_stop(void)
 	split_on = 0;
 	TS_VSINTL = 0;                       // кадровое прерывание — снова в начале кадра
 	TS_VSINTH = 0;
+	map_canvas = 0;                      // глобус (метка луча) берёт холст отсюда же
+	TS_VPAGE = SCREEN_PAGE;
 	TS_GXOFFSL = 0; TS_GXOFFSH = 0;
 	TS_GYOFFSL = 0; TS_GYOFFSH = 0;
 }
@@ -186,7 +205,7 @@ static void dma_wait(void)
 // поэтому стоит втрое дешевле переноса. gfx_fill тут не годится — он режет по видимому экрану.
 static void fill_buf(void)
 {
-	far_t base = FAR(SCREEN_PAGE + (BUF_Y >> 5), (uint16_t)(BUF_Y & 31) << 9);
+	far_t base = FAR(SCREEN_PAGE + tgt_d + (BUF_Y >> 5), (uint16_t)(BUF_Y & 31) << 9);
 	uint16_t zero = 0;
 	far_write(base, &zero, 2);
 	uint16_t so = FAR_OFFS(base) + 2;
@@ -204,13 +223,13 @@ static void fill_buf(void)
 // Прогон списка: на запись — ожидание DMA и восемь выгрузок регистров
 static void dl_run(void)
 {
-	uint8_t old = pg_map3(dl_page);
+	uint8_t old = pg_map3(dl_page), d = tgt_d;   // страницы списка — основного холста
 	const uint8_t *p = dl;
 	for (uint16_t i = dl_n, k = 0; i; i--, k++, p += DL_SIZE) {
 		if (k == DL_PAGE_N) { pg_map3(dl_page + 1); p = dl; }
 		dma_wait();
 		TS_DMASAL = p[0]; TS_DMASAH = p[1]; TS_DMASAX = p[2];
-		TS_DMADAL = p[3]; TS_DMADAH = p[4]; TS_DMADAX = p[5];
+		TS_DMADAL = p[3]; TS_DMADAH = p[4]; TS_DMADAX = p[5] + d;
 		TS_DMALEN = p[6];
 		TS_DMANUM = p[7];
 		TS_DMACTRL = DMA_BLT1 | DMA_D_ALGN | DMA_ASZ;
@@ -478,8 +497,13 @@ static void build_list(void)
 // Камера внутри буфера: показать нужное место одной парой регистров
 static void show_cam(void)
 {
-	map_gx = (uint16_t)(BIAS - cam_x) & (BUF_W - 1);
-	map_gy = (uint16_t)(BUF_Y + PAD_Y - (cam_y - base_y) - SPLIT_LEAD) & 511;
+	uint16_t gx = (uint16_t)(BIAS - cam_x) & (BUF_W - 1);
+	uint16_t gy = (uint16_t)(BUF_Y + PAD_Y - (cam_y - base_y) - SPLIT_LEAD) & 511;
+	__asm__("di");                       // прерывание берёт холст и смещения одним кадром
+	map_gx = gx;
+	map_gy = gy;
+	map_canvas = vis_d;
+	__asm__("ei");
 }
 
 // Очистить в кольце прямоугольник: мировой диапазон [lo, hi] по X, строки буфера
@@ -493,7 +517,7 @@ static void fill_cols(int16_t lo, int16_t hi, int16_t y0, int16_t y1)
 		uint16_t part = BUF_W - c0;      // до конца строки буфера
 		if (part > n) part = n;
 		uint16_t w = (part + 1) & ~1;
-		far_t base = FAR(row_page[y0], row_ofs[y0] + c0);
+		far_t base = FAR(row_page[y0] + tgt_d, row_ofs[y0] + c0);
 		uint16_t zero = 0;
 		far_write(base, &zero, 2);
 		dma_wait();
@@ -510,9 +534,29 @@ static void fill_cols(int16_t lo, int16_t hi, int16_t y0, int16_t y1)
 	}
 }
 
-// Дорисовать полосу мирового диапазона [lo, hi]: очистить её и перерисовать все клетки, чьи
-// спрайты её задевают (на TILE_W шире с каждой стороны — соседи заезжают в полосу; поверх уже
-// нарисованного они лягут теми же пикселями, поэтому шов не портится).
+// Тот же прямоугольник кольца — из скрытого холста в видимый: 2D DMA, у обоих шаг строки 512,
+// обрезка по X получается сама (на завороте кольца — два куска)
+static void copy_cols(int16_t lo, int16_t hi, int16_t y0, int16_t y1)
+{
+	uint16_t c0 = (uint16_t)(lo + BIAS) & (BUF_W - 1);
+	uint16_t n = (uint16_t)(hi - lo + 1);
+	uint8_t pg = row_page[y0], hd = vis_d ^ CANVAS_D, vd = vis_d;
+	if (n > BUF_W) n = BUF_W;
+	while (n) {
+		uint16_t part = BUF_W - c0;
+		if (part > n) part = n;
+		uint16_t w = (part + 1) & ~1, o = row_ofs[y0] + c0;
+		dma_wait();
+		TS_DMASAL = (uint8_t)o; TS_DMASAH = (uint8_t)(o >> 8); TS_DMASAX = pg + hd;
+		TS_DMADAL = (uint8_t)o; TS_DMADAH = (uint8_t)(o >> 8); TS_DMADAX = pg + vd;
+		TS_DMALEN = (uint8_t)(w / 2 - 1);
+		TS_DMANUM = (uint8_t)(y1 - y0);
+		TS_DMACTRL = DMA_RAM_RAM | DMA_S_ALGN | DMA_D_ALGN | DMA_ASZ;
+		dma_wait();
+		n -= part;
+		c0 = 0;
+	}
+}
 
 
 // Лист юнита в память и в готовые для блита записи (как тайлсет карты)
@@ -789,15 +833,17 @@ static uint8_t load_gen(uint16_t terrain)
 	return 1;
 }
 
-// Перерисовать кусок вида: гасим прямоугольник кольца и собираем в него заново все клетки,
-// которые его задевают. Гасить приходится потому, что тайлы кладутся прозрачным блитом
-// (BLT1 пропускает цвет 0) — без гашения под новой картинкой остаётся старая.
-// Полоса на всю высоту (скролл камеры) — это тот же прямоугольник с y0 = 0.
+// Перерисовать кусок вида: в скрытом холсте гасим прямоугольник кольца и собираем в него
+// заново все клетки, которые его задевают, а в видимый переносим только сам прямоугольник.
+// Гасить приходится потому, что тайлы кладутся прозрачным блитом (BLT1 пропускает цвет 0) —
+// без гашения под новой картинкой остаётся старая. Полоса на всю высоту (скролл камеры) — это
+// тот же прямоугольник с y0 = 0.
 static void draw_rect(int16_t lo, int16_t hi, int16_t y0, int16_t y1)
 {
 	if (y0 < 0) y0 = 0;
 	if (y1 > BUF_H - 1) y1 = BUF_H - 1;
 	if (y0 > y1) return;
+	tgt_d = vis_d ^ CANVAS_D;
 	fill_cols(lo, hi, y0, y1);
 	// Сборка берёт клетки чуть шире прямоугольника: соседи заезжают в него своими спрайтами,
 	// а части с P_Level подняты вверх (до 24 точек), поэтому клетки ниже прямоугольника тоже
@@ -809,6 +855,7 @@ static void draw_rect(int16_t lo, int16_t hi, int16_t y0, int16_t y1)
 	clip_y1 = BUF_H - 1;
 	dl_run();
 	dma_wait();
+	copy_cols(lo, hi, y0, y1);
 }
 
 static void draw_strip(int16_t lo, int16_t hi)
@@ -843,9 +890,11 @@ static void draw_map(void)
 		return;
 	}
 	build_list();
+	tgt_d = vis_d ^ CANVAS_D;            // собрать в скрытом холсте — на экране пока прежний вид
 	fill_buf();
 	dl_run();
 	dma_wait();
+	vis_d = tgt_d;                       // показать: холст и смещения сменит прерывание
 	vx_lo = -cam_x - PAD_X;              // буфер покрывает окно плюс запас с обеих сторон
 	vx_hi = -cam_x + SCREEN_W - 1 + PAD_X;
 	show_cam();
@@ -867,7 +916,7 @@ static void draw_panel(void)
 
 static void draw_all(void)
 {
-	draw_map();                          // гасит экран сам — прямо перед отрисовкой
+	draw_map();                          // собирает в скрытом холсте и показывает разом
 	draw_panel();
 }
 
@@ -915,6 +964,9 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		// Карта миссии собирается генератором (16 §3). Пока миссии нет, террейн берётся
 		// по очереди — клавиша G дальше пересобирает карту следующего террейна.
 		load_gen(gen_terrain);               // карта миссии: генератор (16 §3)
+		tgt_d = vis_d;                       // до первой сборки видимый холст — чёрный, а не
+		fill_buf();                          //   остатки глобуса или прошлого боя
+		away = 0;
 		split_start();
 		// У боя своя палитра: цвета #F0..#FF в ней тёмные, и курсор в них не виден.
 		// В оригинале у боя свой цвет курсора (Mod::BATTLESCAPE_CURSOR = 144).
@@ -947,6 +999,14 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		}
 		break;
 	case EVT_DRAW:
+		if (away) {                          // вернулись из окна поверх боя: оно рисовало в строки
+			away = 0;                        //   0–199 и в рабочую область ui (200..) основного
+			dl_ok = 0;                       //   холста — вид собрать заново, потом вернуть сплит
+			draw_all();
+			split_start();                   // ставит смещения по умолчанию — вернуть камеру
+			show_cam();
+			break;
+		}
 		draw_all();
 		break;
 	case EVT_CLOSE:
@@ -1005,7 +1065,11 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		case 2: sel_next(); break;
 		case 3: if (level + 1 < m_sz) { level++; center(); ui_dirty(0); } break;
 		case 4: if (level) { level--; center(); ui_dirty(0); } break;
-		case 5: UI_GO(A_PUSH, SCR_INVENTORY); break;
+		case 5:                              // инвентарь: окно рисуется в строки 0–199 основного
+			split_stop();                    //   холста — без сплита и с ним на экране
+			away = 1;
+			UI_GO(A_PUSH, SCR_INVENTORY);
+			break;
 		case 6: center_on_unit(); ui_dirty(0); break;
 		case 7: sel_next(); break;           // следующий боец
 		case 10: do_kneel(); break;          // присесть и встать

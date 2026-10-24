@@ -1,0 +1,78 @@
+# Наземный бой: частичная перерисовка точна (два холста карты, 17 §5). Курсор клетки, двери,
+# шаг бойца, приседание и прокрутка перерисовывают только свои прямоугольники (сборка в скрытом
+# холсте, в видимый — только прямоугольник). После них кадр запоминается (shotmark), вид
+# пересобирается целиком той же камерой («1/2» дважды) — кадр обязан совпасть (shotsame).
+# Затем инвентарь поверх боя и возврат: сплит снят и поставлен снова, вид тот же.
+# Курсор мыши скрыт (только спрайт), клетка курсора — вне карты.
+# Снимки — tmp/shots/bat_exact/. Запуск: powershell -File tools\run.ps1 -Script tests\bat_exact.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+poke _cursor_off 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+# боец к двери, двери на запад и на север (правая кнопка)
+key d
+wait 150
+pokew _cursor_x 160
+pokew _cursor_y 88
+click R
+wait 150
+pokew _cursor_x 176
+pokew _cursor_y 88
+click R
+wait 150
+# курсор клетки по карте
+pokew _cursor_x 100
+pokew _cursor_y 60
+wait 5
+pokew _cursor_x 120
+pokew _cursor_y 70
+wait 5
+pokew _cursor_x 200
+pokew _cursor_y 100
+wait 5
+pokew _cursor_x 230
+pokew _cursor_y 40
+wait 5
+# шаги бойца, приседание, прокрутка полосами
+pokew _cursor_x 64
+pokew _cursor_y 40
+click L
+wait 200
+key k
+wait 30
+key LEFT
+wait 20
+key LEFT
+wait 20
+key RIGHT
+wait 20
+key DOWN
+wait 20
+pokew _cursor_x 160
+pokew _cursor_y 150
+wait 30
+shot tmp/shots/bat_exact/00_partial.png
+shotmark
+# полная пересборка той же камерой
+pokew _cursor_x 220
+click L
+wait 60
+click L
+wait 60
+pokew _cursor_x 160
+wait 30
+shot tmp/shots/bat_exact/01_full.png
+shotsame
+# инвентарь поверх боя и обратно
+click L
+wait 60
+shot tmp/shots/bat_exact/02_inventory.png
+key SPACE
+wait 120
+shot tmp/shots/bat_exact/03_back.png
+shotsame
+echo battle exact OK
+exit 0
