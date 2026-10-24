@@ -22,6 +22,8 @@
 //   Байт клетки — сквозной номер части в наборах ТОГО террейна, которому принадлежит блок
 //   (0 — пусто), ровно как в MAP оригинала: движок переводит его в номер части миссии,
 //   вычитая размеры наборов по порядку (RuleTerrain::getMapData).
+//   За клетками — узлы маршрутов ROUTES/<блок>.RMP: u8 n, n x 13 байт { x, y, z (снизу вверх),
+//   type, rank, flags, reserved, priority, link[5] } (RouteNodes ниже; узел вне блока — x = #FF).
 //
 // TILESET_<набор> (Sprset) — кадры набора, 32x40.
 //
@@ -405,6 +407,47 @@ namespace OxzConv
 			File.WriteAllBytes(Path.Combine(prevDir, name + ".png"), Png.EncodeIndexed(big, Cram.Pal6To8(pal)));
 		}
 
+		// ---------------------------------------------------------------- узлы маршрутов
+		// ROUTES/<блок>.RMP (BattlescapeGenerator::loadRMP, BattlescapeGenerator.cpp:1694): записи
+		// по 24 байта — [0] y, [1] x, [2] z (сверху вниз), [4 + j*3] связь j = 0..4, [19] type,
+		// [20] rank, [21] flags, [22] reserved, [23] priority. В хвост MAPBLK кладётся u8 n и n
+		// записей по 13 байт: x, y, z (снизу вверх: sz-1-z), type, rank, flags, reserved,
+		// priority, link[5]. Связь — как в файле: 0..250 — номер узла этого блока, 251..255 —
+		// особые (255 нет, 254 север, 253 восток, 252 юг, 251 запад; loadRMP: connectID - 256).
+		// Узел вне блока OpenXcom заменяет пустышкой (setDummy), чтобы номера связей не съехали,
+		// а связи на него обрывает (= -1): здесь он остаётся с x = #FF, обрыв — забота движка.
+		int nodesMax, nodesTotal, nodesOut, linksToOut;
+		string nodesMaxBlock;
+
+		byte[] RouteNodes(string block, Battle.MapBlock m)
+		{
+			if (!gfs.Has($"ROUTES/{block}.RMP")) { report.Add($"  battle: no ROUTES/{block}.RMP"); return new byte[] { 0 }; }
+			var f = gfs.Read($"ROUTES/{block}.RMP");
+			int n = f.Length / 24;
+			if (n > 255) { report.Add($"  battle: ROUTES/{block}.RMP: {n} nodes > 255, cut"); n = 255; }
+			var o = new byte[1 + n * 13];
+			o[0] = (byte)n;
+			var outside = new bool[n];
+			for (int i = 0; i < n; i++)
+			{
+				int s = i * 24, d = 1 + i * 13;
+				int y = f[s], x = f[s + 1], z = f[s + 2];
+				bool inside = x < m.Sx && y < m.Sy && z < m.Sz;
+				outside[i] = !inside;
+				o[d] = (byte)(inside ? x : 0xFF); o[d + 1] = (byte)y; o[d + 2] = (byte)(inside ? m.Sz - 1 - z : z);
+				for (int k = 0; k < 5; k++) o[d + 3 + k] = f[s + 19 + k];
+				for (int j = 0; j < 5; j++) o[d + 8 + j] = f[s + 4 + j * 3];
+			}
+			if (n > nodesMax) { nodesMax = n; nodesMaxBlock = block; }
+			nodesTotal += n;
+			for (int i = 0; i < n; i++)
+			{
+				if (outside[i]) { nodesOut++; continue; }
+				for (int j = 0; j < 5; j++) { int l = o[1 + i * 13 + 8 + j]; if (l <= 250 && (l >= n || outside[l])) linksToOut++; }
+			}
+			return o;
+		}
+
 		// ---------------------------------------------------------------- данные
 		public (int sets, int blocks, long mcdBytes, long mapBytes, long tileBytes) Build(string outDir, string prevDir, byte[] pal)
 		{
@@ -456,9 +499,11 @@ namespace OxzConv
 					if (!gfs.Has($"MAPS/{b.Name}.MAP")) { report.Add($"  battle: no MAPS/{b.Name}.MAP"); continue; }
 					var m = Battle.ReadMap(gfs.Read($"MAPS/{b.Name}.MAP"));
 					b.Sz = m.Sz;
-					var data = new byte[4 + m.Cells.Length];
+					var nodes = RouteNodes(b.Name, m);
+					var data = new byte[4 + m.Cells.Length + nodes.Length];
 					data[0] = (byte)m.Sx; data[1] = (byte)m.Sy; data[2] = (byte)m.Sz;
 					Array.Copy(m.Cells, 0, data, 4, m.Cells.Length);
+					Array.Copy(nodes, 0, data, 4 + m.Cells.Length, nodes.Length);
 					mapPak.Add(ids.Id($"MAPBLK_{b.Name}"), ResType.Blob, data, m.Sx, m.Sy, m.Sz);
 					mapBytes += data.Length;
 					nBlocks++;
@@ -512,7 +557,7 @@ namespace OxzConv
 			var rb = mapPak.Write(Path.Combine(outDir, "MAPS.PAK"));
 			var rt = tilePak.Write(Path.Combine(outDir, "TILES.PAK"));
 			report.Add($"MCD.PAK: {nSets} sets, {(rm.bytes + 512) / 1024} KB");
-			report.Add($"MAPS.PAK: {nBlocks} blocks, {(rb.bytes + 512) / 1024} KB");
+			report.Add($"MAPS.PAK: {nBlocks} blocks, {(rb.bytes + 512) / 1024} KB; RMP: {nodesTotal} nodes, max {nodesMax} in {nodesMaxBlock}, {nodesOut} outside block, {linksToOut} links to outside/missing nodes");
 			report.Add($"TILES.PAK: {(rt.bytes + 512) / 1024} KB");
 			return (nSets, nBlocks, mcdBytes, mapBytes, tileBytes);
 		}
