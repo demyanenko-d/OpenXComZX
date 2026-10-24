@@ -73,6 +73,9 @@ typedef struct {
 	uint8_t label_ok[16];              // успех команд с метками (conditionals)
 	uint8_t craft_x, craft_y, craft_w, craft_l;   // где встал корабль отряда (в клетках)
 	uint8_t craft_base;                // с какого номера идут части корабля (высадка — внутрь него)
+	uint8_t npage;                     // страница узлов маршрутов (bnode_t, mapgen.h)
+	uint16_t nnodes;
+	uint8_t nseg;                      // блоков с узлами (сегмент узла — как в loadRMP)
 } gen_t;
 
 static gen_t __at(0xB000) G;
@@ -235,6 +238,33 @@ static void merge_row(uint8_t *row, far_t dst, uint16_t len)
 // merge — класть поверх уже уложенного, не затирая пустыми частями: так оригинал грузит
 // карты корабля и НЛО поверх посадочной площадки (loadMAP: часть с нулём не пишется вовсе,
 // а непустая часть чужого террейна ещё и убирает объект клетки, :1630-1642).
+// Узлы маршрутов блока (BattlescapeGenerator::loadRMP, :1694): конвертер дописал их после клеток
+// MAPBLK — u8 n и записи по 13 байт: x, y, z (снизу вверх), type, rank, flags, reserved, priority,
+// link[5]. Связь 0..250 — номер узла в этом же блоке (+ число узлов до него), 251..255 — особые
+// (255 нет связи, 251..254 — край карты): хранятся как #FF00 | v. Узел вне блока — x = #FF,
+// остаётся пустышкой, чтобы номера связей не съехали.
+static void nodes_add(far_t p, far_t end, uint8_t mx, uint8_t my)
+{
+	if (G.npage == PG_NONE || p >= end) return;
+	uint8_t n = far_byte(p++);
+	uint16_t base = G.nnodes;
+	for (uint8_t i = 0; i < n && G.nnodes < NODE_MAX; i++, p += 13) {
+		uint8_t r[13];
+		bnode_t d;
+		far_read(p, r, 13);
+		d.x = r[0] == 0xFF ? 0xFF : (uint8_t)(mx * MOD_W + r[0]);
+		d.y = (uint8_t)(my * MOD_W + r[1]);
+		d.z = r[2];
+		if (d.z >= G.sz || d.x >= G.sx || d.y >= G.sy) d.x = 0xFF;   // за краем поля
+		d.type = r[3]; d.rank = r[4]; d.flags = r[5]; d.reserved = r[6]; d.priority = r[7];
+		d.seg = G.nseg; d.pad = 0;
+		for (uint8_t j = 0; j < 5; j++) d.link[j] = r[8 + j] <= 250 ? base + r[8 + j] : 0xFF00 | r[8 + j];
+		far_write(FAR(G.npage, (uint16_t)G.nnodes * sizeof d), &d, sizeof d);
+		G.nnodes++;
+	}
+	G.nseg++;
+}
+
 static void lay_res(uint8_t mx, uint8_t my, uint16_t res, uint8_t offset, uint8_t merge)
 {
 	res_t r;
@@ -257,6 +287,7 @@ static void lay_res(uint8_t mx, uint8_t my, uint16_t res, uint8_t offset, uint8_
 			if (merge) merge_row(row, dst, len);
 			far_write(dst, row, len);
 		}
+	nodes_add(r.phys + 4 + (uint32_t)bx * by * bz * 4, r.phys + r.size, mx, my);
 }
 
 static uint8_t place_block(int16_t b, const int16_t *rects, uint8_t nrects)
@@ -534,6 +565,7 @@ uint8_t mapgen_run(uint16_t terrain, uint8_t mods, uint8_t levels) __banked
 	g_ready = 1;                         // теперь в G есть что освобождать
 	G.cells = FAR(G.page, 0);
 	for (uint8_t i = 0; i < G.pages; i++) far_fill(FAR(G.page + i, 0), 0, 16384);
+	G.npage = pg_alloc(1, 1);            // узлы маршрутов (нет страницы — карта без узлов)
 
 	// команды скрипта
 	res_t r;
@@ -642,6 +674,9 @@ void mapgen_free(void) __banked
 	if (!g_ready) return;
 	g_ready = 0;
 	if (G.page != PG_NONE && G.pages) pg_free(G.page, G.pages);
+	if (G.npage != PG_NONE) pg_free(G.npage, 1);
+	G.npage = PG_NONE;
+	G.nnodes = 0;
 	G.page = PG_NONE;
 	G.pages = 0;
 	G.cells = 0;
@@ -689,6 +724,7 @@ uint16_t mapgen_filled(void) __banked
 }
 
 uint16_t mapgen_sx(void) __banked { return G.sx; }
+uint16_t mapgen_nodes(far_t *where) __banked { *where = FAR(G.npage, 0); return G.npage == PG_NONE ? 0 : G.nnodes; }
 uint16_t mapgen_sy(void) __banked { return G.sy; }
 uint8_t mapgen_sz(void) __banked { return G.sz; }
 far_t mapgen_cells(void) __banked { return G.cells; }

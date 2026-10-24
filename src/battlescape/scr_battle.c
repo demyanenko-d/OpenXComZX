@@ -23,6 +23,8 @@
 #include "doors.h"
 #include "loader.h"
 #include "bview.h"
+#include "deploy.h"
+#include "rules.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 
@@ -31,6 +33,8 @@ static uint16_t gen_terrain;             // какой террейн пробу
 // карта корабля отряда (всё — номера записей террейнов) и сам корабль в пуле кампании —
 // от него берётся экипаж. #FFFF — «не задано»: бой отладочный, всё по умолчанию.
 static uint16_t mis_deploy = 0xFFFF, mis_ufo = 0xFFFF, mis_craft = 0xFFFF, mis_crew = 0xFFFF;
+// Пришельцы: тип НЛО (ufos, #FF — миссия без НЛО) — по нему развёртывание с его составом, раса
+static uint8_t mis_utype = 0xFF, mis_race = 0xFF;
 static uint8_t m_sx, m_sy, m_sz;
 static far_t cells;                  // начало клеток карты
 static uint8_t loaded;
@@ -40,6 +44,9 @@ static uint8_t gen_mode;             // 1 — показывается сген�
 // runit_t через рабочую страницу (ru_put, bv_sync)
 static unit_t __at(0xB000) units[MAX_BUNITS];
 static uint8_t nunits;
+static uint8_t nsold;                    // бойцы X-COM — первые nsold юнитов, дальше пришельцы
+static adep_t __at(0xBF60) adq;          // расстановка пришельцев и их листы (deploy.c; до #BF80)
+static uint16_t ufo_deploy(uint8_t utype);   // развёртывание по типу НЛО (ниже)
 static uint8_t sel;                      // выбранный боец (панель показывает его состояние)
 #define KNEEL_TU_DOWN  4                 // цена приседания и вставания (BattlescapeGame::kneel)
 #define KNEEL_TU_UP    8
@@ -75,8 +82,10 @@ static void ru_put(uint8_t i)
 	const unit_t *u = &units[i];
 	runit_t r;
 	r.x = u->x; r.y = u->y; r.z = u->z; r.dir = u->dir;
-	r.flags = (u->alive ? RU_ALIVE : 0) | (u->kneel ? RU_KNEEL : 0);
-	r.sheet = 0;
+	// без своего листа рисуется только боец X-COM (лист по частям)
+	r.flags = (u->alive && u->seen && (u->sheet || u->faction == FACTION_PLAYER) ? RU_ALIVE : 0)
+		| (u->kneel ? RU_KNEEL : 0) | (u->size > 1 ? RU_BIG : 0);
+	r.sheet = u->sheet;
 	r.pad[0] = r.pad[1] = 0;
 	far_write(FAR(pf_page + 1, TL_RUNITS) + (uint16_t)i * sizeof r, &r, sizeof r);
 }
@@ -128,8 +137,8 @@ static const int8_t dir_dy[8] = { -1, -1, 0, 1, 1, 1, 0, -1 };
 // (BattlescapeState::btnNextSoldierClick — в оригинале камера тоже переезжает)
 static void sel_next(void)
 {
-	if (!nunits) return;
-	sel = (uint8_t)((sel + 1) % nunits);
+	if (!nsold) return;
+	sel = (uint8_t)((sel + 1) % nsold);
 	path_n = 0;
 	center_on_unit();
 	ui_dirty(0);
@@ -137,8 +146,8 @@ static void sel_next(void)
 
 static void sel_prev(void)
 {
-	if (!nunits) return;
-	sel = (uint8_t)((sel + nunits - 1) % nunits);
+	if (!nsold) return;
+	sel = (uint8_t)((sel + nsold - 1) % nsold);
 	path_n = 0;
 	center_on_unit();
 	ui_dirty(0);
@@ -254,9 +263,17 @@ static uint8_t load_gen(uint16_t terrain)
 	loaded = 0;
 	q.terrain = terrain; q.deploy = mis_deploy; q.ufo = mis_ufo; q.craft = mis_craft; q.crew = mis_crew;
 	q.page = pf_page;
+	aliens_free(&adq);                   // листы пришельцев прошлой карты
 	if (!bat_load(&q)) return 0;
-	nunits = q.nunits;
+	nunits = nsold = q.nunits;
 	far_read(FAR(pf_page + 1, TL_UNITS), units, (uint16_t)nunits * sizeof(unit_t));
+	// Пришельцы: состав — развёртывание миссии (у сбитого или севшего НЛО — развёртывание его
+	// типа, BattlescapeGenerator::run), места — узлы маршрутов карты
+	adq.deploy = mis_utype != 0xFF ? ufo_deploy(mis_utype) : mis_deploy;
+	adq.race = mis_race != 0xFF ? mis_race : 0xFFFF;
+	adq.ufo = mis_ufo != 0xFFFF || mis_deploy == 0xFFFF;
+	adq.page = pf_page;
+	nunits = aliens_deploy(units, nunits, MAX_BUNITS, &adq, q.sx, q.sy);
 	ndoors = q.ndoors;
 	m_sx = q.sx; m_sy = q.sy; m_sz = q.sz;
 	cells = q.cells;
@@ -278,16 +295,35 @@ static void draw_panel(void)
 {
 	bpanel_t p;
 	const unit_t *u = &units[sel < nunits ? sel : 0];
-	p.n = nunits; p.level = bv_level();
+	p.n = nsold; p.level = bv_level();
 	p.tu = u->tu; p.tu_max = u->tu_max; p.en = u->en;
 	p.hp = u->hp; p.hp_max = u->hp_max; p.mor = u->mor;
 	bat_panel(&p);
 }
 
-// Геоскейп сообщает, какая миссия начинается: развёртывание (state.h site_t.deployment),
-// террейн НЛО и террейн корабля отряда; #FFFF — не задано.
-void bat_mission(uint16_t deploy, uint16_t ufo, uint16_t craft_map, uint16_t crew) __banked
+// Развёртывание НЛО типа utype — то, что называется как сам НЛО (alienDeployments STR_SMALL_SCOUT
+// и т. п., BattlescapeGenerator::run: getDeployment(ufo->getRules()->getType())); #FFFF — нет
+static uint16_t ufo_deploy(uint8_t utype)
 {
+	rtab_t t;
+	if (!rtab_open(RES_RULE_UFOS, &t) || utype >= t.n) return 0xFFFF;
+	uint16_t name = rtab_word(&t, utype, 0);
+	if (!rtab_open(RES_RULE_ALIENDEPLOYMENTS, &t)) return 0xFFFF;
+	uint16_t i;
+	for (i = 0; i < t.n; i++) {
+		uint16_t w = rtab_word(&t, i, 0);    // сравнение — с копией (SDCC 4.5, checkasm)
+		if (w == name) break;
+	}
+	return i < t.n ? i : 0xFFFF;
+}
+
+// Геоскейп сообщает, какая миссия начинается: развёртывание (state.h site_t.deployment),
+// террейн НЛО и террейн корабля отряда; #FFFF — не задано. utype — тип НЛО (#FF — не НЛО),
+// race — раса миссии (#FF — из развёртывания).
+void bat_mission(uint16_t deploy, uint16_t ufo, uint16_t craft_map, uint16_t crew, uint8_t utype, uint8_t race) __banked
+{
+	mis_utype = utype;
+	mis_race = race;
 	mis_deploy = deploy;
 	mis_ufo = ufo;
 	mis_craft = craft_map;
@@ -323,6 +359,9 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	}
 	case EVT_OPEN:
 		bv_open();                           // список вида, холсты, сплит, курсор боя
+		// Память банка при старте не обнуляется: без этого aliens_free отдавал в пул мусорные
+		// номера страниц (а с ними — каталог SD, и карта не находила своих блоков)
+		adq.nsh = 0;
 		if (pf_page == PG_NONE) pf_page = pg_alloc(2, 1);   // рабочая память боя: поиск пути и таблицы
 		if (pf_page == PG_NONE) { dbg_puts("battle: no pages\n"); break; }   // иначе — в страницу #FF
 		// Карта миссии собирается генератором (16 §3). Пока миссии нет, террейн берётся
@@ -361,6 +400,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		// рабочую память поиска пути. Иначе геоскейпу не из чего заводить слоты кэша, и он
 		// перечитывает каждый фон с карты — экран залипает (14 §todo).
 		bv_close();
+		aliens_free(&adq);               // листы брони пришельцев
 		bat_unload();                    // наборы частей, листы бойца и курсора, генератор (bload.c)
 		gen_mode = 0;
 		loaded = 0;
@@ -391,7 +431,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				break;
 			}
 			uint8_t no = unit_no(u->z, ty, tx);
-			if (no && no - 1 != sel) {       // свой боец — выбрать его (primaryAction оригинала)
+			if (no && no - 1 != sel && no <= nsold) {   // свой боец — выбрать его (primaryAction оригинала)
 				sel = (uint8_t)(no - 1);
 				path_n = 0;
 				ui_dirty(0);
@@ -445,6 +485,19 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			dbg_puts("door: at "); dbg_dec(dx); dbg_puts(","); dbg_dec(dy);
 			dbg_puts(" slot "); dbg_dec(ds); dbg_puts("\n");
 			center_on_unit();
+			break;
+		}
+		case 'j': case 'J': {               // отладка: камера на следующего пришельца (видимости ещё нет)
+			static uint8_t dbg_al;
+			if (nunits <= nsold) break;
+			if (dbg_al < nsold || dbg_al >= nunits) dbg_al = nsold;
+			unit_t *a = &units[dbg_al];
+			if (a->z != bv_level()) bv_set_level(a->z, 0);
+			bv_center(a->x, a->y);
+			dbg_puts("alien "); dbg_dec(dbg_al - nsold); dbg_puts(" at "); dbg_dec(a->x); dbg_puts(",");
+			dbg_dec(a->y); dbg_puts(","); dbg_dec(a->z); dbg_puts(" sheet "); dbg_dec(a->sheet);
+			dbg_puts(" hp "); dbg_dec(a->hp); dbg_puts(" tu "); dbg_dec(a->tu); dbg_puts("\n");
+			dbg_al++;
 			break;
 		}
 		case 'n': sel_next(); break;         // следующий боец (в оригинале TAB)

@@ -46,10 +46,10 @@ static uint8_t __at(0xB400) tile_tab[256 * TE_SIZE];
 
 // Юниты (runit_t, bview.h): их приносит логика через рабочую страницу (bv_sync). Спрайт бойца
 // X-COM собирается как в UnitSprite::drawRoutine0 — ноги, торс и руки по направлению (draw_unit).
-// Память банка (build.ps1 ram = #A800): код вида кончается ниже.
-static runit_t __at(0xA800) units[MAX_BUNITS];
-static uint8_t __at(0xA940) rl[MAX_BUNITS];   // юниты текущего ряда сборки (build_range)
-static uint8_t __at(0xA968) rn;
+// Память банка (build.ps1 ram = #AA00): код вида кончается ниже.
+static runit_t __at(0xAA00) units[MAX_BUNITS];
+static uint8_t __at(0xAB40) rl[MAX_BUNITS];   // юниты текущего ряда сборки (build_range)
+static uint8_t __at(0xAB68) rn;
 static uint8_t nunits;
 static uint8_t sel;                      // выбранный боец: над ним стрелка
 static uint8_t __at(0xBF00) unit_tab[32 * TE_SIZE];   // кадры листа в виде для блита
@@ -268,8 +268,20 @@ static const int8_t walk_bob[8] = { 1, 0, -1, 0, 1, 0, -1, 0 };   // YoffWalk: �
 // Боец (кадр в точке px, py): стоя — руки, ноги и торс листа; на колене — свои ноги, остальное
 // ниже; идущий — кадры фазы ходьбы (40 + 24·d: руки и ноги по восемь фаз, читаются из рабочей
 // страницы), торс качается, всё обрезано маской клетки [cx0, cx1) x [cy0, cy0 + 72)
+// Юнит с собранным листом (пришельцы, мирные): один кадр на позу; у крупного — четверть q
+static void draw_sheet(const runit_t *u, uint8_t walking, uint8_t q, int16_t px, int16_t py, int16_t cx0, int16_t cx1, int16_t cy0)
+{
+	uint8_t d = u->dir & 7, e[TE_SIZE], f;
+	if (u->flags & RU_BIG) f = (uint8_t)(d * 4 + q);
+	else f = walking ? (uint8_t)(8 + d * 8 + (wk_ph & 7)) : (u->flags & RU_KNEEL) ? (uint8_t)(72 + d) : d;
+	far_read(FAR(pf_page + 1, TL_ASH) + (uint16_t)((u->sheet - 1) * ASH_N + f) * TE_SIZE, e, TE_SIZE);
+	if (walking) dl_blit_clip(e, px, py, cx0, cx1, cy0, cy0 + 72);
+	else dl_blit(e, px, py);
+}
+
 static void draw_unit(const runit_t *u, uint8_t walking, int16_t px, int16_t py, int16_t cx0, int16_t cx1, int16_t cy0)
 {
+	if (u->sheet) { draw_sheet(u, walking, 0, px, py, cx0, cx1, cy0); return; }
 	uint8_t d = u->dir & 7, ph = wk_ph & 7, kn = u->flags & RU_KNEEL, e[TE_SIZE];
 	int16_t dy = walking ? walk_bob[ph] + u_tftd : kn ? KNEEL_DY + u_tftd : 0;
 	for (uint8_t k = 0; k < 4; k++) {
@@ -317,7 +329,11 @@ static void draw_units_cell(uint8_t y, uint8_t x, int16_t px, int16_t py, uint8_
 		const runit_t *u = &units[i];
 		int8_t ax = (int8_t)(u->x - x), ay = (int8_t)(u->y - y);
 		if (i != wu) {
-			if (!back && !ax && !ay) draw_unit(u, 0, px, py, 0, 0, 0);
+			if (back) continue;
+			if (!ax && !ay) draw_unit(u, 0, px, py, 0, 0, 0);
+			// крупный (2x2): клетка рисует свою четверть (Map::drawTerrain, part по смещению клетки)
+			else if ((u->flags & RU_BIG) && ax <= 0 && ax >= -1 && ay <= 0 && ay >= -1)
+				draw_sheet(u, 0, (uint8_t)(-ax - ay * 2), px, py, 0, 0, 0);
 			continue;
 		}
 		if (ax < -1 || ax > 1 || ay < -1 || ay > 1 || !((set >> ((ay + 1) * 3 + ax + 1)) & 1)) continue;
@@ -371,7 +387,7 @@ static void build_range(int16_t lo, int16_t hi, int16_t top, int16_t bot)
 			for (uint8_t i = 0; i < nunits; i++) {
 				const runit_t *u = &units[i];
 				uint8_t uy = u->y;
-				if ((u->flags & RU_ALIVE) && u->z == z && (uy == y || (i == wu && (uy + 1 == y || uy == y + 1)))) rl[ru++] = i;
+				if ((u->flags & RU_ALIVE) && u->z == z && (uy == y || ((i == wu || (u->flags & RU_BIG)) && uy + 1 == y) || (i == wu && uy == y + 1))) rl[ru++] = i;
 			}
 			rn = ru;
 			for (int16_t x = x0; x <= x1; x++, p += 4, px += 16, py += 8) {

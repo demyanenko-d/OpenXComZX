@@ -20,6 +20,15 @@ void mapgen_free(void) __banked;         // отдать страницы кар
 void mapgen_used(uint8_t *mask) __banked;   // 32 байта: какие части попали на карту
 
 uint16_t mapgen_sx(void) __banked;
+// Узлы маршрутов карты (RMP блоков, BattlescapeGenerator::loadRMP): где лежат и сколько
+typedef struct {
+	uint8_t x, y, z;           // клетка (x = #FF — пустышка: узел был вне своего блока)
+	uint8_t type, rank, flags, reserved, priority;   // Node: тип (1 летающим, 2 малым), ранг (NodeRank)
+	uint8_t seg, pad;          // сегмент — блок, из которого узел
+	uint16_t link[5];          // номера связанных узлов; #FF00 | v — особые (255 нет, 251..254 — край)
+} bnode_t;
+#define NODE_MAX   800         // в странице по 20 байт
+uint16_t mapgen_nodes(far_t *where) __banked;
 uint16_t mapgen_filled(void) __banked;   // непустых клеток (проверка укладки)
 uint16_t mapgen_sy(void) __banked;
 uint8_t mapgen_sz(void) __banked;

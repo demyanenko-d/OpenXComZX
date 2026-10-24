@@ -4,6 +4,7 @@
 // Генератор карты (mapgen.c, 16 §3) -> наборы частей (loader.c) -> лист бойца с ходьбой и
 // рамка курсора клетки -> отряд (units.c) -> стрелка над выбранным (Map::init).
 #include <stdint.h>
+#include <string.h>
 #include "pages.h"
 #include "far.h"
 #include "res.h"
@@ -75,12 +76,16 @@ uint8_t bat_load(bload_t *q) __banked
 		c.cells = q->cells; c.sx = q->sx; c.sy = q->sy;
 		c.craft = q->crew; c.debug_n = 6;
 		uint8_t n = crew_deploy(&c, cu, MAX_UNITS);
+		memset(&u, 0, sizeof u);
+		u.size = 1;
+		u.type = 0xFFFF; u.node = 0xFFFF;   // боец X-COM (FACTION_PLAYER), лист по частям
+		u.seen = 1;
 		for (uint8_t i = 0; i < n; i++) {
 			u.x = cu[i].x; u.y = cu[i].y; u.z = cu[i].z;
 			u.dir = 0; u.alive = 1; u.kneel = 0;
 			u.tu = u.tu_max = cu[i].tu;
 			u.hp = u.hp_max = cu[i].hp;
-			u.en = cu[i].en; u.mor = cu[i].mor;
+			u.en = u.en_max = cu[i].en; u.mor = cu[i].mor;
 			far_write(t + TL_UNITS + (uint16_t)i * sizeof u, &u, sizeof u);
 		}
 		q->nunits = n;

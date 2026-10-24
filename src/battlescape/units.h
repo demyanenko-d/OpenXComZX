@@ -11,7 +11,24 @@ typedef struct { uint8_t x, y, z, tu, hp, en, mor; } cunit_t;
 // Боец экрана боя (scr_battle.c, память банка 28): клетка, направление, жив, на колене, показатели
 #define MAX_UNITS 12            // бойцов X-COM
 #define MAX_BUNITS 40           // юнитов миссии всего (бойцы, пришельцы, мирные)
-typedef struct { uint8_t x, y, z, dir, alive, kneel; uint8_t tu, tu_max, hp, hp_max, en, mor; } unit_t;
+#define FACTION_PLAYER  0
+#define FACTION_HOSTILE 1
+#define FACTION_NEUTRAL 2
+typedef struct {
+	uint8_t x, y, z, dir, alive, kneel;
+	uint8_t tu, tu_max, hp, hp_max, en, mor;
+	uint8_t faction;           // FACTION_* (BattleUnit::_faction)
+	uint8_t sheet;             // 0 — лист бойца X-COM по частям, иначе собранный лист (loader.h TL_ASH)
+	uint8_t size;              // клеток по стороне (Armor::getSize)
+	uint8_t rank;              // ранг пришельца (alienRank) — по нему узлы расстановки
+	uint8_t en_max, stun;
+	uint8_t armor[5];          // броня: спереди, слева, справа, сзади, снизу (BattleUnit::_currentArmor)
+	uint8_t reactions, firing, throwing, strength, bravery, psi_str, psi_skill, melee;
+	uint8_t fly;               // movementType: 1 — летает (MT_FLY)
+	uint16_t type;             // units (пришельцы, мирные), #FFFF — боец X-COM
+	uint8_t seen;              // виден стороне X-COM
+	uint16_t node;             // узел маршрута, на котором поставлен (#FFFF — нет)
+} unit_t;
 
 // Загрузка миссии для экрана боя (bload.c): генератор карты, наборы частей, листы бойца и
 // курсора, отряд, стрелка выбранного. Таблицы — в рабочей странице (loader.h TL_*), экран

@@ -24,6 +24,12 @@
 #define TL_UDMAX  24
 #define TL_UNITS  6208         // юниты миссии в виде unit_t (units.h), MAX_BUNITS записей (до #1A20)
 #define TL_RUNITS 6688         // они же для вида: runit_t (bview.h), MAX_BUNITS по 8 байт (до #1B60)
+// Собранные кадры юнитов по броне (UNITS.PAK ASHEET_*, конвертер собирает их как UnitSprite):
+// лист s (1..ASH_MAX) — ASH_N записей с (s - 1) * ASH_N. Броня 1x1: 0..7 стоя по направлению,
+// 8 + d*8 + фаза — ходьба, 72 + d — на колене; 2x2: d*4 + четверть (стоя; ходьбы пока нет).
+#define TL_ASH    7168
+#define ASH_N     80
+#define ASH_MAX   6            // до #2B00
 
 typedef struct {
 	uint16_t set[TL_SETS];     // ресурсы MCDSET наборов миссии

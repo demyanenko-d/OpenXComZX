@@ -367,6 +367,23 @@ executionChances/executions, maxUses. Замер на TFTD: террейны 0-4
 
 TFTD: при `depth > 0` к имени расы дописывается `_UNDERWATER` (`:1053-1056`).
 
+**Сделано (2026-10-25, `src/battlescape/deploy.c`, банк 31; тест `tests/bat_aliens.oxs`).**
+Генератор (`mapgen.c`) собирает узлы RMP всех уложенных блоков (конвертер дописал их в хвост
+`MAPBLK`, 09 §7) в свою страницу: `bnode_t` по 20 байт, связи пересчитаны в номера карты, особые
+(край, нет связи) — `#FF00 | v`; узел вне поля — пустышка. Расстановка — порт `deployAliens` /
+`addAlien` / `getSpawnNode`: число по сложности (таблица выше) + `extraQty`, снаружи НЛО — по
+`percentageOutsideUfo` (только если на карте НЛО), член расы по рангу (`alienRaces.members`),
+характеристики — `units.stats` + `armors.stats`, поправка по сложности `adjustStats`
+(`statGrowthMultipliers` × `difficultyCoefficient`, затем меткость и броня ×
+`aimAndArmorMultipliers` — константы `difficulty.rul` пока в коде по игре), узел — ранги по
+`Node::nodeRank`, наибольший `priority`, случайный из них; направление — к кораблю (20 % на единицу
+сложности, если ближе 20 клеток), иначе случайное. Состав — развёртывание миссии; у НЛО —
+развёртывание его типа (имя `alienDeployments` = имя `ufos`, `BattlescapeGenerator::run`), раса — от
+миссии НЛО или места высадки (`bat_mission`). Рисуются собранными кадрами брони (`ASHEET_*`,
+`loader.h TL_ASH`, до 6 листов на миссию), крупные 2x2 — каждая клетка свою четверть.
+Нет: `faceWindow` (лицом к окну), предметов (`itemSets`, `alienItemLevels`), мирных
+(`deployCivilians`), `_UNDERWATER`, видимости (пока видны все), хода пришельцев.
+
 **`deployCivilians` (`:1836-1897`)**: `rand(max/2, max)` штук, типы из
 `terrain->civilianTypes`, узел только ранга 0.
 
