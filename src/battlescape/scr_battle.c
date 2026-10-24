@@ -140,7 +140,7 @@ static uint8_t dl_ok;                // список отвечает текущ
 #define SPLIT_LEAD 0                 // за сколько строк до картинки вернуть смещения карты
 // Карта — кольцо 512x512 на весь свой холст (раскладка Б, 17 §3): мировая точка (x, y) лежит в
 // столбце (x + BIAS) & 511 и строке (y + BIAS) & 511, камера — только GXOffs/GYOffs. Нарисован
-// прямоугольник мира [vx_lo, vx_hi] x [vy_lo, vy_hi] (не больше кольца): пока окно внутри него,
+// прямоугольник мира [vx_lo, vx_hi] x [vy_lo, vy_hi] (меньше кольца на вылет спрайтов — KEEP_X, KEEP_Y): пока окно внутри него,
 // движение камеры — запись смещений без единого блита, вышло — дорисовываются въехавшие полосы.
 // Полная сборка — окно с запасом PAD (с вылетом спрайтов за край — меньше кольца).
 #define RING    512
@@ -148,6 +148,12 @@ static uint8_t dl_ok;                // список отвечает текущ
 #define PAD_Y   56                   // 144 + 2*56 = 256
 #define STRIP_X 48                   // полоса дорисовывается с запасом вперёд — реже и дешевле
 #define STRIP_Y 32
+// Нарисованное держится меньше кольца на вылет спрайтов за край прямоугольника: клетки, задевшие
+// его, рисуются целиком, и вылет за правый край по кольцу ложится на левый край нарисованного
+// (за пределами карты оставались куски земли). Вылет по X — до 31 точки, по Y — до 64 (P_Level 24,
+// спрайт 40) с запасом на бойца; полная сборка (480 x 256) укладывается.
+#define KEEP_X  (RING - 32)
+#define KEEP_Y  (RING - 96)
 #define BIAS    1024                 // мировые X и Y — в ±1024; сдвиг делает их положительными
 extern uint8_t split_gx, split_gy, split_on, split_phase, split_mark, map_canvas;
 extern uint16_t map_gx, map_gy, split_line, vblank_line;
@@ -166,7 +172,7 @@ static uint8_t away;                     // поверх боя открывал
 static int16_t vy_lo, vy_hi;             // нарисованный мировой диапазон Y (X — vx_lo, vx_hi)
 
 static void center_on_unit(void);       // определена ниже, вместе с юнитами
-static void cell_repaint(uint8_t x, uint8_t y);   // перерисовка одной клетки (ниже)
+static void cell_repaint(uint8_t x, uint8_t y, uint8_t z);   // перерисовка одной клетки (ниже)
 static void walk_paint(void);                     // перерисовка шага идущего бойца (ниже)
 static void repaint(int16_t lo, int16_t hi, int16_t top, int16_t bot);   // кусок вида (ниже)
 
@@ -449,7 +455,9 @@ static void build_range(int16_t lo, int16_t hi, int16_t top, int16_t bot)
 			pg_map3(old);
 		}
 	}
-	if (ar_on) {                         // стрелка над выбранным бойцом — поверх всего (Map.cpp:1185)
+	// стрелка над выбранным бойцом — поверх всего (Map.cpp:1185); только задевшая прямоугольник:
+	// дальняя по кольцу легла бы в него же
+	if (ar_on && ar_x + 9 >= lo && ar_x <= hi && ar_y + 8 >= top && ar_y <= bot) {
 		uint8_t old = pg_map3(dl_n >= DL_PAGE_N ? dl_page + 1 : dl_page);
 		dl_blit(arrow_e, ar_x, ar_y);
 		pg_map3(old);
@@ -501,8 +509,6 @@ static uint8_t move_wait;                        // кадров до следу
 static uint8_t turn_dir = 0xFF;                  // куда разворачивается боец (правая кнопка)
 static uint8_t ndoors;                           // дверей среди частей карты (отладка)
 
-#define MC_SIZE 12                       // байт на часть в таблице набора (MCDSET, 16 §2.3)
-
 // Свойства частей лежат в странице поиска пути (pathfind.h): её читает и поиск, и бой
 static void pf_put(uint16_t off, uint8_t v)
 {
@@ -551,8 +557,24 @@ static void sel_prev(void)
 // Карта для банка клеток (doors.c): двери и цена прохода считаются там
 static dmap_t bmap;
 
+// Створки НЛО едут (doors_anim): следующий кадр в таблицу вида и перерисовка их клеток.
+// 1 — створки есть (их клетки уже перерисованы)
+static uint8_t an_on, an_tm;             // едут; кадр (frames), когда сменили их кадр
+static uint8_t door_anim_step(void)
+{
+	uint8_t parts[5], cl[15];
+	an_on = doors_anim(&bmap, parts, cl);
+	an_tm = (uint8_t)frames;
+	for (uint8_t i = 0; parts[i]; i++) {
+		uint16_t o = (uint16_t)(parts[i] - 1) * TE_SIZE;
+		far_read(FAR(pf_page + 1, TL_TILES) + o, tile_tab + o, TE_SIZE);
+	}
+	for (uint8_t i = 0; cl[i * 3] != 0xFF; i++) cell_repaint(cl[i * 3], cl[i * 3 + 1], cl[i * 3 + 2]);
+	return cl[0] != 0xFF;
+}
+
 // Открыть дверь в направлении dir и перерисовать изменившиеся клетки.
-// 0 — открыли, 1 — не хватило времени, 2 — двери нет.
+// 0 — открыли, 1 — не хватило времени, 2 — двери нет, 3 — створка НЛО ещё едет.
 static uint8_t door_try(unit_t *u, uint8_t dir, uint8_t rclick)
 {
 	uint8_t list[8], spent = 0;
@@ -560,8 +582,9 @@ static uint8_t door_try(unit_t *u, uint8_t dir, uint8_t rclick)
 	uint8_t r = door_open(&bmap, u->x, u->y, u->z, dir, rclick, u->tu, &spent, list, 4);
 	if (r) return r;
 	u->tu -= spent;
+	if (door_anim_step()) return 0;      // створка НЛО поехала: кадр 1 (Tile::openDoor)
 	for (uint8_t i = 0; i < 4 && list[i * 2] != 0xFF; i++)
-		cell_repaint(list[i * 2], list[i * 2 + 1]);
+		cell_repaint(list[i * 2], list[i * 2 + 1], u->z);
 	return 0;
 }
 
@@ -576,7 +599,7 @@ static void do_kneel(void)
 	u->tu -= cost;
 	u->kneel = !u->kneel;
 	path_n = 0;
-	cell_repaint(u->x, u->y);
+	cell_repaint(u->x, u->y, u->z);
 	ui_dirty(0);
 }
 
@@ -586,7 +609,7 @@ static void turn_to(unit_t *u, uint8_t d)
 {
 	uint8_t diff = (uint8_t)((d - u->dir) & 7);
 	u->dir = (uint8_t)((u->dir + (diff && diff <= 4 ? 1 : 7)) & 7);
-	cell_repaint(u->x, u->y);
+	cell_repaint(u->x, u->y, u->z);
 }
 
 // Один шаг по пути: поворот, открывание двери, перенос в клетку и расход времени
@@ -599,11 +622,13 @@ static void step_unit(void)
 		if (u->tu < KNEEL_TU_UP) { path_n = 0; return; }
 		u->tu -= KNEEL_TU_UP;
 		u->kneel = 0;
-		cell_repaint(u->x, u->y);
+		cell_repaint(u->x, u->y, u->z);
 		return;
 	}
 	if (u->dir != d) { turn_to(u, d); return; }      // сперва развернуться лицом к шагу
-	if (door_try(u, d, 0) != 2) return;              // дверь открывается вместо шага
+	uint8_t r = door_try(u, d, 0);                   // дверь открывается вместо шага, створку
+	if (r == 1) path_n = 0;                          //   НЛО ждут (UnitWalkBState); не хватило
+	if (r != 2) return;                              //   времени — путь прерван
 	int16_t nx = (int16_t)u->x + dir_dx[d], ny = (int16_t)u->y + dir_dy[d];
 	if (nx < 0 || ny < 0 || nx >= m_sx || ny >= m_sy) { path_n = 0; return; }
 	uint8_t cost = cell_cost(&bmap, (uint8_t)nx, (uint8_t)ny, u->z, d, STEP_TU);
@@ -701,6 +726,7 @@ static uint8_t load_gen(uint16_t terrain)
 	bmap.cells = cells; bmap.sx = m_sx; bmap.sy = m_sy; bmap.sz = m_sz; bmap.page = pf_page;
 	u_tftd = res_game() == 2;
 	level = 0;                           // камера начинается на земле, как в оригинале
+	an_on = 0;
 	gen_mode = 1;
 	dl_ok = 0;
 	sel = 0;
@@ -736,11 +762,12 @@ static void repaint(int16_t lo, int16_t hi, int16_t top, int16_t bot)
 	if (lo <= hi && top <= bot) draw_rect(lo, hi, top, bot);
 }
 
-// Перерисовать клетку (её спрайт 32x40) — столько и трогаем при переезде курсора и шаге бойца
-static void cell_repaint(uint8_t x, uint8_t y)
+// Перерисовать клетку (её спрайт 32x40) — столько и трогаем при переезде курсора и шаге бойца.
+// Этаж — клетки, не камеры: дверь и боец внизу, когда смотрим с этажа выше, лежат ниже на 24·dz
+static void cell_repaint(uint8_t x, uint8_t y, uint8_t z)
 {
 	int16_t wx = ((int16_t)x - (int16_t)y) * 16;
-	int16_t wy = ((int16_t)x + (int16_t)y) * 8 - (int16_t)level * 24;
+	int16_t wy = ((int16_t)x + (int16_t)y) * 8 - (int16_t)z * 24;
 	repaint(wx, wx + TILE_W - 1, wy, wy + TILE_H - 1);
 }
 
@@ -754,22 +781,22 @@ static void draw_map(void)
 		if (lo < vx_lo) {
 			draw_rect(lo - STRIP_X, vx_lo - 1, vy_lo, vy_hi);
 			vx_lo = lo - STRIP_X;
-			if (vx_hi - vx_lo >= RING) vx_hi = vx_lo + RING - 1;
+			if (vx_hi - vx_lo >= KEEP_X) vx_hi = vx_lo + KEEP_X - 1;
 		}
 		if (hi > vx_hi) {
 			draw_rect(vx_hi + 1, hi + STRIP_X, vy_lo, vy_hi);
 			vx_hi = hi + STRIP_X;
-			if (vx_hi - vx_lo >= RING) vx_lo = vx_hi - RING + 1;
+			if (vx_hi - vx_lo >= KEEP_X) vx_lo = vx_hi - KEEP_X + 1;
 		}
 		if (top < vy_lo) {
 			draw_rect(vx_lo, vx_hi, top - STRIP_Y, vy_lo - 1);
 			vy_lo = top - STRIP_Y;
-			if (vy_hi - vy_lo >= RING) vy_hi = vy_lo + RING - 1;
+			if (vy_hi - vy_lo >= KEEP_Y) vy_hi = vy_lo + KEEP_Y - 1;
 		}
 		if (bot > vy_hi) {
 			draw_rect(vx_lo, vx_hi, vy_hi + 1, bot + STRIP_Y);
 			vy_hi = bot + STRIP_Y;
-			if (vy_hi - vy_lo >= RING) vy_lo = vy_hi - RING + 1;
+			if (vy_hi - vy_lo >= KEEP_Y) vy_lo = vy_hi - KEEP_Y + 1;
 		}
 		show_cam();
 		return;
@@ -938,8 +965,8 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			uint8_t ox = cur_cx, oy = cur_cy, oon = cur_on;
 			if (on != oon || (on && (cx != ox || cy != oy))) {
 				cur_cx = cx; cur_cy = cy; cur_on = on;
-				if (oon) cell_repaint(ox, oy);
-				if (on) cell_repaint(cx, cy);
+				if (oon) cell_repaint(ox, oy, level);
+				if (on) cell_repaint(cx, cy, level);
 			}
 		}
 		if (turn_dir != 0xFF && nunits) {    // правая кнопка: разворот по одной восьмой,
@@ -961,6 +988,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			if (move_wait) move_wait--;
 			else { move_wait = 3; step_unit(); if (!path_n) ui_dirty(0); }   // в конце — обновить панель
 		}
+		if (an_on && (uint8_t)((uint8_t)frames - an_tm) >= 5) door_anim_step();   // 100 мс (Tile::animate)
 		if (gen_mode && loaded) arrow_tick();   // стрелка над выбранным — после шага и прокрутки
 		break;
 	case EVT_DRAW:
@@ -991,6 +1019,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		turn_dir = 0xFF;
 		wk_u = 0xFF;
 		ar_on = 0;
+		an_on = 0;
 		// Карта боя рисуется в строки холста 200.., а там же задний буфер глобуса (globe.s,
 		// BACK_Y 280): после боя геоскейп обязан нарисовать планету заново, иначе на экране
 		// остаются тайлы поля боя.
@@ -1043,9 +1072,10 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			ui_dirty(0);
 			break;
 		case 8: {                            // конец хода: время и энергия бойцов восстанавливаются,
-			uint8_t list[16];                //   двери НЛО закрываются (BattlescapeGame::endTurn)
+			uint8_t list[24];                //   двери НЛО закрываются (BattlescapeGame::endTurn)
 			uint8_t n = doors_close_ufo(&bmap, list, 8);
-			for (uint8_t i = 0; i < n; i++) cell_repaint(list[i * 2], list[i * 2 + 1]);
+			an_on = 0;
+			for (uint8_t i = 0; i < n; i++) cell_repaint(list[i * 3], list[i * 3 + 1], list[i * 3 + 2]);
 			for (uint8_t i = 0; i < nunits; i++) { units[i].tu = units[i].tu_max; units[i].en = units[i].tu_max; }
 			ui_dirty(0);
 			break;
@@ -1059,11 +1089,9 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			uint8_t dx, dy, ds;
 			if (!gen_mode || !nunits || wk_u != 0xFF || !door_find(&bmap, level, &dx, &dy, &ds)) break;
 			unit_t *u = &units[sel < nunits ? sel : 0];
-			uint8_t ox = u->x, oy = u->y;
 			u->x = dx; u->y = dy; u->z = level;
 			u->dir = ds == 1 ? 6 : 0;         // западная стена — лицом на запад, северная — на север
-			path_n = 0;
-			cell_repaint(ox, oy);
+			path_n = 0;                       // вид пересоберёт center_on_unit
 			dbg_puts("door: at "); dbg_dec(dx); dbg_puts(","); dbg_dec(dy);
 			dbg_puts(" slot "); dbg_dec(ds); dbg_puts("\n");
 			center_on_unit();

@@ -20,6 +20,9 @@
 #define TL_ARROWE 4256         //   её запись для блита (TE_SIZE)
 #define TL_CURSOR 4264         // 4 кадра рамки курсора клетки (TE_SIZE каждый)
 #define TL_UNITS  4296         // бойцы миссии в виде unit_t (units.h), MAX_UNITS записей
+#define TL_UDIDX  4608         // 256 байт: часть «створка в движении» -> номер типа двери НЛО
+#define TL_UDFR   4864         // кадры 1..7 створок по типам дверей НЛО: TL_UDMAX x 7 x TE_SIZE
+#define TL_UDMAX  24
 
 typedef struct {
 	uint16_t set[TL_SETS];     // ресурсы MCDSET наборов миссии
