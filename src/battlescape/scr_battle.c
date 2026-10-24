@@ -43,6 +43,7 @@ static uint16_t mis_deploy = 0xFFFF, mis_ufo = 0xFFFF, mis_craft = 0xFFFF, mis_c
 // Пришельцы: тип НЛО (ufos, #FF — миссия без НЛО) — по нему развёртывание с его составом, раса
 static uint8_t mis_utype = 0xFF, mis_race = 0xFF;
 static uint8_t m_sx, m_sy, m_sz;
+static uint8_t m_cx, m_cy, m_cw, m_cl, m_cbase;   // корабль отряда: прямоугольник, его первая часть
 static far_t cells;                  // начало клеток карты
 static uint8_t loaded;
 static uint8_t gen_mode;             // 1 — показывается сгенерированная карта
@@ -78,7 +79,7 @@ static const wdef_t w_battle[] = {
 	HOT(176, 144, 32, 16, A_CUSTOM, 7, 0),           // следующий боец
 	HOT(208, 144, 32, 16, A_CUSTOM, 9, 0),           // показывать все этажи или только текущий
 	HOT(240, 144, 32, 16, A_CUSTOM, 8, 0),           // конец хода
-	HOT(240, 160, 32, 16, A_POP, 0, ESC),          // выйти из боя
+	HOT(240, 160, 32, 16, A_CUSTOM, 18, ESC),        // прервать миссию (btnAbortClick)
 	// резерв времени (BattlescapeState::btnReserveClick): не резервировать, навскидку, очередь, прицельный
 	HOT(60, 177, 17, 11, A_CUSTOM, 11, 0),
 	HOT(78, 177, 17, 11, A_CUSTOM, 12, 0),
@@ -106,10 +107,22 @@ static const wdef_t w_next[] = {
 	HOT(0, 0, 320, 200, A_CUSTOM, 1, 0),
 };
 
+// AbortMissionState: окно 320x144 на фоне TAC00.SCR — кто в корабле, кто снаружи, вопрос, OK и
+// CANCEL (выхода END_POINT в наших картах нет — строки «в корабле» и «снаружи» стоят в 26 и 54)
+static const wdef_t w_abort[] = {
+	WIN(0, 0, 320, 144, UI_EL_MESSAGEWINDOWBORDER),
+	TXT(16, 26, 304, 17, UI_EL_MESSAGEWINDOWS, DYN(0), BIG),
+	TXT(16, 54, 304, 17, UI_EL_MESSAGEWINDOWS, DYN(1), BIG),
+	TXT(0, 80, 320, 17, UI_EL_MESSAGEWINDOWS, STR_ABORT_MISSION_QUESTION, TC | BIG),
+	BTN(16, 110, 120, 16, UI_EL_MESSAGEWINDOWBUTTONS, STR_OK, A_CUSTOM, 1, ENT),
+	BTN(184, 110, 120, 16, UI_EL_MESSAGEWINDOWBUTTONS, STR_CANCEL_UC, A_POP, 0, ESC),
+};
+
 static const scr_t tab[] = {
 	SCR(SCR_BATTLE, UI_SCR_SAVEMENUS, RES_PAL_BATTLESCAPE, 0, SF_RAWPAL, w_battle),
 	SCR(SCR_NEXT_TURN, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_RAWPAL, w_next),
 	SCR(SCR_ACTION_MENU, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, 0, SF_POPUP | SF_RAWPAL, w_amenu),
+	SCR(SCR_ABORT, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_POPUP | SF_RAWPAL, w_abort),
 };
 
 // Запись юнита для вида — в рабочую страницу; bv_sync переносит их виду
@@ -386,6 +399,7 @@ static uint8_t load_gen(uint16_t terrain)
 	vis_build(q.cells, q.sx, q.sy, q.sz, pf_page);   // маска обзора (vision.c)
 	ndoors = q.ndoors;
 	m_sx = q.sx; m_sy = q.sy; m_sz = q.sz;
+	m_cx = q.cx; m_cy = q.cy; m_cw = q.cw; m_cl = q.cl; m_cbase = q.cbase;
 	cells = q.cells;
 	bmap.cells = cells; bmap.sx = m_sx; bmap.sy = m_sy; bmap.sz = m_sz; bmap.page = pf_page;
 	v.cells = cells; v.sx = m_sx; v.sy = m_sy; v.sz = m_sz; v.page = pf_page;
@@ -500,6 +514,17 @@ static void next_turn_close(void)
 	UI_GO(A_POP, 0);                     // назад в бой: вид соберётся заново (bv_draw)
 }
 
+// ---------------------------------------------------------------- прервать миссию
+// В корабле — на его полу (части от m_cbase) внутри его прямоугольника: так лежат клетки
+// START_POINT (MCD.Special_Type) у карт кораблей; самого признака в наших MCDSET нет
+static uint8_t in_craft(const unit_t *u)
+{
+	if (!m_cw || u->x < m_cx || u->y < m_cy || u->x >= m_cx + m_cw || u->y >= m_cy + m_cl) return 0;
+	uint8_t c;
+	far_read(cells + ((uint32_t)((uint16_t)u->z * m_sy + u->y) * m_sx + u->x) * 4, &c, 1);
+	return c >= m_cbase && c;
+}
+
 // ---------------------------------------------------------------- меню действий
 // BattlescapeState::handleItemClick -> ActionMenuState: пункты — по предмету в руке (bmenu.c),
 // выбранное действие ждёт цели (прицел и выстрел — дальше)
@@ -571,6 +596,16 @@ void bat_text(uint8_t id, uint8_t slot, uint8_t line, char *buf) __banked
 {
 	(void)line;
 	buf[0] = 0;
+	if (id == SCR_ABORT) {               // бойцы на полу своего корабля (START_POINT) и прочие
+		uint8_t in = 0, out = 0;
+		for (uint8_t i = 0; i < nsold; i++) {
+			const unit_t *u = &units[i];
+			if (!u->alive) continue;
+			if (in_craft(u)) in++; else out++;
+		}
+		str_plural(buf, slot ? STR_UNITS_OUTSIDE_one : STR_UNITS_IN_CRAFT_one, slot ? out : in);
+		return;
+	}
 	if (id != SCR_NEXT_TURN) return;
 	char a[16];
 	if (slot == 0) fmt_num(a, bt_turn, 0);                              // TURN> n
@@ -591,6 +626,10 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		return 0;
 	}
 	if (id == SCR_ACTION_MENU) { amenu_event(ev, arg); return 0; }
+	if (id == SCR_ABORT) {               // OK: finishBattle(aborted) — разбора ещё нет, просто выход
+		if (ev == EVT_BUTTON && arg == 1) UI_GO(A_POP2, 0);
+		return 0;
+	}
 	switch (ev) {
 	case EVT_MUSIC: {
 		// Тема боя: роль MK_TACTIC из таблицы MUSGRP (22 §1.3), как GMTACTIC в оригинале
@@ -722,6 +761,12 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			ui_dirty(0);
 			break;
 		case 15: bt_res_kneel = !bt_res_kneel; ui_dirty(0); break;
+		case 18:                             // прервать миссию: окно поверх карты, панель видна
+			if (bv_walking() != 0xFF) break;
+			bv_suspend();
+			marks_show(0, 0);
+			UI_GO(A_PUSH, SCR_ABORT);
+			break;
 		case 16: case 17: amenu_open((uint8_t)(arg - 16)); break;   // handleItemClick
 		case 9:                              // «1/2»: все этажи или только текущий
 			bv_all_levels();

@@ -43,6 +43,7 @@ uint8_t bat_load(bload_t *q) __banked
 	far_t t = FAR(q->page + 1, 0);
 	sets_free();
 	q->nunits = 0;
+	q->cw = 0;
 	// Параметры миссии: размер поля, этажи, скрипт и террейн — из развёртывания, если оно задано
 	// геоскейпом; корабль отряда и НЛО — от цели, иначе первые попавшиеся (отладка)
 	uint8_t mods = 4, levels = 4;
@@ -73,6 +74,7 @@ uint8_t bat_load(bload_t *q) __banked
 		cunit_t cu[MAX_UNITS];
 		unit_t u;
 		mapgen_craft(&c.cx, &c.cy, &c.cw, &c.cl, &c.part_min);
+		q->cx = c.cx; q->cy = c.cy; q->cw = c.cw; q->cl = c.cl; q->cbase = c.part_min;
 		c.cells = q->cells; c.sx = q->sx; c.sy = q->sy;
 		c.craft = q->crew; c.debug_n = 6;
 		uint8_t n = crew_deploy(&c, cu, MAX_UNITS);

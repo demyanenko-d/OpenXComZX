@@ -42,6 +42,7 @@ typedef struct {
 	uint16_t terrain, deploy, ufo, craft, crew;   // миссия (#FFFF — не задано: бой отладочный)
 	uint8_t page;                                 // рабочая страница боя (вторая — page + 1)
 	uint8_t sx, sy, sz, nparts, ndoors, nunits;   // результат
+	uint8_t cx, cy, cw, cl, cbase;                // корабль отряда: прямоугольник, первая часть
 	far_t cells;
 } bload_t;
 uint8_t bat_load(bload_t *q) __banked;          // 1 — карта собрана

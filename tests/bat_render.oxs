@@ -42,6 +42,9 @@ waitmark 248 1500
 wait 10
 shot tmp/shots/bat/04_terrain2.png
 
+# ESC — окно «прервать миссию» (AbortMissionState), ENTER — OK
 key SPACE
+waitmark 251 200
+key ENTER
 waitmark 1 300
 exit 0
