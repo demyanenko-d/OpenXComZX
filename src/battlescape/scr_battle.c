@@ -274,13 +274,26 @@ static uint8_t door_try(unit_t *u, uint8_t dir, uint8_t rclick)
 
 // Присесть или встать (BattlescapeGame::kneel): 4 единицы времени вниз, 8 вверх.
 // Сидящего бойца хуже видно и точнее стреляет — это появится вместе с видимостью и стрельбой.
+// Резерв времени для хода ценой cost (BattlescapeGame::checkReservedTU, bhud.c)
+static const uint8_t res_ba[4] = { BA_NONE, BA_SNAPSHOT, BA_AUTOSHOT, BA_AIMEDSHOT };
+static uint8_t reserve_ok(uint8_t i, uint8_t cost)
+{
+	const unit_t *u = &units[i];
+	rsreq_t r;
+	r.unit = i; r.page = pf_page; r.tu_max = u->tu_max; r.tu = u->tu; r.kneeled = u->kneel;
+	r.reserve = res_ba[bt_reserve & 3]; r.res_kneel = bt_res_kneel; r.hand = u->hand;
+	return hud_reserve(&r, cost);
+}
+
 static void do_kneel(void)
 {
 	if (!nunits || bv_walking() != 0xFF) return;
 	uint8_t i = sel < nunits ? sel : 0;
 	unit_t *u = &units[i];
 	uint8_t cost = u->kneel ? KNEEL_TU_UP : KNEEL_TU_DOWN;
-	if (u->tu < cost) return;
+	// BattlescapeGame::kneel: присесть при резерве «на колено» можно всегда, иначе — резерв
+	if (!(!u->kneel && bt_res_kneel) && !reserve_ok(i, cost)) return;
+	if (u->tu < cost) { hud_warn(STR_NOT_ENOUGH_TIME_UNITS); return; }
 	u->tu -= cost;
 	u->kneel = !u->kneel;
 	path_n = 0;
@@ -315,12 +328,13 @@ static void step_unit(void)
 	}
 	if (u->dir != d) { turn_to(i, d); return; }      // сперва развернуться лицом к шагу
 	uint8_t r = door_try(u, d, 0);                   // дверь открывается вместо шага, створку
-	if (r == 1) path_n = 0;                          //   НЛО ждут (UnitWalkBState); не хватило
+	if (r == 1) { path_n = 0; hud_warn(STR_NOT_ENOUGH_TIME_UNITS); }   //   НЛО ждут; не хватило
 	if (r != 2) return;                              //   времени — путь прерван
 	int16_t nx = (int16_t)u->x + dir_dx[d], ny = (int16_t)u->y + dir_dy[d];
 	if (nx < 0 || ny < 0 || nx >= m_sx || ny >= m_sy) { path_n = 0; return; }
 	uint8_t cost = cell_cost(&bmap, (uint8_t)nx, (uint8_t)ny, u->z, d, STEP_TU);
-	if (u->tu < cost) { path_n = 0; return; }
+	if (!reserve_ok(i, cost)) { path_n = 0; return; }   // UnitWalkBState: checkReservedTU
+	if (u->tu < cost) { path_n = 0; hud_warn(STR_NOT_ENOUGH_TIME_UNITS); return; }
 	uint8_t ox = u->x, oy = u->y, oz = u->z;
 	uint8_t nz = cell_step_z(&bmap, ox, oy, oz, (uint8_t)nx, (uint8_t)ny);   // лестница вверх, падение вниз
 	u->tu -= cost;
@@ -391,6 +405,7 @@ static uint8_t load_gen(uint16_t terrain)
 	}
 	for (uint8_t i = 0; i < nsold; i++) {   // боевые показатели: солдат кампании или отладочные
 		unit_t *u = &units[i];
+		u->hand = 1;                         // активная рука — правая (BattleUnit: STR_RIGHT_HAND)
 		if (u->sol != 0xFF) {
 			soldier_t s;
 			far_read(FAR(SOLDIER_PAGE, 0) + (uint16_t)u->sol * sizeof s, &s, sizeof s);
@@ -502,6 +517,7 @@ static void amenu_open(uint8_t right)
 	r.kneel = u->kneel; r.page = pf_page;
 	if (!am_build(&r)) return;
 	bt_hand = right;
+	units[i].hand = right;               // setActiveHand
 	am_hl = 0xFF;
 	path_n = 0;
 	bv_snapshot();                       // карта остаётся под меню картинкой
@@ -585,6 +601,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	case EVT_OPEN:
 		bv_open();                           // список вида, холсты, сплит, курсор боя
 		marks_init();                        // плитки значков замеченных (спрайты TSU)
+		hud_draw(0);                         // плашки предупреждения нет
 		nmarks = 0;
 		// Память банка при старте не обнуляется: без этого aliens_free отдавал в пул мусорные
 		// номера страниц (а с ними — каталог SD, и карта не находила своих блоков)
@@ -620,6 +637,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		}
 		if (an_on && (uint8_t)((uint8_t)frames - an_tm) >= 5) door_anim_step();   // 100 мс (Tile::animate)
 		if ((uint8_t)((uint8_t)frames - bl_tm) >= 5) { bl_tm = (uint8_t)frames; marks_blink(); }   // _animTimer
+		if (hud_warn_tick()) ui_dirty(0);    // плашка исчезла — панель заново
 		bv_tick(sel);                        // прокрутка, курсор клетки, стрелка над выбранным
 		break;
 	}

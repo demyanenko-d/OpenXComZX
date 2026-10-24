@@ -1,0 +1,37 @@
+# Предупреждения на панели боя (WarningMessage, bhud.c) и резерв времени (checkReservedTU):
+#   время бойца 2, «присесть» (K) — «Not enough time units»;
+#   резерв на прицельный выстрел (у отладочного оружия — 30), время 31 — присесть (4) съело бы
+#   резерв: «Time units reserved for aimed shot», время не тронуто.
+# Время бойца 0 — байт 6 записи unit_t (страница банка 31 #4E, с #3000).
+# Снимки — tmp/shots/bat_warn/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_warn.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _bat_still 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+poke 4E:3006 2
+key k
+wait 25
+shot tmp/shots/bat_warn/00_no_tu.png
+expect 4E:3006 2
+wait 80
+shot tmp/shots/bat_warn/01_faded.png
+# резерв на прицельный выстрел (кнопка в (60, 189)) и попытка присесть
+pokew _cursor_x 66
+pokew _cursor_y 193
+click L
+wait 20
+poke 4E:3006 31
+pokew _cursor_x 160
+pokew _cursor_y 100
+key k
+wait 25
+shot tmp/shots/bat_warn/02_reserved.png
+expect 4E:3006 31
+echo battle warnings OK
+exit 0

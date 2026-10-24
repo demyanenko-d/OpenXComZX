@@ -30,7 +30,8 @@ typedef struct {
 	uint16_t node;             // узел маршрута, на котором поставлен (#FFFF — нет)
 	uint8_t en_rec;            // энергии за ход (BattleUnit::recoverTimeUnits)
 	uint8_t sol;               // запись солдата кампании (имя, звание, снаряжение), #FF — нет
-	uint8_t pad[9];            // запас: запись — 48 байт, адреса полей в тестах не плывут
+	uint8_t hand;              // активная рука: 1 — правая (BattleUnit::_activeHand)
+	uint8_t pad[8];            // запас: запись — 48 байт, адреса полей в тестах не плывут
 } unit_t;
 _Static_assert(sizeof(unit_t) == 48, "unit_t");
 

@@ -22,4 +22,15 @@ typedef struct {
 
 void hud_draw(const bhud_t *h) __banked;
 
+// WarningMessage: плашка 224x24 в (48, 176) поверх панели, через 1.2 с пропадает
+void hud_warn(uint16_t str) __banked;
+uint8_t hud_warn_tick(void) __banked;      // 1 — плашка исчезла: перерисовать панель
+
+// BattlescapeGame::checkReservedTU (сторона игрока): хватит ли времени на ход ценой tu, не тратя
+// резерв на выстрел оружием из рук и на приседание. 0 — нельзя (плашка уже показана).
+typedef struct {
+	uint8_t unit, page, tu_max, tu, kneeled, reserve, res_kneel, hand;
+} rsreq_t;
+uint8_t hud_reserve(const rsreq_t *r, uint8_t cost) __banked;
+
 #endif
