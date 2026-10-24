@@ -9,7 +9,8 @@
 typedef struct { uint8_t x, y, z, tu, hp, en, mor; } cunit_t;
 
 // Боец экрана боя (scr_battle.c, память банка 28): клетка, направление, жив, на колене, показатели
-#define MAX_UNITS 12
+#define MAX_UNITS 12            // бойцов X-COM
+#define MAX_BUNITS 40           // юнитов миссии всего (бойцы, пришельцы, мирные)
 typedef struct { uint8_t x, y, z, dir, alive, kneel; uint8_t tu, tu_max, hp, hp_max, en, mor; } unit_t;
 
 // Загрузка миссии для экрана боя (bload.c): генератор карты, наборы частей, листы бойца и

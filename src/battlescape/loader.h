@@ -19,10 +19,11 @@
 #define TL_ARROW  4160         // стрелка над выбранным бойцом: 9 строк по 10 байт (источник DMA)
 #define TL_ARROWE 4256         //   её запись для блита (TE_SIZE)
 #define TL_CURSOR 4264         // 4 кадра рамки курсора клетки (TE_SIZE каждый)
-#define TL_UNITS  4296         // бойцы миссии в виде unit_t (units.h), MAX_UNITS записей
 #define TL_UDIDX  4608         // 256 байт: часть «створка в движении» -> номер типа двери НЛО
 #define TL_UDFR   4864         // кадры 1..7 створок по типам дверей НЛО: TL_UDMAX x 7 x TE_SIZE
 #define TL_UDMAX  24
+#define TL_UNITS  6208         // юниты миссии в виде unit_t (units.h), MAX_BUNITS записей (до #1A20)
+#define TL_RUNITS 6688         // они же для вида: runit_t (bview.h), MAX_BUNITS по 8 байт (до #1B60)
 
 typedef struct {
 	uint16_t set[TL_SETS];     // ресурсы MCDSET наборов миссии
