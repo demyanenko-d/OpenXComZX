@@ -1,0 +1,80 @@
+# Снимки для README (tools\readme_shots.ps1): главное меню, глобус на закате на зумах 0–3
+# (терминатор, реки, подписи стран и городов), база, Уфопедия. Время стоит и закреплено, курсор
+# скрыт — кадры воспроизводимы. Годится для обеих игр (-Game UFO при сборке).
+# Запуск: powershell -File tools\run.ps1 -Script tests\showcase.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+poke _cursor_off 1
+wait 20
+shot tmp/shots/showcase/01_main.png
+# новая игра -> сложность -> место первой базы -> имя
+pokew _cursor_x 110
+pokew _cursor_y 100
+click L
+waitmark 2 300
+pokew _cursor_x 119
+pokew _cursor_y 172
+click L
+waitmark 43 3000
+pokew _cursor_x 120
+pokew _cursor_y 110
+click L
+waitmark 42 3000
+type Atlantis
+key ENTER
+waitmark 32 3000
+# время стоит (ST->months = -1, как до первой базы), вечер — терминатор в окне
+pokew 06:0030 0xFFFF
+poke 06:0038 17
+poke 06:0037 40
+poke 06:0036 0
+pokew _cursor_x 319
+pokew _cursor_y 199
+# база; возврат на геоскейп рисует его заново уже с новым временем (часы и тень)
+key B
+waitmark 96 300
+wait 30
+shot tmp/shots/showcase/06_base.png
+key SPACE
+waitmark 32 300
+wait 120
+shot tmp/shots/showcase/02_globe_z0.png
+key SS+K
+wait 8
+waitmark 32 3000
+wait 60
+shot tmp/shots/showcase/03_globe_z1.png
+# зумы 2–3 — Средиземноморье: центр вида (ctx.globe_lon/lat, 65536 на круг, север — минус),
+# перерисует нажатие зума
+pokew _ctx+6 2731
+pokew _ctx+8 0xE38E
+key SS+K
+wait 8
+waitmark 32 3000
+wait 60
+shot tmp/shots/showcase/04_globe_z2.png
+key SS+K
+wait 8
+waitmark 32 3000
+wait 60
+shot tmp/shots/showcase/05_globe_z3.png
+# Уфопедия: разделы -> список -> статья
+key U
+waitmark 9 300
+wait 30
+shot tmp/shots/showcase/07_ufopaedia.png
+pokew _cursor_x 160
+pokew _cursor_y 56
+click L
+waitmark 10 300
+pokew _cursor_x 152
+pokew _cursor_y 54
+click L
+waitmark 224 900
+pokew _cursor_x 319
+pokew _cursor_y 199
+wait 30
+shot tmp/shots/showcase/08_article.png
+echo showcase OK
+exit 0

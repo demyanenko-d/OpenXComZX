@@ -10,25 +10,59 @@ ZX Evolution / Pentevo: Z80 до 14 МГц, 4 МБ страничной памя
 
 ## Как это выглядит
 
-Снимки с эмулятора, игра — Terror from the Deep.
+Кадры 320×200 из эмулятора, увеличены вдвое без сглаживания. Игра — Terror from the
+Deep; в конце — то же на UFO Defense. Снимки делает `tools\readme_shots.ps1` из
+автотестов, так что они всегда соответствуют текущей сборке.
 
-|  |  |  |
-|---|---|---|
-| [<img src="project_docs/scr/Screenshot_2.png" width="260">](project_docs/scr/Screenshot_2.png)<br>Главное меню | [<img src="project_docs/scr/Screenshot_3.png" width="260">](project_docs/scr/Screenshot_3.png)<br>Выбор места для первой базы | [<img src="project_docs/scr/Screenshot_4.png" width="260">](project_docs/scr/Screenshot_4.png)<br>Глобус: регионы, тень, метки |
-| [<img src="project_docs/scr/Screenshot_8.png" width="260">](project_docs/scr/Screenshot_8.png)<br>Глобус вблизи: города и страны | [<img src="project_docs/scr/Screenshot_9.png" width="260">](project_docs/scr/Screenshot_9.png)<br>Обнаружена подлодка пришельцев | [<img src="project_docs/scr/Screenshot_10.png" width="260">](project_docs/scr/Screenshot_10.png)<br>Запуск перехвата |
-| [<img src="project_docs/scr/Screenshot_11.png" width="260">](project_docs/scr/Screenshot_11.png)<br>Корабль в полёте: смена приказа | [<img src="project_docs/scr/Screenshot_5.png" width="260">](project_docs/scr/Screenshot_5.png)<br>База | [<img src="project_docs/scr/Screenshot_6.png" width="260">](project_docs/scr/Screenshot_6.png)<br>Снаряжение «Тритона» |
-| [<img src="project_docs/scr/Screenshot_7.png" width="260">](project_docs/scr/Screenshot_7.png)<br>Исследования: распределение учёных | [<img src="project_docs/scr/Screenshot_1.png" width="260">](project_docs/scr/Screenshot_1.png)<br>Заставка |  |
+### Геоскейп
+
+| | |
+|---|---|
+| [<img src="project_docs/scr/geo_globe.png" width="400">](project_docs/scr/geo_globe.png)<br>Глобус на закате: тень по времени суток | [<img src="project_docs/scr/geo_cities.png" width="400">](project_docs/scr/geo_cities.png)<br>Ближний зум: города, реки, подписи стран |
+| [<img src="project_docs/scr/geo_ufo.png" width="400">](project_docs/scr/geo_ufo.png)<br>Обнаружена подлодка пришельцев | [<img src="project_docs/scr/geo_dogfight.png" width="400">](project_docs/scr/geo_dogfight.png)<br>Перехват: бой с USO |
+
+### Базы
+
+| | |
+|---|---|
+| [<img src="project_docs/scr/base_view.png" width="400">](project_docs/scr/base_view.png)<br>База | [<img src="project_docs/scr/base_build.png" width="400">](project_docs/scr/base_build.png)<br>Строительство: рамка габаритов модуля |
+| [<img src="project_docs/scr/base_research.png" width="400">](project_docs/scr/base_research.png)<br>Исследования: распределение учёных | [<img src="project_docs/scr/base_manufacture.png" width="400">](project_docs/scr/base_manufacture.png)<br>Производство |
+
+### Экипаж и наземный бой
+
+| | |
+|---|---|
+| [<img src="project_docs/scr/crew_soldier.png" width="400">](project_docs/scr/crew_soldier.png)<br>Карточка бойца | [<img src="project_docs/scr/crew_equipment.png" width="400">](project_docs/scr/crew_equipment.png)<br>Снаряжение корабля |
+| [<img src="project_docs/scr/crew_inventory.png" width="400">](project_docs/scr/crew_inventory.png)<br>Инвентарь бойца: оружие заряжено, обойма под курсором | [<img src="project_docs/scr/crew_battle.png" width="400">](project_docs/scr/crew_battle.png)<br>Наземный бой: отряд в «Тритоне» |
+
+### Уфопедия и отчёты
+
+| | |
+|---|---|
+| [<img src="project_docs/scr/info_craft.png" width="400">](project_docs/scr/info_craft.png)<br>Уфопедия: корабль | [<img src="project_docs/scr/info_weapon.png" width="400">](project_docs/scr/info_weapon.png)<br>Уфопедия: оружие |
+| [<img src="project_docs/scr/info_report.png" width="400">](project_docs/scr/info_report.png)<br>Отчёт за месяц | [<img src="project_docs/scr/info_graphs.png" width="400">](project_docs/scr/info_graphs.png)<br>Графики: доход по странам |
+
+### X-COM: UFO Defense
+
+Тот же код, данные из UFO Defense: правила, палитры и цвета интерфейса — свои у каждой игры.
+
+| | |
+|---|---|
+| [<img src="project_docs/scr/ufo_globe.png" width="400">](project_docs/scr/ufo_globe.png)<br>Геоскейп | [<img src="project_docs/scr/ufo_base.png" width="400">](project_docs/scr/ufo_base.png)<br>База |
+| [<img src="project_docs/scr/ufo_article.png" width="400">](project_docs/scr/ufo_article.png)<br>Уфопедия | [<img src="project_docs/scr/ufo_inventory.png" width="400">](project_docs/scr/ufo_inventory.png)<br>Инвентарь бойца |
 
 ## Что уже работает
 
 | Часть | Состояние |
 |---|---|
-| Геоскейп | глобус с тенью и метками, время, обнаружение и полёты НЛО, перехват, воздушный бой, места миссий и базы пришельцев, конец месяца, счёт и концовки |
-| Базы | строительство, экипировка, склад, переводы, исследования и производство, экономика, инвентарь бойца |
-| Уфопедия | статьи всех разделов |
+| Геоскейп | глобус с тенью, реками, городами и метками (шесть зумов, ускорен под 14 МГц), время, обнаружение и полёты НЛО, перехват, воздушный бой (до четырёх сразу), места миссий и базы пришельцев, конец месяца, счёт и концовки |
+| Базы | строительство, склад, закупки и продажа, переводы, исследования и производство, экономика, оборона базы |
+| Экипаж | бойцы, корабли и их оружие, броня, снаряжение корабля, инвентарь бойца (раскладка, зарядка и разрядка оружия) |
+| Уфопедия | статьи всех разделов, графики, отчёты |
 | Наземный бой | генератор карты по `mapScript`, отрисовка изометрии, отряд с корабля, ходьба с учётом стен, дверей и этажей, приседание, панель |
-| Сохранения | в память эмулятора; на SD-карту — в работе |
+| Сохранения | в эмуляторе — в файлы; на железе — в памяти до выключения, запись на SD-карту в работе |
 | Звук | музыка четырьмя способами вывода, конвертер из ADLIB/MIDI |
+| Железо | данные читаются с SD-карты FAT32 через DMA; игра запускается на настоящем ZX Evolution |
 
 Чего пока нет: пришельцы и стрельба в бою, видимость и туман войны, разбор после
 боя, звуковые эффекты. Подробный список — [project_docs/14_todo.md](project_docs/14_todo.md).
@@ -55,10 +89,18 @@ powershell -File tools\build.ps1 -Game UFO    # UFO
 ```powershell
 powershell -File tools\run.ps1                # запустить в эмуляторе
 powershell -File tools\runtests.ps1           # все автотесты
+powershell -File tools\readme_shots.ps1       # снимки для этой страницы
 ```
 
 Автотесты — сценарии в `tests\*.oxs`: эмулятор проигрывает нажатия, сверяет память
 и делает снимки экрана. Код выхода 0 — тест прошёл.
+
+## На настоящем железе
+
+`powershell -File tools\dist.ps1` собирает обе игры и раскладывает содержимое карты
+в `distr\` (игры, данные `OXZ\`, загрузчик Wild Commander), а образ — в `oxz_card.img`.
+Карта — один раздел **FAT32** (с FAT16 TS-BIOS не грузится), содержимое `distr\` —
+в корень. Подробно — [project_docs/23_distribution.md](project_docs/23_distribution.md).
 
 ## Из чего состоит
 
@@ -66,7 +108,7 @@ powershell -File tools\runtests.ps1           # все автотесты
 |---|---|
 | `src/kernel/` | ядро: старт, прерывания, страницы, дальняя память, ресурсы, текст, SD-карта (Win0 — только ассемблер) |
 | `src/common/` | интерфейс, общий для геоскейпа и боя: виджеты, меню, Уфопедия |
-| `src/geoscape/` | кампания: время, месяц, сохранение; `earth/` — глобус, окна геоскейпа, НЛО и корабли; `base/` — базы, лаборатория, производство, экономика |
+| `src/geoscape/` | кампания: время, месяц, сохранение; `earth/` — глобус, окна геоскейпа, НЛО и корабли; `base/` — базы, лаборатория, производство, экономика, инвентарь |
 | `src/battlescape/` | наземный бой: генератор карты, отрисовка, бойцы, поиск пути, двери |
 | `OxzConv/` | конвертер данных игры в формат порта (C#) |
 | `tools/` | сборка, запуск, тесты, замеры, вспомогательные скрипты |
