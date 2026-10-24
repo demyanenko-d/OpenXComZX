@@ -86,6 +86,7 @@ uint8_t bat_load(bload_t *q) __banked
 			u.tu = u.tu_max = cu[i].tu;
 			u.hp = u.hp_max = cu[i].hp;
 			u.en = u.en_max = cu[i].en; u.mor = cu[i].mor;
+			u.en_rec = cu[i].tu / 3;     // бойцу — треть начального времени (у нас — текущего)
 			far_write(t + TL_UNITS + (uint16_t)i * sizeof u, &u, sizeof u);
 		}
 		q->nunits = n;

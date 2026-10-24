@@ -20,7 +20,7 @@ $ENTRY = '0x7FE0'; $STACK_TOP = '0x3EF0'   # впритык под вектор�
 # килобайта, до кольца остаётся меньше полутора, поэтому в прерывании стоит сторож
 # (crt0.s, STACK_GUARD). Вынести кольцо в свою страницу — 14 §todo.
 $MUSIC_LOC = '0x2000'; $MUSIC_END = '0x3010'
-$RES_PAGE = 0x50; $RES_LAST = 0x8F          # пакеты данных (map.h RES_PAGE..RES_LAST; #90–#9F — второй холст боя)
+$RES_PAGE = 0x50; $RES_LAST = 0x87          # пакеты данных (map.h RES_PAGE..RES_LAST; #88–#8F — банки кода 33–40, #90–#AF — холсты боя)
 
 # Общий код (Win0): ассемблер ядра и C-модули без банка.
 $asm_common = @('kernel\win0\crt0', 'kernel\win0\bank', 'kernel\dmabuf', 'kernel\win0\glyph', 'kernel\win0\mul32', 'kernel\win0\div32', 'kernel\sd', 'kernel\win0\pages', 'kernel\win0\far', 'kernel\win0\res', 'kernel\win0\dbg', 'kernel\win0\input', 'kernel\win0\music_s', 'kernel\win0\scrutil', 'kernel\win0\text')   # crt0 — первым: порядок областей; kernel\win0 — код окна 0; dmabuf (буферы DMA в Win1) и sd (код в банке 12) — ассемблер ядра вне Win0

@@ -26,6 +26,7 @@
 #include "deploy.h"
 #include "vision.h"
 #include "rules.h"
+#include "text.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 
@@ -46,6 +47,8 @@ static uint8_t gen_mode;             // 1 — показывается сген�
 static unit_t __at(0xB000) units[MAX_BUNITS];
 static uint8_t nunits;
 static uint8_t nsold;                    // бойцы X-COM — первые nsold юнитов, дальше пришельцы
+static uint8_t bt_turn = 1, bt_side;     // номер хода и чей ход (FACTION_*)
+static void next_turn_close(void);       // окно хода (ниже)
 static adep_t __at(0xBF60) adq;          // расстановка пришельцев и их листы (deploy.c; до #BF80)
 static uint16_t ufo_deploy(uint8_t utype);   // развёртывание по типу НЛО (ниже)
 static uint8_t sel;                      // выбранный боец (панель показывает его состояние)
@@ -73,8 +76,20 @@ static const wdef_t w_battle[] = {
 	HOT(240, 160, 32, 16, A_POP, 0, ESC),          // выйти из боя
 };
 
+// NextTurnState (REF/OpenXcom/src/Battlescape/NextTurnState.cpp): окно 320x200 на фоне TAC00.SCR,
+// крупно по центру — ход, сторона и «нажмите кнопку»; любая кнопка или клавиша закрывает.
+// Заголовок STR_OPENXCOM — добавка OpenXcom, в оригинале его нет.
+static const wdef_t w_next[] = {
+	WIN(0, 0, 320, 200, UI_EL_MESSAGEWINDOWS),
+	TXT(0, 92, 320, 17, UI_EL_MESSAGEWINDOWS, DYN(0), TC | BIG),
+	TXT(0, 108, 320, 17, UI_EL_MESSAGEWINDOWS, DYN(1), TC | BIG),
+	TXT(0, 132, 320, 17, UI_EL_MESSAGEWINDOWS, STR_PRESS_BUTTON_TO_CONTINUE, TC | BIG),
+	HOT(0, 0, 320, 200, A_CUSTOM, 1, 0),
+};
+
 static const scr_t tab[] = {
 	SCR(SCR_BATTLE, UI_SCR_SAVEMENUS, RES_PAL_BATTLESCAPE, 0, SF_RAWPAL, w_battle),
+	SCR(SCR_NEXT_TURN, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_RAWPAL, w_next),
 };
 
 // Запись юнита для вида — в рабочую страницу; bv_sync переносит их виду
@@ -318,6 +333,8 @@ static uint8_t load_gen(uint16_t terrain)
 	bv_sync(nunits);
 	see_update();                        // кого отряд видит с места высадки
 	an_on = 0;
+	bt_turn = 1;
+	bt_side = FACTION_PLAYER;
 	gen_mode = 1;
 	sel = 0;
 	if (nunits) center_on_unit();        // камера на первого бойца отряда
@@ -352,6 +369,49 @@ static uint16_t ufo_deploy(uint8_t utype)
 	return i < t.n ? i : 0xFFFF;
 }
 
+// ---------------------------------------------------------------- ход сторон
+// BattlescapeGame::endTurn / SavedBattleGame::endTurn: X-COM -> пришельцы -> (мирные) -> X-COM,
+// номер хода растёт, когда ход снова у X-COM. Сторона, к которой перешёл ход, восстанавливает
+// время и энергию (BattleUnit::prepareNewTurn -> recoverTimeUnits; вес снаряжения и раны — со
+// стрельбой), чужие прячутся до нового пересчёта обзора. После хода — окно NextTurnState.
+// Хода пришельцев (ИИ) ещё нет: их ход кончается сразу.
+static void side_prepare(uint8_t side)
+{
+	for (uint8_t i = 0; i < nunits; i++) {
+		unit_t *u = &units[i];
+		if (!u->alive || u->faction != side) continue;
+		u->tu = u->tu_max;
+		uint16_t e = (uint16_t)u->en + u->en_rec;
+		u->en = e > u->en_max ? u->en_max : (uint8_t)e;
+	}
+}
+
+static void end_turn(void)
+{
+	bt_side = FACTION_HOSTILE;
+	side_prepare(FACTION_HOSTILE);
+	for (uint8_t i = nsold; i < nunits; i++) units[i].seen = 0;   // setVisible(false) не своим
+	for (uint8_t i = 0; i < nunits; i++) ru_put(i);
+	bv_sync(nunits);
+	path_n = 0;
+	turn_dir = 0xFF;
+	bv_suspend();                        // окно рисуется в строки 0–199 основного холста
+	UI_GO(A_PUSH, SCR_NEXT_TURN);
+}
+
+static void next_turn_close(void)
+{
+	if (bt_side == FACTION_HOSTILE) {    // ход пришельцев: ИИ ещё нет — сразу ход X-COM
+		bt_side = FACTION_PLAYER;
+		bt_turn++;
+		side_prepare(FACTION_PLAYER);
+		see_update();                    // заново: кого отряд видит с мест, где стоит
+		UI_GO(A_POP_PUSH, SCR_NEXT_TURN);
+		return;
+	}
+	UI_GO(A_POP, 0);                     // назад в бой: вид соберётся заново (bv_draw)
+}
+
 // Геоскейп сообщает, какая миссия начинается: развёртывание (state.h site_t.deployment),
 // террейн НЛО и террейн корабля отряда; #FFFF — не задано. utype — тип НЛО (#FF — не НЛО),
 // race — раса миссии (#FF — из развёртывания).
@@ -372,8 +432,13 @@ uint8_t bat_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
 
 void bat_text(uint8_t id, uint8_t slot, uint8_t line, char *buf) __banked
 {
-	(void)id; (void)slot; (void)line;
+	(void)line;
 	buf[0] = 0;
+	if (id != SCR_NEXT_TURN) return;
+	char a[16];
+	if (slot == 0) fmt_num(a, bt_turn, 0);                              // TURN> n
+	else str_copy(bt_side == FACTION_PLAYER ? STR_XCOM : STR_ALIENS, a, sizeof a);   // SIDE> ...
+	str_fmt(buf, str_get(slot ? STR_SIDE : STR_TURN), a, "");
 }
 
 uint8_t bat_rows(uint8_t id, uint8_t slot) __banked
@@ -384,7 +449,10 @@ uint8_t bat_rows(uint8_t id, uint8_t slot) __banked
 
 uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 {
-	(void)id;
+	if (id == SCR_NEXT_TURN) {
+		if (ev == EVT_BUTTON || ev == EVT_KEY) next_turn_close();
+		return 0;
+	}
 	switch (ev) {
 	case EVT_MUSIC: {
 		// Тема боя: роль MK_TACTIC из таблицы MUSGRP (22 §1.3), как GMTACTIC в оригинале
@@ -506,8 +574,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				bv_cell(list[i * 3], list[i * 3 + 1], list[i * 3 + 2]);
 				vis_cell(cells, list[i * 3], list[i * 3 + 1], list[i * 3 + 2], pf_page);
 			}
-			for (uint8_t i = 0; i < nunits; i++) { units[i].tu = units[i].tu_max; units[i].en = units[i].tu_max; }
-			ui_dirty(0);
+			end_turn();
 			break;
 		}
 		}

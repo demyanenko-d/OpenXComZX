@@ -28,6 +28,7 @@ typedef struct {
 	uint16_t type;             // units (пришельцы, мирные), #FFFF — боец X-COM
 	uint8_t seen;              // виден стороне X-COM
 	uint16_t node;             // узел маршрута, на котором поставлен (#FFFF — нет)
+	uint8_t en_rec;            // энергии за ход (BattleUnit::recoverTimeUnits)
 } unit_t;
 
 // Загрузка миссии для экрана боя (bload.c): генератор карты, наборы частей, листы бойца и

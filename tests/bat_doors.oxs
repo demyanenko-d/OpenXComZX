@@ -39,10 +39,17 @@ pokew _cursor_y 88
 click R
 wait 150
 shot tmp/shots/doors/05_open_north.png
-# конец хода: двери НЛО закрываются (BattlescapeGame::endTurn -> closeUfoDoors)
+# конец хода: двери НЛО закрываются (BattlescapeGame::endTurn -> closeUfoDoors), окно хода
+# пришельцев (NextTurnState), их ход (пока пустой), окно хода X-COM, снова бой
 pokew _cursor_x 250
 pokew _cursor_y 150
 click L
 wait 60
-shot tmp/shots/doors/06_end_turn.png
+shot tmp/shots/doors/06_turn_aliens.png
+click L
+wait 60
+shot tmp/shots/doors/07_turn_xcom.png
+click L
+wait 80
+shot tmp/shots/doors/08_end_turn.png
 exit 0

@@ -122,6 +122,7 @@
 
 // --- наземный бой (банк 28, battlescape/scr_battle.c); 248.. — сюда
 #define SCR_BATTLE           248
+#define SCR_NEXT_TURN        249       // NextTurnState: ход и сторона
 
 #define SCR_LAST             255
 

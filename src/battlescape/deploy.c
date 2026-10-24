@@ -147,6 +147,7 @@ static uint16_t alien_make(unit_t *a, uint16_t type, uint8_t rank, uint8_t diff,
 	a->bravery = st[3]; a->reactions = st[4]; a->firing = st[5]; a->throwing = st[6];
 	a->strength = st[7]; a->psi_str = st[8]; a->psi_skill = st[9]; a->melee = st[10];
 	a->mor = 100;
+	a->en_rec = ur.energy_recovery;
 	return sheet;
 }
 

@@ -4,7 +4,7 @@
 # Клавиша J — камера на пришельца (в консоль — «alien N at x,y,z sheet S hp H tu T»), Shift+J —
 # ещё и выбранного бойца к нему: в трёх клетках, лицом к нему, — пришелец должен стать видимым.
 # Проверка по памяти: units[] логики боя — страница банка 31 (#4E) со смещения #3000, запись
-# unit_t — 37 байт: faction — байт 12, sheet — 13, seen — 34. Седьмой юнит (номер 6, #30DE) —
+# unit_t — 38 байт: faction — байт 12, sheet — 13, seen — 34. Седьмой юнит (номер 6, #30E4) —
 # пришелец (FACTION_HOSTILE = 1) с собранным листом брони (sheet 1), сперва не виден.
 # В сценарии CS — Caps Shift (заглавная), SS — Symbol Shift.
 # Снимки — tmp/shots/bat_aliens/.
@@ -19,9 +19,9 @@ poke _bat_still 1
 poke _ui_request 248
 waitmark 248 900
 wait 150
-expect 4E:30EA 1
-expect 4E:30EB 1
-expect 4E:3100 0
+expect 4E:30F0 1
+expect 4E:30F1 1
+expect 4E:3106 0
 key j
 wait 60
 shot tmp/shots/bat_aliens/00_hidden.png
@@ -29,7 +29,7 @@ key x
 wait 10
 key CS+J
 wait 60
-expect 4E:3100 1
+expect 4E:3106 1
 shot tmp/shots/bat_aliens/01_seen.png
 echo battle aliens OK
 exit 0
