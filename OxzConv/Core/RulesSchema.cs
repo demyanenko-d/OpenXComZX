@@ -322,6 +322,9 @@ namespace OxzConv
 						"пары (alienMissions, вес)"),
 					F("genMissionFreq", "u8", "0"),
 					F("alert", "str", "STR_ALIENS_TERRORISE"), F("alertBackground", "res", "BACK03.SCR"),
+					F("race", "ref:alienRaces", comment: "раса развёртывания (база пришельцев и т.п.); #FFFF — от миссии"),
+					Fn("data", "nums", (e, k, rs) => DeployData(Y.Get(e, "data")),
+						"расстановка: [alienRank, lowQty, highQty, dQty, extraQty, percentageOutsideUfo] x n (DeploymentData)"),
 				},
 			});
 
@@ -547,6 +550,17 @@ namespace OxzConv
 			foreach (var n in new[] { inv + "M0.SPK", inv + ".SPK", inv })
 				if (rs.ResFind(n) >= 0) return n;
 			return null;
+		}
+
+		// alienDeployments.data (AlienDeployment.cpp:58 и :137, YAML::convert<DeploymentData>): по 6 чисел
+		// на запись; отсутствующее поле — 0 (extraQty в OpenXcom тоже 0). itemSets пока не нужны.
+		static List<object> DeployData(object data)
+		{
+			var l = new List<object>();
+			foreach (var d in Y.List(data) ?? new List<object>())
+				foreach (var f in new[] { "alienRank", "lowQty", "highQty", "dQty", "extraQty", "percentageOutsideUfo" })
+					l.Add(Y.Int(Y.Get(d, f)));
+			return l;
 		}
 
 		// Имя ресурса кадров брони: его кладёт BattleData (шаг боя идёт раньше правил), карту
