@@ -32,7 +32,7 @@
 	.globl	_gl_eb, _gl_ec, _gl_wpg, _gl_epg, _gl_limb, _gl_gtex, _gl_res, _gl_eptr, _gl_sptr, _gl_nedge
 	.globl	_gl_crp, _gl_cpp, _gl_cmp, _gl_vsp, _gl_nvis, _gl_cn, _gl_nb, _gl_bl
 	.globl	_gl_pv, _gl_pd, _gl_pn, _gl_noz, _gl_k, _gl_kpg
-	.globl	_gl_edges, _gl_rows, _gl_rows_pre, _gl_rows_edg, _gl_rows_cap, _gl_capok, _gl_capwant, _gl_bands, _gl_project, _gl_ktab, _gl_cull
+	.globl	_gl_edges, _gl_rows, _gl_rows_vc, _gl_vcrec, _gl_vcpg, _gl_rows_edg, _gl_rows_cap, _gl_capok, _gl_capwant, _gl_bands, _gl_project, _gl_ktab, _gl_cull
 	.globl	_sqz_q14, _sin5_q14, _cos5k_q14, _sin5k_q14
 	.globl	_res_find, _res_game, _far_read, _far_copy, _far_fill, _far_byte, _pg_map3, _pg_alloc, _pg_win3
 	.globl	_dbg_puts, _dbg_dec, ___mulsint2slong, ___muluint2ulong, _frames, _dma_fill_word, _st_, _ctx
@@ -132,6 +132,12 @@ g_init:		.ds	1		; 1 — «нет значения» расставлены
 work:		.ds	1		; страницы: рабочая, рёбер, узоров (0 — не выделены)
 epage:		.ds	1
 strip:		.ds	1
+vcpage:		.ds	1		; кэш отрезков вида сетки (perf/raster.md Б1; 0 — нет: смена солнца — проход кусков)
+vc_ok:		.ds	1		; 1 — в нём отрезки вида vc_z / vc_iv
+vc_z:		.ds	1
+vc_iv:		.ds	2
+vc_lz:		.ds	1		; вид прошлого прохода кусков: тот же снова — это смена солнца, писать
+vc_liv:		.ds	2
 strip_set:	.ds	1		; набор узоров в страницах (#FF — нет)
 valid:		.ds	1
 pre_only:	.ds	1		; 1 — globe_prepare: кадр только в задний буфер (без копии на экран)
@@ -286,6 +292,7 @@ s_view:	.asciz	", view "
 s_sp:	.asciz	" "
 s_sun:	.asciz	", sun "
 s_pre:	.asciz	", pre\n"
+s_vcd:	.asciz	", cached\n"
 s_shp:	.asciz	", shp "
 s_nl:	.asciz	"\n"
 s_sonly: .asciz	"globe: sun only, zoom "
@@ -1487,7 +1494,20 @@ render:
 	or	a, a
 	sbc	hl, de
 	jp	nz, r_sunonly
-	ld	hl, (r_giv)
+	ld	a, (vc_ok)			; отрезки этого вида уже записаны — повтор (смена солнца)
+	or	a, a
+	jr	z, 11$
+	ld	a, (vc_z)
+	ld	b, a
+	ld	a, (r_z)
+	cp	a, b
+	jr	nz, 11$
+	ld	hl, (vc_iv)
+	ld	de, (r_giv)
+	or	a, a
+	sbc	hl, de
+	jp	z, r_vc
+11$:	ld	hl, (r_giv)
 	push	hl
 	ld	a, (r_z)
 	push	af
@@ -1511,7 +1531,41 @@ render:
 	ld	a, (epage)
 	call	_pg_map3
 	call	r_shadow
-	call	_gl_rows_edg			; вид рёбрами (GVE2)
+	xor	a, a				; тот же вид, что в прошлом проходе (смена солнца), — с записью
+	ld	(_gl_vcrec), a			;   отрезков в страницу кэша: дальше смены солнца — повтор
+	ld	a, (vcpage)
+	or	a, a
+	jr	z, 12$
+	ld	(_gl_vcpg), a
+	ld	a, (vc_lz)
+	ld	b, a
+	ld	a, (r_z)
+	cp	a, b
+	jr	nz, 12$
+	ld	hl, (vc_liv)
+	ld	de, (r_giv)
+	or	a, a
+	sbc	hl, de
+	jr	nz, 12$
+	xor	a, a
+	ld	(vc_ok), a
+	inc	a
+	ld	(_gl_vcrec), a
+12$:	call	_gl_rows_edg			; вид рёбрами (GVE2)
+	ld	a, (_gl_vcrec)			; запись дошла до конца — кэш годен
+	or	a, a
+	jr	z, 13$
+	ld	(vc_ok), a
+	ld	a, (r_z)
+	ld	(vc_z), a
+	ld	hl, (r_giv)
+	ld	(vc_iv), hl
+	xor	a, a
+	ld	(_gl_vcrec), a
+13$:	ld	a, (r_z)
+	ld	(vc_lz), a
+	ld	hl, (r_giv)
+	ld	(vc_liv), hl
 	ld	a, (work)
 	call	_pg_map3
 	call	dma_wait
@@ -1534,6 +1588,69 @@ render:
 	call	r_dbgtail
 	ld	hl, #s_pre
 	jp	_dbg_puts
+
+;; ---- тот же вид сетки, другое солнце, отрезки записаны (perf/raster.md Б1): поток вида и проход
+;; кусков не нужны — строки, фон, тень как обычно, затем записи строк и флаги тени копируются в
+;; страницу кэша по тем же адресам, и вывод идёт целиком из неё (_gl_rows_vc). Поток вида в
+;; странице рёбер не тронут.
+r_vc:
+	ld	a, (epage)
+	call	_pg_map3
+	call	r_rows
+	ld	a, (work)
+	call	_pg_map3
+	call	r_bg
+	ld	a, (epage)
+	call	_pg_map3
+	call	r_shadow
+	ld	de, #EP_ROW			; far_copy(FAR(vcpage, EP_ROW), FAR(epage, EP_ROW), GH · 6)
+	ld	bc, #GLOBE_H * 6
+	call	r_vcopy
+	ld	de, #EP_SHF			; то же для флагов тени
+	ld	bc, #GLOBE_H
+	call	r_vcopy
+	ld	a, (vcpage)
+	call	_pg_map3
+	call	_gl_rows_vc
+	ld	a, (work)
+	call	_pg_map3
+	call	dma_wait
+	call	r_setv
+	ld	a, #1
+	ld	(valid), a
+	xor	a, a
+	ld	(geom), a
+	ld	a, (_gl_dbg)
+	or	a, a
+	ret	z
+	ld	hl, #s_zoom
+	call	_dbg_puts
+	ld	a, (r_z)
+	call	dec8
+	ld	hl, #s_c0e
+	call	_dbg_puts
+	ld	hl, (r_giv)
+	call	dec16
+	call	r_dbgtail
+	ld	hl, #s_vcd
+	jp	_dbg_puts
+
+;; far_copy(FAR(vcpage, DE), FAR(epage, DE), BC): в стеке, как у r_shadow, — длина (старшее
+;; слово, младшее), источник (старшее, младшее); приёмник — HL:DE
+r_vcopy:
+	ld	hl, #0
+	push	hl
+	push	bc
+	push	de				; смещение — ещё понадобится для приёмника
+	ld	a, (epage)
+	call	far_mk				; HL:DE — источник
+	ex	(sp), hl			; HL — смещение, в стеке — старшее слово источника
+	push	de
+	ex	de, hl
+	ld	a, (vcpage)
+	call	far_mk				; HL:DE — приёмник
+	call	_far_copy			; стек чистит сама
+	ret
 
 r_sunonly:	; ---- тот же вид, другое солнце: геометрия годна — тень и проход строк
 	ld	a, (geom)
@@ -2709,7 +2826,9 @@ _globe_invalidate::
 	ld	(geom), a
 	ld	(kc_ok), a
 	ld	(row_meta), a
+	ld	(vc_ok), a
 	ld	a, #0xFF
+	ld	(vc_lz), a
 	ld	(cm_zoom), a
 	ld	(bg_zoom), a
 	ld	(v_zoom), a
@@ -2773,7 +2892,16 @@ gd_entry:
 	cp	a, #PG_NONE
 	jr	z, 5$
 	ld	(epage), a
-5$:	ld	a, (work)
+5$:	ld	a, (vcpage)			; кэш отрезков вида — по возможности (нет — смена солнца без него)
+	or	a, a
+	jr	nz, 10$
+	ld	l, #1
+	ld	a, #1
+	call	_pg_alloc
+	cp	a, #PG_NONE
+	jr	z, 10$
+	ld	(vcpage), a
+10$:	ld	a, (work)
 	or	a, a
 	jr	z, 6$
 	ld	a, (strip)
