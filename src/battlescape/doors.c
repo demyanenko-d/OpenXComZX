@@ -96,8 +96,9 @@ uint8_t cell_step_z(const dmap_t *m, uint8_t fx, uint8_t fy, uint8_t z, uint8_t 
 	return nz;
 }
 
-// Заменить часть slot клетки на открытую створку и записать клетку в список перерисовки
-static void door_swap(const dmap_t *m, uint8_t x, uint8_t y, uint8_t z, uint8_t slot,
+// Заменить часть slot клетки (t) на открытую створку и записать клетку в список перерисовки;
+// дверь НЛО ещё и в список открытых — в конце хода она закроется (TileEngine::closeUfoDoors)
+static void door_swap(const dmap_t *m, uint8_t x, uint8_t y, uint8_t z, uint8_t slot, uint8_t t,
 		      uint8_t alt, uint8_t as, uint8_t *list, uint8_t maxcells, uint8_t *n)
 {
 	uint8_t c[4];
@@ -107,6 +108,33 @@ static void door_swap(const dmap_t *m, uint8_t x, uint8_t y, uint8_t z, uint8_t 
 	c[as & 3] = alt;
 	far_write(a, c, 4);
 	if (*n < maxcells) { list[*n * 2] = x; list[*n * 2 + 1] = y; (*n)++; }
+	uint8_t k = part_get(m, PF_UFOOPEN);
+	if ((as & 0x80) && k < PF_UFOMAX) {
+		uint8_t r[5] = { x, y, z, slot, t };
+		far_write(FAR(m->page, PF_UFOOPEN + 1 + k * 5), r, 5);
+		k++;
+		far_write(FAR(m->page, PF_UFOOPEN), &k, 1);
+	}
+}
+
+uint8_t doors_close_ufo(const dmap_t *m, uint8_t *list, uint8_t maxcells) __banked
+{
+	uint8_t k = part_get(m, PF_UFOOPEN), n = 0;
+	for (uint8_t i = 0; i < k; i++) {
+		uint8_t r[5], c[4];
+		far_read(FAR(m->page, PF_UFOOPEN + 1 + i * 5), r, 5);
+		far_t a = cell_addr(m, r[0], r[1], r[2]);
+		far_read(a, c, 4);
+		uint8_t alt = part_get(m, PF_ALT + r[4]), as = part_get(m, PF_ALTSLOT + r[4]) & 3;
+		if (c[as] != alt) continue;          // створку уже сменили (разрушение и т. п.)
+		c[as] = 0;
+		c[r[3]] = r[4];
+		far_write(a, c, 4);
+		if (n < maxcells) { list[n * 2] = r[0]; list[n * 2 + 1] = r[1]; n++; }
+	}
+	k = 0;
+	far_write(FAR(m->page, PF_UFOOPEN), &k, 1);
+	return n;
 }
 
 // Двери НЛО ходят целой стеной: соседние такие же створки открываются вместе
@@ -123,7 +151,7 @@ static void door_adjacent(const dmap_t *m, uint8_t x, uint8_t y, uint8_t z, uint
 			uint8_t c[4];
 			far_read(cell_addr(m, (uint8_t)cx, (uint8_t)cy, z), c, 4);
 			if (c[slot] != t) break;
-			door_swap(m, (uint8_t)cx, (uint8_t)cy, z, slot, alt, as, list, maxcells, n);
+			door_swap(m, (uint8_t)cx, (uint8_t)cy, z, slot, t, alt, as, list, maxcells, n);
 		}
 	}
 }
@@ -148,7 +176,7 @@ uint8_t door_open(const dmap_t *m, uint8_t x, uint8_t y, uint8_t z, uint8_t dir,
 		if (cost == 255) cost = 0;
 		if (tu < cost) return 1;
 		uint8_t as = part_get(m, PF_ALTSLOT + t), cnt = 0;
-		door_swap(m, (uint8_t)cx, (uint8_t)cy, z, slot, alt, as, list, maxcells, &cnt);
+		door_swap(m, (uint8_t)cx, (uint8_t)cy, z, slot, t, alt, as, list, maxcells, &cnt);
 		if (as & 0x80) door_adjacent(m, (uint8_t)cx, (uint8_t)cy, z, slot, t, list, maxcells, &cnt);
 		*spent = cost;
 		return cnt ? 0 : 2;

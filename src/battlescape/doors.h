@@ -27,6 +27,10 @@ uint8_t cell_cost(const dmap_t *m, uint8_t x, uint8_t y, uint8_t z, uint8_t d, u
 uint8_t door_open(const dmap_t *m, uint8_t x, uint8_t y, uint8_t z, uint8_t dir, uint8_t rclick,
 		  uint8_t tu, uint8_t *spent, uint8_t *list, uint8_t maxcells) __banked;
 
+// Закрыть все открытые двери НЛО — конец хода (BattlescapeGame::endTurn -> closeUfoDoors):
+// створки возвращаются, клетки к перерисовке (пары x, y) — в list; вернёт их число
+uint8_t doors_close_ufo(const dmap_t *m, uint8_t *list, uint8_t maxcells) __banked;
+
 // Найти первую дверь на этаже (отладка боя, клавиша D): клетка и слот стены.
 // 1 — нашли. Обход как у отрисовки: ряды Y, внутри ряда X.
 uint8_t door_find(const dmap_t *m, uint8_t z, uint8_t *x, uint8_t *y, uint8_t *slot) __banked;

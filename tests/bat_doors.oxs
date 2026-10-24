@@ -39,4 +39,10 @@ pokew _cursor_y 88
 click R
 wait 150
 shot tmp/shots/doors/05_open_north.png
+# конец хода: двери НЛО закрываются (BattlescapeGame::endTurn -> closeUfoDoors)
+pokew _cursor_x 250
+pokew _cursor_y 150
+click L
+wait 60
+shot tmp/shots/doors/06_end_turn.png
 exit 0

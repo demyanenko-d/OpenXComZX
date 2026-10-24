@@ -16,6 +16,9 @@
 #include "loader.h"
 
 #define MC_SIZE 12                       // байт на часть в таблице набора
+#define UD_MAX  24                       // дверей НЛО на миссию (частей с флагом UFO_Door)
+
+typedef struct { uint8_t part, e[TE_SIZE], yofs, tlevel, flags, slot; } udoor_t;
 
 // Строка таблицы частей: кадр тайлсета в виде, готовом для блита DMA
 //   [0] страница источника, [1..2] смещение, [3] DMALEN (w/2-1), [4] высота,
@@ -67,13 +70,16 @@ uint16_t tiles_load(const tiles_req_t *q, uint8_t *pages, uint8_t *nps,
 	far_fill(FAR(q->page + 1, TL_TILES), 0, 256 * TE_SIZE);
 	far_fill(FAR(q->page + 1, TL_YOFS), 0, 256);
 	far_fill(FAR(q->page, PF_TU), 0, PF_PROPS);   // свойства частей — в первой странице
+	far_fill(FAR(q->page, PF_UFOOPEN), 0, 1);     // открытых дверей НЛО нет
 	sdres_flush();                       // кэш ресурсов отдаёт страницы: тайлсеты важнее
-	uint16_t total = 0;                  // всего частей во всех наборах миссии
-	for (uint8_t s = 0; s < ns; s++) {
-		res_t rm;
-		if (res_find(q->set[s], &rm)) total += rm.a;
-	}
-	uint16_t vnext = 255;                // номера частей «дверь НЛО открыта» — сверху вниз
+	// Двери НЛО открываются заменой на свою часть с открытым кадром (Frame[7]). Номер ей — из тех,
+	// что на карте не встречаются (не в клетках и не открытая половина распашной двери): верхних
+	// свободных номеров не хватает — в миссии бывает 252 части из 255, и двери НЛО молча
+	// оставались закрытыми, боец проходил сквозь них.
+	udoor_t ud[UD_MAX];
+	uint8_t nud = 0, taken[32];
+	memcpy(taken, q->used, sizeof taken);
+	taken[0] |= 1;                       // часть 0 — «пусто»
 	uint16_t part = 0;                   // сквозной номер части миссии
 	for (uint8_t s = 0; s < ns && part < 256; s++) {
 		res_t rm, rt;
@@ -111,28 +117,37 @@ uint16_t tiles_load(const tiles_req_t *q, uint8_t *pages, uint8_t *nps,
 			if ((mc[3] & 8) && mc[8] && base + mc[8] < 256) {
 				uint8_t v = (uint8_t)(base + mc[8]);
 				far_write(FAR(q->page, PF_ALT) + part, &v, 1);
+				taken[v >> 3] |= (uint8_t)(1 << (v & 7));
 				v = far_byte(rm.phys + (uint32_t)mc[8] * MC_SIZE + 5) & 3;
 				far_write(FAR(q->page, PF_ALTSLOT) + part, &v, 1);
 				nd++;
-			} else if ((mc[3] & 4) && vnext > total) {
+			} else if ((mc[3] & 4) && nud < UD_MAX) {
 				uint16_t f7 = (uint16_t)mc[9] | ((uint16_t)mc[10] << 8);
-				if (f7 < nfr) {
-					uint16_t vp = vnext--;
-					tile_entry(e, rt.phys, fdata, f7);
-					far_write(FAR(q->page + 1, TL_TILES) + (uint32_t)(vp - 1) * TE_SIZE, e, TE_SIZE);
-					far_write(FAR(q->page + 1, TL_YOFS) + (vp - 1), &mc[2], 1);
-					uint8_t v = 0;
-					far_write(FAR(q->page, PF_TU) + vp, &v, 1);   // открытая дверь свободна
-					far_write(FAR(q->page, PF_TLEVEL) + vp, &mc[6], 1);
-					far_write(FAR(q->page, PF_FLAGS) + vp, &mc[3], 1);
-					v = (uint8_t)vp;
-					far_write(FAR(q->page, PF_ALT) + part, &v, 1);
-					v = (uint8_t)((mc[5] & 3) | 0x80);
-					far_write(FAR(q->page, PF_ALTSLOT) + part, &v, 1);
-					nd++;
+				if (f7 < nfr) {              // часть открытой двери заведётся после всех наборов
+					udoor_t *d = &ud[nud++];
+					d->part = (uint8_t)part;
+					tile_entry(d->e, rt.phys, fdata, f7);
+					d->yofs = mc[2]; d->tlevel = mc[6]; d->flags = mc[3];
+					d->slot = (uint8_t)((mc[5] & 3) | 0x80);
 				}
 			}
 		}
+	}
+	uint8_t vp = 255;
+	for (uint8_t k = 0; k < nud; k++) {
+		while (vp && (taken[vp >> 3] & (1 << (vp & 7)))) vp--;
+		if (!vp) break;
+		const udoor_t *d = &ud[k];
+		uint8_t v = 0;
+		far_write(FAR(q->page + 1, TL_TILES) + (uint16_t)(vp - 1) * TE_SIZE, d->e, TE_SIZE);
+		far_write(FAR(q->page + 1, TL_YOFS) + (vp - 1), &d->yofs, 1);
+		far_write(FAR(q->page, PF_TU) + vp, &v, 1);   // открытая дверь свободна
+		far_write(FAR(q->page, PF_TLEVEL) + vp, &d->tlevel, 1);
+		far_write(FAR(q->page, PF_FLAGS) + vp, &d->flags, 1);
+		far_write(FAR(q->page, PF_ALT) + d->part, &vp, 1);
+		far_write(FAR(q->page, PF_ALTSLOT) + d->part, &d->slot, 1);
+		nd++;
+		vp--;
 	}
 	*npages = npg;
 	*ndoors = nd;

@@ -1042,10 +1042,14 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			dl_ok = 0;
 			ui_dirty(0);
 			break;
-		case 8:                              // конец хода: время и энергия бойцов восстанавливаются
+		case 8: {                            // конец хода: время и энергия бойцов восстанавливаются,
+			uint8_t list[16];                //   двери НЛО закрываются (BattlescapeGame::endTurn)
+			uint8_t n = doors_close_ufo(&bmap, list, 8);
+			for (uint8_t i = 0; i < n; i++) cell_repaint(list[i * 2], list[i * 2 + 1]);
 			for (uint8_t i = 0; i < nunits; i++) { units[i].tu = units[i].tu_max; units[i].en = units[i].tu_max; }
 			ui_dirty(0);
 			break;
+		}
 		}
 		break;
 	case EVT_KEY: {
