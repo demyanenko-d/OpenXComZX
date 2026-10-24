@@ -228,10 +228,43 @@ namespace OxzConv
 			int nBat = 0, nItems = 0;
 			void AddImg(PakWriter pak, string name, Img img, string pal) { pak.Add(ids.Id(name), ResType.Img8, Sprites.EncodeImg8(img), img.W, img.H); Preview(name, img, pal); }
 			if (gfs.Has("UFOGRAPH/TAC00.SCR")) { AddImg(bat, "TAC00.SCR", Formats.DecodeScr(gfs.Read("UFOGRAPH/TAC00.SCR")), "PAL_BATTLESCAPE"); nBat++; }
+			// Картинки OpenXcom поверх панели (extraSprites.rul; у UFO — кнопки резерва времени в духе
+			// TFTD, BattlescapeState.cpp:179, и два кадра кнопки «присесть», toggleKneelButton)
+			string Extra(string type)
+			{
+				foreach (var e in Y.List(Y.Get(Y.Load(ox.ReadText($"standard/{RuleFolder}/extraSprites.rul")), "extraSprites")) ?? new List<object>())
+					if (Y.Str(Y.Get(e, "type")) == type)
+						foreach (var kv in Y.Map(Y.Get(e, "files")) ?? new Dictionary<object, object>()) return Y.Str(kv.Value);
+				return null;
+			}
 			foreach (var name in new[] { "TAC01.SCR", "DETBORD.PCK", "DETBORD2.PCK", "ICONS.PCK", "MEDIBORD.PCK", "SCANBORD.PCK", "UNIBORD.PCK" })
 			{
 				if (!gfs.Has("UFOGRAPH/" + name)) continue;
-				AddImg(bat, name, Formats.DecodeSpk(gfs.Read("UFOGRAPH/" + name)), "PAL_BATTLESCAPE"); nBat++;
+				var img = Formats.DecodeSpk(gfs.Read("UFOGRAPH/" + name));
+				string res = name == "ICONS.PCK" ? Extra("TFTDReserve") : null;
+				if (res != null)
+				{
+					var r = Png.DecodeIndexed(ox.ReadBytes($"standard/{RuleFolder}/{res}"));
+					for (int y = 0; y < r.H && 176 + y < img.H; y++)
+						for (int x = 0; x < r.W && 48 + x < img.W; x++)
+							if (r.Px[y * r.W + x] != 0) img.Px[(176 + y) * img.W + 48 + x] = r.Px[y * r.W + x];
+				}
+				AddImg(bat, name, img, "PAL_BATTLESCAPE"); nBat++;
+			}
+			string kneel = Extra("KneelButton");
+			if (kneel != null)
+			{
+				var k = Png.DecodeIndexed(ox.ReadBytes($"standard/{RuleFolder}/{kneel}"));
+				var kf = new List<Img>();
+				for (int f = 0; f < 2; f++)
+				{
+					var fr = new Img(32, 16);
+					for (int y = 0; y < 16 && f * 16 + y < k.H; y++)
+						for (int x = 0; x < 32 && x < k.W; x++) fr.Px[y * 32 + x] = k.Px[(f * 16 + y) * k.W + x];
+					kf.Add(fr);
+				}
+				bat.Add(ids.Id("KNEELBTN"), ResType.Sprset, Sprites.EncodeSprset(kf), 2, 32, 16);
+				nBat++;
 			}
 			foreach (var file in gfs.List("UFOGRAPH", "BDY"))
 			{

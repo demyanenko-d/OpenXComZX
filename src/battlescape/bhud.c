@@ -208,8 +208,10 @@ void hud_draw(const bhud_t *h) __banked
 	uint8_t r = h->reserve & 3;
 	invert(rx[r], PY + ry[r], 17, 11, ui_color_in(ui, rel[r], 0));
 	if (h->res_kneel) invert(96, PY + 33, 10, 23, ui_color_in(ui, UI_EL_BUTTONRESERVEKNEEL, 0));
+	// «присесть» (toggleKneelButton): у TFTD — инверсия нажатой, у UFO — кадр OpenXcom KneelButton
+	if (res_game() != 2) gfx_sprite(RES_KNEELBTN, h->on && h->kneel, 112, PY + 16);
+	else if (h->on && h->kneel) invert(112, PY + 16, 32, 16, 0);
 	if (!h->on) return;
-	if (h->kneel) invert(112, PY + 16, 32, 16, 0);   // «присесть»: элемента buttonKneel в правилах нет
 	if (h->sol != 0xFF) {
 		soldier_t s;
 		far_read(FAR(SOLDIER_PAGE, 0) + (uint16_t)h->sol * sizeof s, &s, sizeof s);

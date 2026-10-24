@@ -59,6 +59,8 @@ static uint8_t bt_turn = 1, bt_side;     // номер хода и чей ход
 static uint8_t bt_reserve, bt_res_kneel; // резерв времени (RES_*) и «на колено» — BattlescapeGame
 static void next_turn_close(void);       // окно хода (ниже)
 static void unit_armor(unit_t *u, uint16_t arm);   // броня бойца (ниже)
+static uint8_t reserve_ok(uint8_t i, uint8_t cost);   // резерв времени (ниже)
+static void do_kneel(void);
 static uint16_t ufo_deploy(uint8_t utype);   // развёртывание по типу НЛО (ниже)
 static uint8_t sel;                      // выбранный боец (панель показывает его состояние)
 #define KNEEL_TU_DOWN  4                 // цена приседания и вставания (BattlescapeGame::kneel)
@@ -72,14 +74,16 @@ static const wdef_t w_battle[] = {
 	// по ним боец идёт в клетку. Панель ниже перекрыта своими кнопками.
 	CUSR(0, 0, 320, VIEW_H, DYN(0), A_CUSTOM, 0),
 	// Панель ICONS: кнопки на тех же местах, что в оригинале (BattlescapeState.cpp:100-115).
-	HOT(48, 144, 32, 16, A_CUSTOM, 1, 0),            // боец выше по списку
-	HOT(48, 160, 32, 16, A_CUSTOM, 2, 0),            // боец ниже
+	HOT(48, 144, 32, 16, A_CUSTOM, 1, 0),            // боец на этаж выше (btnUnitUpClick: гравилифт, полёт)
+	HOT(48, 160, 32, 16, A_CUSTOM, 2, 0),            // на этаж ниже
 	HOT(80, 144, 32, 16, A_CUSTOM, 3, 'q'),          // этаж вверх (и Q)
 	HOT(80, 160, 32, 16, A_CUSTOM, 4, 'a'),          // этаж вниз (и A)
 	HOT(112, 160, 32, 16, A_CUSTOM, 10, 'k'),        // присесть и встать
 	HOT(144, 144, 32, 16, A_CUSTOM, 5, 'i'),         // инвентарь
 	HOT(144, 160, 32, 16, A_CUSTOM, 6, 'c'),         // центрировать на бойце
 	HOT(176, 144, 32, 16, A_CUSTOM, 7, 0),           // следующий боец
+	HOT(176, 160, 32, 16, A_CUSTOM, 20, 0),          // следующий, этого больше не выбирать (btnNextStopClick)
+	CUSR(49, 177, 10, 23, NOSTR, A_CUSTOM, 21),      // потратить всё время — правой кнопкой (btnZeroTUsClick)
 	HOT(208, 144, 32, 16, A_CUSTOM, 9, 0),           // показывать все этажи или только текущий
 	HOT(240, 144, 32, 16, A_CUSTOM, 8, 0),           // конец хода
 	HOT(240, 160, 32, 16, A_CUSTOM, 18, ESC),        // прервать миссию (btnAbortClick)
@@ -238,10 +242,21 @@ static const int8_t dir_dy[8] = { -1, -1, 0, 1, 1, 1, 0, -1 };
 
 // Следующий и предыдущий боец отряда: выбор, камера на него и отмена начатого пути
 // (BattlescapeState::btnNextSoldierClick — в оригинале камера тоже переезжает)
+// SavedBattleGame::selectNextPlayerUnit (checkReselect): живой, не отмеченный «больше не выбирать»
+static void sel_step(uint8_t back)
+{
+	uint8_t s = sel;
+	for (uint8_t k = 0; k < nsold; k++) {
+		s = (uint8_t)(back ? (s + nsold - 1) % nsold : (s + 1) % nsold);
+		if (units[s].alive && !units[s].done) break;
+	}
+	sel = s;
+}
+
 static void sel_next(void)
 {
 	if (!nsold) return;
-	sel = (uint8_t)((sel + 1) % nsold);
+	sel_step(0);
 	path_n = 0;
 	see_update();
 	center_on_unit();
@@ -251,7 +266,7 @@ static void sel_next(void)
 static void sel_prev(void)
 {
 	if (!nsold) return;
-	sel = (uint8_t)((sel + nsold - 1) % nsold);
+	sel_step(1);
 	path_n = 0;
 	see_update();
 	center_on_unit();
@@ -299,6 +314,43 @@ static uint8_t door_try(unit_t *u, uint8_t dir, uint8_t rclick)
 
 // Присесть или встать (BattlescapeGame::kneel): 4 единицы времени вниз, 8 вверх.
 // Сидящего бойца хуже видно и точнее стреляет — это появится вместе с видимостью и стрельбой.
+// Боец на этаж выше или ниже (BattlescapeState::btnUnitUpClick -> Pathfinding::validateUpDown,
+// BattlescapeGame::moveUpDown): гравилифт в клетке и над (под) ней, или летающий в пустоту
+// (вверх — если над ним нет пола, вниз — если под ним); цена — 8 (getTUCost для вертикали),
+// сидящий сперва встаёт
+#define PF_GRAVLIFT 16
+static uint8_t floor_flags(uint8_t x, uint8_t y, uint8_t z, uint8_t *part)
+{
+	uint8_t c;
+	far_read(cells + ((uint32_t)((uint16_t)z * m_sy + y) * m_sx + x) * 4, &c, 1);
+	*part = c;
+	return c ? far_byte(FAR(pf_page, PF_FLAGS) + c) : 0;
+}
+
+static void unit_updown(uint8_t up)
+{
+	if (!nsold || bv_walking() != 0xFF || bt_side != FACTION_PLAYER) return;
+	uint8_t i = sel < nsold ? sel : 0;
+	unit_t *u = &units[i];
+	if (up ? u->z + 1 >= m_sz : !u->z) return;
+	uint8_t nz = up ? u->z + 1 : u->z - 1, ps, pd;
+	uint8_t fs = floor_flags(u->x, u->y, u->z, &ps), fd = floor_flags(u->x, u->y, nz, &pd);
+	uint8_t ok = ps && pd && (fs & PF_GRAVLIFT) && (fd & PF_GRAVLIFT);
+	if (!ok && u->fly) ok = up ? (!pd || (fd & 1)) : (!ps || (fs & 1));
+	if (!ok) return;
+	if (u->kneel) do_kneel();
+	if (u->kneel) return;
+	if (!reserve_ok(i, 8)) return;
+	if (u->tu < 8) { hud_warn(STR_NOT_ENOUGH_TIME_UNITS); return; }
+	u->tu -= 8;
+	u->z = nz;
+	ru_put(i);
+	bv_sync(nunits);
+	bv_set_level(nz, 0);
+	see_update();
+	ui_dirty(0);
+}
+
 // Резерв времени для хода ценой cost (BattlescapeGame::checkReservedTU, bhud.c)
 static const uint8_t res_ba[4] = { BA_NONE, BA_SNAPSHOT, BA_AUTOSHOT, BA_AIMEDSHOT };
 static uint8_t reserve_ok(uint8_t i, uint8_t cost)
@@ -498,6 +550,7 @@ static void side_prepare(uint8_t side)
 	for (uint8_t i = 0; i < nunits; i++) {
 		unit_t *u = &units[i];
 		if (!u->alive || u->faction != side) continue;
+		u->done = 0;                     // _dontReselect = false
 		u->tu = u->tu_max;
 		uint16_t e = (uint16_t)u->en + u->en_rec;
 		u->en = e > u->en_max ? u->en_max : (uint8_t)e;
@@ -744,6 +797,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		break;
 	}
 	case EVT_DRAW:
+		if (arg) break;                      // свой виджет есть и у кнопки «потратить время» — рисуем раз
 		bv_draw();
 		draw_panel();
 		marks_on();                          // поверх боя могли открывать окно — значки снова
@@ -807,8 +861,14 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			move_wait = 0;
 			break;
 		}
-		case 1: sel_prev(); break;           // боец выше по списку (и камера на него)
-		case 2: sel_next(); break;
+		case 1: case 2: unit_updown(arg == 1); break;   // этаж выше / ниже (moveUpDown)
+		case 20:                             // NextStop: этого больше не выбирать, следующий
+			if (sel < nsold) units[sel].done = 1;
+			sel_next();
+			break;
+		case 21:                             // правой кнопкой — время выбранного бойца в ноль
+			if (ui_arrow_max && sel < nsold && bv_walking() == 0xFF) { units[sel].tu = 0; path_n = 0; ui_dirty(0); }
+			break;
 		case 3: { uint8_t l = bv_level(); if (l + 1 < m_sz) { bv_set_level(l + 1, 1); ui_dirty(0); } break; }
 		case 4: { uint8_t l = bv_level(); if (l) { bv_set_level(l - 1, 1); ui_dirty(0); } break; }
 		case 5:                              // инвентарь: окно рисуется в строки 0–199 основного
