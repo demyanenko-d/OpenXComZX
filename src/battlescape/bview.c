@@ -19,6 +19,7 @@
 #include "units.h"
 #include "loader.h"
 #include "bview.h"
+#include "bwalk.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 #define TILE_W     32
@@ -67,18 +68,7 @@ static uint8_t ar_on;
 static uint8_t fx_n;                     // спрайтов поверх вида (bv_fx, записи — loader.h TV_FX)
 static int16_t ar_x, ar_y;               // где нарисована (мировые)
 
-// Ходьба (BattleUnit::startWalking / keepWalking): идёт один юнит за раз. Фаза растёт раз в
-// 30 мс (Options::battleXcomSpeed); на середине пути позиция юнита уже клетка назначения —
-// «рисовальный» переход оригинала, к концу он стоит. По диагонали фаз вдвое больше.
-static uint8_t wk_u = 0xFF;              // кто идёт (#FF — никто)
-static uint8_t wk_ph, wk_mid, wk_end;    // фаза, середина и конец
-static uint8_t wk_lx, wk_ly, wk_dx, wk_dy, wk_z;   // откуда и куда (этаж тот же)
-static uint8_t wk_acc;                   // мс к следующей фазе
-static uint16_t wk_fr;                   // кадр прошлого такта
-static int16_t wk_ox, wk_oy;             // смещение спрайта от клетки, где юнит числится (Map::calculateWalkingOffset)
-// Шаг кончился, а стойку ещё не рисовали: следующий шаг пути начинается в том же такте
-// (UnitWalkBState::think), и кадр стойки между клетками мелькал бы рывком рук и ног
-static uint8_t wk_pend, wk_plx, wk_ply;  // прежняя клетка законченного шага — перерисовать с новым
+// Ходьба — bwalk.c (банк 32): её состояние (wk_*) вид только читает
 extern volatile uint16_t frames;         // crt0.s
 static uint8_t pf_page = PG_NONE;        // рабочая страница боя (таблицы — во второй)
 
@@ -156,7 +146,6 @@ uint8_t tgt_d;                           // и того, куда рисуют r
 static uint8_t away;                     // поверх боя открывали экран (инвентарь): сплит снят
 static int16_t vy_lo, vy_hi;             // нарисованный мировой диапазон Y (X — vx_lo, vx_hi)
 
-static void walk_paint(void);                     // перерисовка шага идущего юнита (ниже)
 static void repaint(int16_t lo, int16_t hi, int16_t top, int16_t bot);   // кусок вида (ниже)
 
 // Включить сплит: карта — из её холста, панель — из основного, со своей строки 144
@@ -503,87 +492,6 @@ static void show_cam(void)
 	__asm__("ei");
 }
 
-// Смещение спрайта на фазе (Map::calculateWalkingOffset, юниты 1x1, без смены высоты пола):
-// до середины — от прежней клетки к новой, после — от новой, где он уже числится
-static const int8_t wo_x[8] = { 1, 1, 1, 0, -1, -1, -1, 0 };
-static const int8_t wo_y[8] = { 1, 0, -1, -1, -1, 0, 1, 1 };
-
-// Перерисовать прямоугольник обеих клеток шага (и строку-другую на качание торса)
-static void walk_paint(void)
-{
-	if (wk_u != 0xFF) {
-		uint8_t d = units[wk_u].dir & 7;
-		int8_t k = (int8_t)(wk_ph < wk_mid ? wk_ph : wk_ph - wk_end);
-		wk_ox = k * 2 * wo_x[d];
-		wk_oy = -k * wo_y[d];
-	}
-	int16_t lx = ((int16_t)wk_lx - wk_ly) * 16, dx = ((int16_t)wk_dx - wk_dy) * 16;
-	int16_t ly = ((int16_t)wk_lx + wk_ly) * 8, dy = ((int16_t)wk_dx + wk_dy) * 8;
-	int16_t b = -(int16_t)wk_z * 24;
-	repaint(lx < dx ? lx : dx, (lx > dx ? lx : dx) + TILE_W - 1,
-		(ly < dy ? ly : dy) + b - 2, (ly > dy ? ly : dy) + b + TILE_H + 1);
-}
-
-void bv_walk(uint8_t i, uint8_t lx, uint8_t ly, uint8_t dx, uint8_t dy, uint8_t z, uint8_t d) __banked
-{
-	wk_u = i;
-	wk_z = z;
-	wk_mid = 4 + 4 * (d & 1);
-	wk_end = 8 + 8 * (d & 1);
-	wk_ph = 0;
-	wk_acc = 0;
-	wk_fr = frames;
-	if (wk_pend) {                       // хвост прошлого шага (прежняя клетка) — уже с фазой 0
-		wk_pend = 0;
-		wk_lx = wk_plx; wk_ly = wk_ply;
-		wk_dx = lx; wk_dy = ly;
-		walk_paint();
-	}
-	wk_lx = lx; wk_ly = ly;
-	wk_dx = dx; wk_dy = dy;
-	walk_paint();
-}
-
-// Шаг кончился, нового нет (путь кончился, поворот, дверь): стойка в клетках шага
-void bv_walk_done(void) __banked
-{
-	if (!wk_pend) return;
-	wk_pend = 0;
-	walk_paint();
-}
-
-// Фаза раз в 30 мс, кадр — 20 мс; отставшая перерисовка не копит фазы — не больше одной за такт.
-// На середине юнит переходит в новую клетку, на последней — уже стоит в ней.
-uint8_t bv_walk_tick(void) __banked
-{
-	if (wk_u == 0xFF) return 0;
-	uint8_t r = 0;
-	uint16_t f = frames;
-	uint16_t a = wk_acc + (uint16_t)(f - wk_fr) * 20;
-	wk_fr = f;
-	if (a >= 30) {
-		a -= 30;
-		if (a >= 30) a = 29;
-		wk_ph++;
-		if (wk_ph == wk_mid) { units[wk_u].x = wk_dx; units[wk_u].y = wk_dy; r = 1; }
-		if (wk_ph >= wk_end) {               // стойку не рисуем: дальше bv_walk или bv_walk_done
-			wk_u = 0xFF;
-			wk_pend = 1;
-			wk_plx = wk_lx; wk_ply = wk_ly;
-			wk_acc = 0;
-			return 2;
-		}
-		walk_paint();
-	}
-	wk_acc = (uint8_t)a;
-	return r;
-}
-
-uint8_t bv_walking(void) __banked
-{
-	return wk_u;
-}
-
 // Перерисовать кусок вида [lo, hi] x [top, bot] (мировые): в скрытом холсте гасим прямоугольник
 // кольца и собираем в него заново все клетки, которые его задевают, а в видимый переносим только
 // сам прямоугольник. Гасить приходится потому, что тайлы кладутся прозрачным блитом (BLT1
@@ -622,6 +530,18 @@ static void cell_repaint(uint8_t x, uint8_t y, uint8_t z)
 void bv_cell(uint8_t x, uint8_t y, uint8_t z) __banked
 {
 	cell_repaint(x, y, z);
+}
+
+void bv_repaint(int16_t lo, int16_t hi, int16_t top, int16_t bot) __banked
+{
+	repaint(lo, hi, top, bot);
+}
+
+// Идущий прошёл середину шага: числится в новой клетке (bwalk.c)
+void bv_walk_mid(uint8_t i, uint8_t x, uint8_t y) __banked
+{
+	units[i].x = x;
+	units[i].y = y;
 }
 
 static void draw_map(void)

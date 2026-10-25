@@ -47,6 +47,9 @@ void bv_walk(uint8_t i, uint8_t lx, uint8_t ly, uint8_t dx, uint8_t dy, uint8_t 
 uint8_t bv_walk_tick(void) __banked;
 void bv_walk_done(void) __banked;            // после 2: новый шаг не начат — нарисовать стойку
 uint8_t bv_walking(void) __banked;           // кто идёт (#FF — никто)
+// Для ходьбы (bwalk.c): перерисовать прямоугольник вида (мировые); идущий i — в клетке (x, y)
+void bv_repaint(int16_t lo, int16_t hi, int16_t top, int16_t bot) __banked;
+void bv_walk_mid(uint8_t i, uint8_t x, uint8_t y) __banked;
 uint16_t bv_dl_n(void) __banked;             // команд в списке вида (отладка)
 // Спрайты поверх вида (пуля, вспышка — bfx.c): n записей в третьей рабочей странице (loader.h
 // TV_FX); перерисовать прямоугольник [lo, hi] x [top, bot] (мировые) — прежние и новые
