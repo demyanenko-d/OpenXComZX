@@ -29,7 +29,9 @@ namespace OxzConv
 			public byte[] Frame = new byte[8];
 			public int PLevel, TLevel, BigWall, TileType, ScanG, FrameBase;
 			public int TuWalk, Alt;            // цена прохода (255 — не пройти) и часть-замена для двери
-			public bool NoFloor, StopLOS, UfoDoor, Door, GravLift;
+			public bool NoFloor, StopLOS, UfoDoor, Door, GravLift, BlockFire, BlockSmoke;
+			public byte[] Loft = new byte[12]; // слои вокселей (LOFTEMPS) по 2 вокселя высоты
+			public int TuFly, Armor, HeBlock, DieMcd, Flammable, Footstep, HeType, HeStrength, SmokeBlock, Fuel, Light, Special;
 		}
 
 		// MCD: 62 байта на запись (Mod/MapDataSet.cpp:107-153)
@@ -46,6 +48,11 @@ namespace OxzConv
 				r.TuWalk = buf[p + 39]; r.Alt = buf[p + 46];
 				r.TLevel = (sbyte)buf[p + 48]; r.PLevel = buf[p + 49];
 				r.TileType = buf[p + 53];
+				Array.Copy(buf, p + 8, r.Loft, 0, 12);
+				r.BlockFire = buf[p + 36] != 0; r.BlockSmoke = buf[p + 37] != 0;
+				r.TuFly = buf[p + 41]; r.Armor = buf[p + 42]; r.HeBlock = buf[p + 43]; r.DieMcd = buf[p + 44];
+				r.Flammable = buf[p + 45]; r.Footstep = buf[p + 52]; r.HeType = buf[p + 54]; r.HeStrength = buf[p + 55];
+				r.SmokeBlock = buf[p + 56]; r.Fuel = buf[p + 57]; r.Light = buf[p + 58]; r.Special = buf[p + 59];
 				l.Add(r);
 			}
 			return l;

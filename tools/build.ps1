@@ -20,7 +20,7 @@ $ENTRY = '0x7FE0'; $STACK_TOP = '0x3EF0'   # впритык под вектор�
 # килобайта, до кольца остаётся меньше полутора, поэтому в прерывании стоит сторож
 # (crt0.s, STACK_GUARD). Вынести кольцо в свою страницу — 14 §todo.
 $MUSIC_LOC = '0x2000'; $MUSIC_END = '0x3010'
-$RES_PAGE = 0x50; $RES_LAST = 0x87          # пакеты данных (map.h RES_PAGE..RES_LAST; #88–#8F — банки кода 33–40, #90–#AF — холсты боя)
+$RES_PAGE = 0x50; $RES_LAST = 0x8D          # пакеты данных (map.h RES_PAGE..RES_LAST; #8E–#8F — банки кода 33–34, #90–#AF — холсты боя)
 
 # Общий код (Win0): ассемблер ядра и C-модули без банка.
 $asm_common = @('kernel\win0\crt0', 'kernel\win0\bank', 'kernel\dmabuf', 'kernel\win0\glyph', 'kernel\win0\mul32', 'kernel\win0\div32', 'kernel\sd', 'kernel\win0\pages', 'kernel\win0\far', 'kernel\win0\res', 'kernel\win0\dbg', 'kernel\win0\input', 'kernel\win0\music_s', 'kernel\win0\scrutil', 'kernel\win0\text')   # crt0 — первым: порядок областей; kernel\win0 — код окна 0; dmabuf (буферы DMA в Win1) и sd (код в банке 12) — ассемблер ядра вне Win0
@@ -61,8 +61,8 @@ $banks = @(
     @{ n = 30; page = 0x4D; files = @('battlescape\pathfind', 'battlescape\units', 'battlescape\doors', 'battlescape\loader', 'battlescape\bload') }   # поиск пути (16 §5.4), бойцы миссии, клетки карты (двери, цена прохода), загрузка графики и миссии (bload.c — для экрана боя)
     @{ n = 31; page = 0x4E; files = @('battlescape\scr_battle'); ram = 0xB000 }   # наземный бой: экран, события и логика бойцов (вид — банк 28); с #B000 — юниты миссии
     @{ n = 32; page = 0x4F; files = @('battlescape\vision') }   # бой: видимость — линия взгляда по клеткам, сектор обзора (vision.c)
-    @{ n = 33; page = 0x88; files = @('battlescape\bitems', 'battlescape\bhud', 'battlescape\bspr', 'battlescape\bmenu', 'battlescape\bstats'); ram = 0xB000 }   # бой: предметы (bitems.c), панель ICONS и показатели (bhud.c), значки замеченных — спрайты TSU (bspr.c), меню действий (bmenu.c), характеристики (bstats.c); с #B000 — пункты меню
-    @{ n = 34; page = 0x89; files = @('battlescape\deploy'); ram = 0xA000 }   # бой: расстановка пришельцев (deploy.c); с #A000 — юниты, узлы появления, листы брони
+    @{ n = 33; page = 0x8E; files = @('battlescape\bitems', 'battlescape\bhud', 'battlescape\bspr', 'battlescape\bmenu', 'battlescape\bstats'); ram = 0xB000 }   # бой: предметы (bitems.c), панель ICONS и показатели (bhud.c), значки замеченных — спрайты TSU (bspr.c), меню действий (bmenu.c), характеристики (bstats.c); с #B000 — пункты меню
+    @{ n = 34; page = 0x8F; files = @('battlescape\deploy'); ram = 0xA000 }   # бой: расстановка пришельцев (deploy.c); с #A000 — юниты, узлы появления, листы брони
 )
 
 # Пакеты данных игры: выход конвертера OxzConv (tmp\sd\OXZ\<игра>), вшиваются в SPG.

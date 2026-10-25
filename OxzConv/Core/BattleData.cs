@@ -5,10 +5,11 @@
 //
 // Форматы (u16 — младший байт первым):
 //
-// MCDSET_<набор> (Blob, a = число частей) — таблица частей набора, по 16 байт:
+// MCDSET_<набор> (Blob, a = число частей) — таблица частей набора, по 40 байт:
 //   u16 frame   номер первого кадра в тайлсете этого набора (MCD.Frame[0])
 //   u8  yofs    P_Level: на сколько пикселей часть опущена при выводе
-//   u8  flags   1 нет пола, 2 держит обзор, 4 дверь НЛО, 8 дверь, 16 гравилифт
+//   u8  flags   1 нет пола, 2 держит обзор, 4 дверь НЛО, 8 дверь, 16 гравилифт, 32 держит огонь,
+//               64 держит дым
 //   u8  bigwall тип «большой стены» (0 — нет)
 //   u8  type    tile_type (MCD.TileType): 0 пол, 1 западная стена, 2 северная, 3 объект
 //   i8  tlevel  T_Level
@@ -16,6 +17,10 @@
 //   u8  alt     MCD.Alt_MCD: чем заменяется распахнутая дверь (номер части в этом наборе)
 //   u8  fr[7]   MCD.Frame[1..7]: кадры анимации (дверь НЛО открывается кадрами 1..7 по 100 мс,
 //               Tile::animate; кадр 7 — открытая)
+//   u8  loft[12] MCD.LOFT: номер маски LOFTEMPS на каждые 2 вокселя высоты (снизу)
+//   u8  armor, heBlock, dieMcd (часть набора на месте разрушенной, 0 — нет), flammable, footstep,
+//       heType, heStrength, smokeBlockage, fuel, lightSource, targetType (MCD.Target_Type),
+//       tuFly — MapData оригинала (Mod/MapDataSet.cpp:107-153)
 //
 // MAPBLK_<блок> (Blob, a = sx, b = sy, c = sz) — блок карты как в оригинале, но снизу вверх:
 //   u8 sx, sy, sz, 0; затем sx*sy*sz клеток по 4 байта (пол, западная стена, северная, объект).
@@ -467,20 +472,26 @@ namespace OxzConv
 					if (!gfs.Has($"TERRAIN/{s}.MCD")) { report.Add($"  battle: no TERRAIN/{s}.MCD"); continue; }
 					var parts = Battle.ReadMcd(gfs.Read($"TERRAIN/{s}.MCD"));
 					SetSize[s] = parts.Count;
-					var data = new byte[parts.Count * 16];
+					var data = new byte[parts.Count * 40];
 					for (int i = 0; i < parts.Count; i++)
 					{
 						var r = parts[i];
-						int o = i * 16;
+						int o = i * 40;
 						data[o] = r.Frame[0]; data[o + 1] = 0;          // кадры набора идут подряд
 						data[o + 2] = (byte)r.PLevel;
-						data[o + 3] = (byte)((r.NoFloor ? 1 : 0) | (r.StopLOS ? 2 : 0) | (r.UfoDoor ? 4 : 0) | (r.Door ? 8 : 0) | (r.GravLift ? 16 : 0));
+						data[o + 3] = (byte)((r.NoFloor ? 1 : 0) | (r.StopLOS ? 2 : 0) | (r.UfoDoor ? 4 : 0) | (r.Door ? 8 : 0) | (r.GravLift ? 16 : 0)
+							| (r.BlockFire ? 32 : 0) | (r.BlockSmoke ? 64 : 0));
 						data[o + 4] = (byte)r.BigWall;
 						data[o + 5] = (byte)r.TileType;
 						data[o + 6] = (byte)r.TLevel;
 						data[o + 7] = (byte)r.TuWalk;
 						data[o + 8] = (byte)r.Alt;
 						Array.Copy(r.Frame, 1, data, o + 9, 7);
+						Array.Copy(r.Loft, 0, data, o + 16, 12);
+						data[o + 28] = (byte)r.Armor; data[o + 29] = (byte)r.HeBlock; data[o + 30] = (byte)r.DieMcd;
+						data[o + 31] = (byte)r.Flammable; data[o + 32] = (byte)r.Footstep; data[o + 33] = (byte)r.HeType;
+						data[o + 34] = (byte)r.HeStrength; data[o + 35] = (byte)r.SmokeBlock; data[o + 36] = (byte)r.Fuel;
+						data[o + 37] = (byte)r.Light; data[o + 38] = (byte)r.Special; data[o + 39] = (byte)r.TuFly;
 					}
 					mcdPak.Add(ids.Id($"MCDSET_{s}"), ResType.Blob, data, parts.Count);
 					mcdBytes += data.Length;
@@ -559,6 +570,10 @@ namespace OxzConv
 			mcdPak.Add(ids.Id("TERRAINS"), ResType.Blob, EncodeTerrains(), Terrains.Count);
 			mcdPak.Add(ids.Id("MAPSCRIPTS"), ResType.Blob, EncodeScripts(), Scripts.Count);
 			mcdPak.Add(ids.Id("DEPLOYS"), ResType.Blob, EncodeDeploys(), Deploys.Count);
+			// LOFTEMPS.DAT — маски вокселей 16x16 (по 16 слов, бит 15 - x): у UFO в GEODATA, у TFTD в TERRAIN
+			// (TileEngine::voxelCheck); a — число масок
+			string lt = gfs.Has("GEODATA/LOFTEMPS.DAT") ? "GEODATA/LOFTEMPS.DAT" : gfs.Has("TERRAIN/LOFTEMPS.DAT") ? "TERRAIN/LOFTEMPS.DAT" : null;
+			if (lt != null) { var lb = gfs.Read(lt); mcdPak.Add(ids.Id("LOFTEMPS"), ResType.Blob, lb, lb.Length / 32); }
 			var rm = mcdPak.Write(Path.Combine(outDir, "MCD.PAK"));
 			var rb = mapPak.Write(Path.Combine(outDir, "MAPS.PAK"));
 			var rt = tilePak.Write(Path.Combine(outDir, "TILES.PAK"));

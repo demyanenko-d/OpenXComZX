@@ -34,6 +34,12 @@
 #define TL_BITEMS 11520        // предметы боя: bitem_t (bitems.h), BI_MAX по 10 байт (до #3700)
 #define TL_AUNITS 14080        // пришельцы от расстановки (deploy.c): unit_t, до 28 записей (до #3C40)
 
+// Третья рабочая страница — части миссии для выстрелов и разрушений (по номеру части):
+#define TV_LOFT   0            // 12 байт: MCD.LOFT — маска LOFTEMPS на каждые 2 вокселя высоты
+#define TV_PROPS  3072         // 12 байт: armor, heBlock, dieMcd (часть миссии, 0 — нет), flammable,
+#define TV_PSIZE  12           //   footstep, heType, heStrength, smokeBlockage, fuel, lightSource,
+                               //   targetType, tuFly (до #1800)
+
 typedef struct {
 	uint16_t set[TL_SETS];     // ресурсы MCDSET наборов миссии
 	uint16_t tset[TL_SETS];    // ресурсы TILESET тех же наборов

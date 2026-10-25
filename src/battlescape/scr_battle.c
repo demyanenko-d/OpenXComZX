@@ -776,7 +776,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		// Память банка при старте не обнуляется: без этого aliens_free отдавал в пул мусорные
 		// номера страниц (а с ними — каталог SD, и карта не находила своих блоков)
 		aliens_reset();
-		if (pf_page == PG_NONE) pf_page = pg_alloc(2, 1);   // рабочая память боя: поиск пути и таблицы
+		if (pf_page == PG_NONE) pf_page = pg_alloc(3, 1);   // рабочая память боя: поиск пути, таблицы, воксели
 		if (pf_page == PG_NONE) { dbg_puts("battle: no pages\n"); break; }   // иначе — в страницу #FF
 		// Карта миссии собирается генератором (16 §3). Пока миссии нет, террейн берётся
 		// по очереди — клавиша G дальше пересобирает карту следующего террейна.
@@ -829,7 +829,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		gen_mode = 0;
 		loaded = 0;
 		nunits = 0;
-		if (pf_page != PG_NONE) { pg_free(pf_page, 2); pf_page = PG_NONE; }
+		if (pf_page != PG_NONE) { pg_free(pf_page, 3); pf_page = PG_NONE; }
 		path_n = 0;
 		turn_dir = 0xFF;
 		an_on = 0;
