@@ -6,6 +6,7 @@
 // экипажа бойцу даётся первое доступное без исследований оружие с обоймой.
 #include <stdint.h>
 #include <string.h>
+#include <stddef.h>
 #include "far.h"
 #include "pages.h"
 #include "res.h"
@@ -16,6 +17,7 @@
 #include "loader.h"
 #include "units.h"
 #include "bitems.h"
+#include "bequip.h"
 
 static uint8_t bi_n;                     // занято записей
 
@@ -67,8 +69,11 @@ uint8_t bi_crew(uint8_t page, const uint8_t *sol, uint8_t n) __banked
 	uint16_t ninv = ST->ninv;
 	pg_map3(old);
 	uint8_t rh = sec_named(STR_RIGHT_HAND);
+	uint8_t who[MAX_UNITS], craft = NONE8;
 	for (uint8_t u = 0; u < n; u++) {
 		uint8_t got = 0, s = sol[u];
+		if (s != 0xFF && craft == NONE8)     // корабль отряда — по первому солдату
+			far_read(FAR(SOLDIER_PAGE, 0) + (uint16_t)s * sizeof(soldier_t) + offsetof(soldier_t, craft), &craft, 1);
 		if (s != 0xFF)
 			for (uint16_t k = 0; k < ninv && bi_n < BI_MAX; k++) {
 				inv_t v;
@@ -81,6 +86,7 @@ uint8_t bi_crew(uint8_t page, const uint8_t *sol, uint8_t n) __banked
 				far_write(bi_at(page, bi_n++), &b, sizeof b);
 				got = 1;
 			}
+		if (u < MAX_UNITS) who[u] = s != 0xFF && !got ? s : 0xFF;   // без раскладки — autoEquip
 		if (!got && s == 0xFF && rh != 0xFF && bi_n < BI_MAX) {   // отладочный бой
 			uint16_t gun, clip;
 			uint8_t r;
@@ -90,6 +96,12 @@ uint8_t bi_crew(uint8_t page, const uint8_t *sol, uint8_t n) __banked
 				far_write(bi_at(page, bi_n++), &b, sizeof b);
 			}
 		}
+	}
+	if (craft != NONE8 && n) {               // груз корабля: бойцам без раскладки и на землю (bequip.c)
+		beq_t q;
+		far_read(FAR(page + 1, TL_UNITS), &q.gx, 3);   // земля — клетка первого бойца (x, y, z)
+		q.page = page; q.nb = bi_n; q.craft = craft; q.n = n < MAX_UNITS ? n : MAX_UNITS; q.who = who;
+		bi_n = be_auto(&q);
 	}
 	hands_build(page, n);
 	return bi_n;
