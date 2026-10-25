@@ -201,6 +201,10 @@ namespace OxzConv
 					F("value", "u16", "0"), F("intelligence", "u8", "0"), F("aggression", "u8", "0"),
 					F("energyRecovery", "u8", "30"), F("specab", "u8", "0"),
 					F("spawnUnit", "ref:units"), F("meleeWeapon", "ref:items"),
+					Fn("builtInWeapons", "nums", (e, k, rs) => LevelLists(rs, Y.Get(e, "builtInWeapons"), $"units.{k}.builtInWeapons"),
+						"по уровням предметов: [n, предметы] x уровней (Unit::getBuiltInWeapons)"),
+					Fn("livingWeaponItem", "u16", (e, k, rs) => LivingWeapon(rs, e),
+						"предмет живого оружия: race без STR_ + _WEAPON (BattlescapeGenerator::deployAliens); #FFFF — нет"),
 				},
 				Flags = { "livingWeapon", "capturable=true" },
 			});
@@ -327,6 +331,8 @@ namespace OxzConv
 					F("race", "ref:alienRaces", comment: "раса развёртывания (база пришельцев и т.п.); #FFFF — от миссии"),
 					Fn("data", "nums", (e, k, rs) => DeployData(Y.Get(e, "data")),
 						"расстановка: [alienRank, lowQty, highQty, dQty, extraQty, percentageOutsideUfo] x n (DeploymentData)"),
+					Fn("itemSets", "nums", (e, k, rs) => ItemSets(rs, Y.Get(e, "data"), $"alienDeployments.{k}.itemSets"),
+						"по записи data: [уровней, ([n, предметы] x уровней)] (DeploymentData::itemSets)"),
 				},
 			});
 
@@ -554,8 +560,59 @@ namespace OxzConv
 			return null;
 		}
 
+		// Списки предметов по уровням (itemSets записи развёртывания, builtInWeapons юнита):
+		// [n, предметы] на уровень
+		static List<object> LevelLists(RuleSet rs, object lists, string where)
+		{
+			var l = new List<object>();
+			foreach (var set in Y.List(lists) ?? new List<object>())
+			{
+				var items = Y.List(set) ?? new List<object>();
+				l.Add(items.Count);
+				foreach (var it in items) l.Add(rs.Ref("items", it, where));
+			}
+			return l;
+		}
+
+		// itemSets всех записей data подряд: у каждой — число уровней, затем её LevelLists
+		static List<object> ItemSets(RuleSet rs, object data, string where)
+		{
+			var l = new List<object>();
+			foreach (var d in Y.List(data) ?? new List<object>())
+			{
+				var sets = Y.List(Y.Get(d, "itemSets")) ?? new List<object>();
+				l.Add(sets.Count);
+				l.AddRange(LevelLists(rs, sets, where));
+			}
+			return l;
+		}
+
+		// Unit::isLivingWeapon: оружие — предмет «раса без STR_» + "_WEAPON"
+		static object LivingWeapon(RuleSet rs, object e)
+		{
+			if (!Y.Bool(Y.Get(e, "livingWeapon"))) return 0xFFFF;
+			string race = Y.Str(Y.Get(e, "race"));
+			if (race == null || race.Length <= 4) return 0xFFFF;
+			int i = rs.Find("items", race.Substring(4) + "_WEAPON");
+			return i < 0 ? 0xFFFF : i;
+		}
+
+		// Mod::getAlienItemLevels: по месяцу — 10 уровней (уровень — случайный из них); ресурс ITEMLEVELS:
+		// u8 месяцев, затем по 10 байт
+		public static byte[] ItemLevels(Dictionary<string, object> s)
+		{
+			var m = Y.List(s.TryGetValue("alienItemLevels", out var v) ? v : null) ?? new List<object>();
+			var o = new List<byte> { (byte)m.Count };
+			foreach (var row in m)
+			{
+				var r = Y.List(row) ?? new List<object>();
+				for (int i = 0; i < 10; i++) o.Add((byte)(i < r.Count ? Y.Int(r[i]) : 0));
+			}
+			return o.ToArray();
+		}
+
 		// alienDeployments.data (AlienDeployment.cpp:58 и :137, YAML::convert<DeploymentData>): по 6 чисел
-		// на запись; отсутствующее поле — 0 (extraQty в OpenXcom тоже 0). itemSets пока не нужны.
+		// на запись; отсутствующее поле — 0 (extraQty в OpenXcom тоже 0). itemSets — своим полем.
 		static List<object> DeployData(object data)
 		{
 			var l = new List<object>();

@@ -634,6 +634,7 @@ namespace OxzConv
 			var det = GlobeDetail.Build(rs, sections, ox, RuleFolder);   // детали глобуса: линии, подписи, города
 			pak.Add(ids.Id("GLOBEDET"), ResType.Blob, det.data);
 			parts.Add("GLOBEDET: " + det.info);
+			pak.Add(ids.Id("ITEMLEVELS"), ResType.Blob, RulesSchema.ItemLevels(sections));
 			var vars = RulesSchema.Vars(sections, rs);
 			pak.Add(RulesSchema.ResBase - 1, ResType.Table, vars, vars.Length);
 			if (cutTable != null)                         // заставки: таблица и палитры слайдов (Cutscenes)
