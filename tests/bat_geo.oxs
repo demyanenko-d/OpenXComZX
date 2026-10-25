@@ -320,4 +320,15 @@ pokew _cursor_y 100
 wait 30
 shot tmp/shots/bat_geo/00_battle.png
 expect 15:1437 3
+# прервать миссию: разбор (корабль домой, место — кампании), OK — назад на геоскейп
+key SPACE
+waitmark 251 200
+key ENTER
+waitmark 254 600
+wait 100
+shot tmp/shots/bat_geo/01_debriefing.png
+key ENTER
+waitmark 32 900
+wait 60
+shot tmp/shots/bat_geo/02_geoscape.png
 exit 0

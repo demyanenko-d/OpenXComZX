@@ -24,6 +24,7 @@
 #include "loader.h"
 #include "units.h"
 #include "bitems.h"
+#include "game.h"
 #include "bdeb.h"
 
 #define DS_MAX 8
@@ -51,6 +52,31 @@ static void add_stat(uint8_t k, int16_t score)
 {
 	ds[k].qty++;
 	ds[k].score += score;
+}
+
+// Итог для кампании (prepareDebriefing, DebriefingState.cpp:853-1070): корабль — домой, место миссии
+// исчезает (и при прерывании), НЛО — тоже, а севшее, если отряд не удержал зону, через 5 с
+// взлетает; погибшие солдаты — с базы; очки миссии — региону и стране, где стоял корабль.
+// Трофеи на склад и гибель снаряжения — дальше (14_todo).
+static void campaign(const debreq_t *q, uint8_t alive_x)
+{
+	uint8_t c = (uint8_t)q->craft;
+	craft_t *cr = &ST->craft[c];
+	if (cr->type == NONE8) return;
+	uint8_t dk = cr->dest_kind, di = cr->dest;
+	geo_t pos = cr->pos;
+	craft_return(c);                             // returnToBase: цель кораблю меняет — взята раньше
+	if (dk == DK_SITE && di < MAX_SITES && ST->site[di].id) { ST->site[di].id = 0; ST->nsites--; }
+	if (dk == DK_UFO && di < MAX_UFOS && ST->ufo[di].type != NONE8) {
+		if (ST->ufo[di].status == US_LANDED && (q->aborted || !alive_x)) ST->ufo[di].secs = 5;
+		else ufo_free(di);
+	}
+	for (uint8_t i = 0; i < q->nsold; i++) {        // погибшие — с базы (killSoldier)
+		unit_t u;
+		far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
+		if (!u.alive && !u.hp && u.sol != 0xFF) soldier_delete(u.sol);
+	}
+	add_activity(&pos, d_total, 1);
 }
 
 void deb_start(const debreq_t *q) __banked
@@ -115,6 +141,7 @@ void deb_start(const debreq_t *q) __banked
 		d_total += ds[k].score;
 		ds[ds_n++] = ds[k];
 	}
+	if (q->craft < MAX_CRAFTS) campaign(q, alive_x);
 }
 
 uint8_t deb_get(uint8_t id, sdef_t *s, wdef_t *w) __banked

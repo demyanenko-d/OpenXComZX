@@ -646,6 +646,7 @@ static uint8_t battle_end(uint8_t aborted)
 	if (!aborted && al && xc) return 0;
 	debreq_t q;
 	q.page = pf_page; q.n = nunits; q.nsold = nsold; q.aborted = aborted; q.ufo = mis_ufo != 0xFFFF;
+	q.craft = mis_crew;
 	deb_start(&q);
 	if (hid_on) hidden_show(0);
 	bv_pause();
