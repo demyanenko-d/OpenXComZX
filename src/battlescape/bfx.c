@@ -11,6 +11,7 @@
 // Площадные взрывы (X1.PCK) — когда будут ракеты и гранаты.
 #include <stdint.h>
 #include <string.h>
+#include <stddef.h>
 #include "far.h"
 #include "pages.h"
 #include "res.h"
@@ -22,6 +23,7 @@
 #include "bitems.h"
 #include "bview.h"
 #include "bfx.h"
+#include "bitems.h"
 
 extern volatile uint16_t frames;         // crt0.s
 
@@ -70,10 +72,72 @@ static void copy_frame(const res_t *r, uint16_t fr, uint8_t pg, uint16_t *pos, u
 	*pos += (sz + 1) & ~1u;
 }
 
+// Слот кадра FLOOROB fs (кадр — в страницу TV_FXPG вслед за прочими); #FF — нет места
+static uint8_t fl_slot(far_t t3, int16_t fs)
+{
+	uint8_t n = far_byte(t3 + TV_FLN), k;
+	for (k = 0; k < n; k++) {
+		int16_t v;
+		far_read(t3 + TV_FLKEY + k * 2, &v, 2);
+		if (v == fs) return k;
+	}
+	res_t r;
+	uint8_t pg = far_byte(t3 + TV_FXPG), te[TE_SIZE];
+	uint16_t pos;
+	if (n >= FL_MAX || pg == PG_NONE || !res_find(RES_FLOOROB_PCK, &r)) return 0xFF;
+	far_read(t3 + TV_FXPOS, &pos, 2);
+	copy_frame(&r, (uint16_t)fs, pg, &pos, te);
+	far_write(t3 + TV_FXPOS, &pos, 2);
+	far_write(t3 + TV_FLTE + n * TE_SIZE, te, TE_SIZE);
+	far_write(t3 + TV_FLKEY + n * 2, &fs, 2);
+	n++;
+	far_write(t3 + TV_FLN, &n, 1);
+	return k;
+}
+
+// Предмет item на пол клетки: на виду — самый тяжёлый (Tile::getTopItemSprite)
+static void fl_put(far_t t3, uint8_t x, uint8_t y, uint8_t z, uint16_t item)
+{
+	rtab_t t;
+	r_items_t it;
+	uint8_t n = far_byte(t3 + TV_FLOOR), e[6], i;
+	if (!rtab_open(RES_RULE_ITEMS, &t) || item >= t.n) return;
+	rtab_get(&t, item, &it);
+	if (it.floor_sprite < 0) return;
+	for (i = 0; i < n; i++) {
+		far_read(t3 + TV_FLOOR + 1 + i * 6, e, 6);
+		if (e[0] == x && e[1] == y && e[2] == z) break;
+	}
+	if (i < n && it.weight <= (uint8_t)rtab_word(&t, (uint16_t)(e[4] | (e[5] << 8)), offsetof(r_items_t, weight))) return;
+	if (i == n && n >= FI_MAX) return;
+	uint8_t s = fl_slot(t3, it.floor_sprite);
+	if (s == 0xFF) return;
+	e[0] = x; e[1] = y; e[2] = z; e[3] = s; e[4] = (uint8_t)item; e[5] = (uint8_t)(item >> 8);
+	far_write(t3 + TV_FLOOR + 1 + i * 6, e, 6);
+	if (i == n) { n++; far_write(t3 + TV_FLOOR, &n, 1); }
+}
+
+void fl_corpse(uint8_t page, uint8_t x, uint8_t y, uint8_t z, uint8_t size, uint16_t armor) __banked
+{
+	far_t t3 = FAR(page + 2, 0);
+	rtab_t t;
+	r_armors_t a;
+	if (!rtab_open(RES_RULE_ARMORS, &t) || armor >= t.n) return;
+	rtab_get(&t, armor, &a);
+	uint8_t k = size > 1 ? 4 : 1;
+	for (uint8_t q = 0; q < k && q < a.corpse_battle.n; q++) {   // крупный: по клетке на четверть
+		uint16_t c;
+		rtab_tail(&t, a.corpse_battle.off + q * 2, &c, 2);
+		fl_put(t3, (uint8_t)(x + (q & 1)), (uint8_t)(y + (q >> 1)), z, c);
+	}
+}
+
 void fx_build(uint8_t page, uint8_t n) __banked
 {
 	far_t t3 = FAR(page + 2, 0);
 	uint8_t pg, nb = 0, nh = 0;
+	far_fill(t3 + TV_FLOOR, 0, 1);               // на полу пусто, кадров нет
+	far_fill(t3 + TV_FLN, 0, 1);
 	uint16_t pos = 0;
 	int16_t key;
 	rtab_t t;
@@ -123,6 +187,12 @@ void fx_build(uint8_t page, uint8_t n) __banked
 				far_write(o + 2 + i * TE_SIZE, te, TE_SIZE);
 			}
 		}
+	far_write(t3 + TV_FXPOS, &pos, 2);
+	for (uint16_t i = 0; i < BI_MAX; i++) {      // лежащее на земле (груз корабля) — на пол
+		bitem_t b;
+		far_read(FAR(page + 1, TL_BITEMS) + i * sizeof b, &b, sizeof b);
+		if (b.owner == BI_GROUND) fl_put(t3, b.x, b.y, b.z, b.item);
+	}
 }
 
 // Слот кадров с ключом key в таблице (TV_FXB / TV_FXH); #FF — нет

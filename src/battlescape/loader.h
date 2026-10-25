@@ -59,6 +59,16 @@
 #define TV_FXH    9344         // FXH_MAX x (2 + 10 x TE_SIZE)
 #define FXH_MAX   4
 #define TV_FXPG   9728
+#define TV_FXPOS  9730         // 2 байта: занято в странице TV_FXPG (дальше — кадры предметов на полу)
+// Предметы на полу (Tile::getTopItemSprite: кадр FLOOROB самого тяжёлого в клетке; Map::drawTerrain
+// рисует его после объекта клетки): число и записи x, y, z, слот кадра, предмет (2 байта); кадры
+// по слотам (TE_SIZE) и их ключи — номер кадра FLOOROB
+#define TV_FLOOR  9792
+#define FI_MAX    24
+#define TV_FLTE   9952
+#define FL_MAX    12
+#define TV_FLKEY  10048
+#define TV_FLN    10072
 
 typedef struct {
 	uint16_t set[TL_SETS];     // ресурсы MCDSET наборов миссии

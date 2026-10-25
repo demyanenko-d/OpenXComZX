@@ -735,6 +735,8 @@ static void shoot(uint8_t tx, uint8_t ty)
 			v->alive = 0;
 			f[s.hit].flags &= (uint8_t)~FU_ALIVE;
 			ru_put(s.hit);
+			fl_corpse(pf_page, v->x, v->y, v->z, v->size, v->armor_rule);   // труп на пол (bfx.c)
+			bv_sync(nunits);
 			for (uint8_t q = 0; q < v->size * v->size; q++)
 				bv_cell((uint8_t)(v->x + (q & 1)), (uint8_t)(v->y + (q >> 1)), v->z);
 		}

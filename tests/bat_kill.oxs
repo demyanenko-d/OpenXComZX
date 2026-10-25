@@ -1,0 +1,92 @@
+# Гибель пришельца: тот же бой и выстрелы, что в bat_fire.oxs, но здоровье пришельца — 1: первое же
+# попадание убивает, на пол его клетки ложится труп (armors corpseBattle -> кадр FLOOROB, bfx.c
+# fl_corpse; Tile::getTopItemSprite). Проверка — units[6].alive (#39A4 страницы банка 31 #4E) == 0.
+# Снимки — tmp/shots/bat_kill/ (последний — курсор в стороне: труп не закрыт прицелом).
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_kill.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _bat_still 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+key j
+wait 60
+key x
+wait 10
+key CS+J
+poke 4E:39A8 1
+wait 60
+shot tmp/shots/bat_kill/00_seen.png
+# правая рука -> навскидку -> клик по пришельцу (середина экрана)
+pokew _cursor_x 296
+pokew _cursor_y 172
+click L
+waitmark 250 200
+wait 30
+pokew _cursor_x 160
+pokew _cursor_y 135
+click L
+waitmark 248 200
+wait 40
+pokew _cursor_x 176
+pokew _cursor_y 96
+wait 20
+shot tmp/shots/bat_kill/01_aim.png
+click L
+wait 60
+shot tmp/shots/bat_kill/02_after.png
+pokew _cursor_x 296
+pokew _cursor_y 172
+click L
+waitmark 250 200
+wait 30
+pokew _cursor_x 160
+pokew _cursor_y 135
+click L
+waitmark 248 200
+wait 40
+pokew _cursor_x 176
+pokew _cursor_y 96
+wait 20
+click L
+wait 60
+pokew _cursor_x 296
+pokew _cursor_y 172
+click L
+waitmark 250 200
+wait 30
+pokew _cursor_x 160
+pokew _cursor_y 135
+click L
+waitmark 248 200
+wait 40
+pokew _cursor_x 176
+pokew _cursor_y 96
+wait 20
+click L
+wait 60
+pokew _cursor_x 296
+pokew _cursor_y 172
+click L
+waitmark 250 200
+wait 30
+pokew _cursor_x 160
+pokew _cursor_y 135
+click L
+waitmark 248 200
+wait 40
+pokew _cursor_x 176
+pokew _cursor_y 96
+wait 20
+click L
+wait 60
+wait 10
+pokew _cursor_x 160
+pokew _cursor_y 30
+wait 20
+shot tmp/shots/bat_kill/03_more.png
+echo battle fire OK
+expect 4E:39A4 0
+exit 0

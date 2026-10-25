@@ -27,7 +27,7 @@ typedef struct {
 void bv_open(void) __banked;                 // холсты, сплит, курсор боя
 void bv_close(void) __banked;                // отдать список вида, вернуть экран
 uint8_t bv_load(const bvload_t *q) __banked; // таблицы вида из рабочей страницы, камера в центр
-void bv_sync(uint8_t n) __banked;            // юниты: n записей runit_t из TL_RUNITS
+void bv_sync(uint8_t n) __banked;            // юниты: n записей runit_t из TL_RUNITS; предметы на полу (TV_FLOOR)
 void bv_tile(uint8_t part) __banked;         // запись части из TL_TILES (створки НЛО)
 void bv_cell(uint8_t x, uint8_t y, uint8_t z) __banked;   // перерисовать клетку
 void bv_draw(void) __banked;                 // EVT_DRAW: дорисовать или собрать вид заново

@@ -91,6 +91,10 @@ static uint8_t pf_page = PG_NONE;        // рабочая страница бо
 // прицел, 7..10 — жёлтый анимированный прицел над юнитом (7 + _animFrame / 2)
 #define CUR_FRAMES 9
 static uint8_t __at(0xB340) cur_tab[CUR_FRAMES * TE_SIZE];   // до #B388
+// Предметы на полу (bv_floor, loader.h TV_FLOOR): x, y, z, слот кадра; кадры FLOOROB по слотам
+static uint8_t __at(0xB388) fl[FI_MAX][4];   // до #B3E8
+static uint8_t __at(0xB3E8) fl_n;
+static uint8_t __at(0xBE40) fl_te[FL_MAX * TE_SIZE];   // до #BEA0
 static uint8_t cur_on, cur_cx, cur_cy;   // курсор на клетке (cur_cx, cur_cy) текущего этажа
 static uint8_t cur_aim;                  // курсор прицела (CT_AIM)
 static uint8_t cur_anim;                 // _animFrame: 0..7, шаг 100 мс
@@ -438,6 +442,11 @@ static void build_range(int16_t lo, int16_t hi, int16_t top, int16_t bot)
 					// из клеток «за» этой — до её стен, чтобы стены его закрывали
 					if (here) dl_blit(cur_tab + cb * TE_SIZE, px, py);
 					if (ru && wu != 0xFF) draw_units_cell((uint8_t)y, (uint8_t)x, px, py, 1);
+				}
+				// предмет на полу — после объекта клетки, до юнита (Map.cpp:764-770)
+				for (uint8_t i = 0; i < fl_n; i++) {
+					uint8_t fx = fl[i][0], fy = fl[i][1], fz = fl[i][2];
+					if (fx == (uint8_t)x && fy == (uint8_t)y && fz == z) dl_blit(fl_te + fl[i][3] * TE_SIZE, px, py);
 				}
 				// Юнит идёт сразу за своей клеткой: клетки правее и ниже рисуются позже и
 				// закрывают его — иначе он виден сквозь стены и закрытые двери.
@@ -828,6 +837,12 @@ void bv_sync(uint8_t n) __banked
 	far_read(FAR(pf_page + 1, TL_RUNITS), units, (uint16_t)n * sizeof(runit_t));
 	for (uint8_t i = 0; i < n && i < MAX_UNITS; i++)   // оружие в руках бойцов (bitems.c)
 		far_read(FAR(pf_page + 1, TL_UHS) + i * 2, units[i].pad, 2);
+	far_t t3 = FAR(pf_page + 2, 0);              // предметы на полу (bfx.c)
+	uint8_t k = far_byte(t3 + TV_FLOOR);
+	if (k > FI_MAX) k = FI_MAX;
+	for (uint8_t i = 0; i < k; i++) far_read(t3 + TV_FLOOR + 1 + i * 6, fl[i], 4);
+	far_read(t3 + TV_FLTE, fl_te, sizeof fl_te);
+	fl_n = k;
 }
 
 void bv_tile(uint8_t part) __banked
