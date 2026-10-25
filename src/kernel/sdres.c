@@ -37,6 +37,7 @@ typedef struct {
 	res_t slot_res[NSLOTS];
 	uint16_t use_clock;
 	uint8_t idx_page, nslots;
+	uint8_t grow;                   // 1 — после sdres_flush: слоты дозаводить, как только дадут память
 } sdst_t;
 static sdst_t __at(0xBB00) S;
 #define pk        S.pk
@@ -49,6 +50,7 @@ static sdst_t __at(0xBB00) S;
 #define slot_use  S.slot_use
 #define slot_res  S.slot_res
 #define use_clock S.use_clock
+#define grow      S.grow
 uint8_t sd_state;                      // 0 — не открывали, 1 — есть, 2 — нет (карты/файлов)
 
 // Каталоги пакетов лежат подряд в двух страницах пула: смещение каждого — idx_off, размер
@@ -56,13 +58,13 @@ uint8_t sd_state;                      // 0 — не открывали, 1 — �
 #define IDX_PAGES 2
 #define IDX_MAX   2000
 
-// Завести слоты кэша: по SLOT_PAGES страниц на слот, сколько дадут. Зовётся и после
+// Завести (дозавести) слоты кэша: по SLOT_PAGES страниц на слот, сколько дадут. Зовётся и после
 // sdres_flush — тот отдаёт страницы бою, и вернуть их надо при первом же запросе ресурса,
 // иначе slot_page[] остаётся PG_NONE, а чтение уходит по адресу #3FC000 — в запретные
 // страницы #F0-#FF (загрузчики, TS-BIOS, vDOS), до 64 КБ за раз.
 static uint8_t slots_open(void)
 {
-	for (nslots = 0; nslots < NSLOTS; nslots++) {
+	for (; nslots < NSLOTS; nslots++) {
 		uint8_t p = pg_alloc(SLOT_PAGES, SLOT_PAGES);
 		if (p == PG_NONE) break;
 		slot_page[nslots] = p;
@@ -103,17 +105,20 @@ static uint8_t packs_open(void)
 }
 
 // Отдать страницы кэша слотов обратно в пул: перед боем они нужнее под наборы тайлов
-// миссии (каждый слот — 4 страницы, всего до 24). Слоты заведутся заново при первом же
-// запросе ресурса — если к тому времени память освободится.
+// миссии (каждый слот — 4 страницы, всего до 24). Первый слот остаётся: с геоскейпа в пуле
+// меньше места (атлас глифов, подписи глобуса, сохранения в памяти), и после наборов тайлов
+// четырёх страниц подряд уже не находилось — панель боя (ICONS с карты) не рисовалась
+// (findings_log 2026-10-25). Остальные слоты дозаводятся при запросах, когда память освободится.
 void sdres_flush(void) __banked
 {
 	if (sd_state != 1) return;           // до packs_open в S лежит мусор из памяти банка
-	for (uint8_t s = 0; s < nslots; s++) {
+	for (uint8_t s = 1; s < nslots; s++) {
 		if (slot_page[s] != PG_NONE) pg_free(slot_page[s], SLOT_PAGES);
 		slot_page[s] = PG_NONE;
 		slot_id[s] = 0;
 	}
-	nslots = 0;
+	if (nslots > 1) nslots = 1;
+	grow = 1;
 }
 
 // Размер ресурса, не загружая его: нужно, чтобы выделить под него страницы (sdres_load).
@@ -166,7 +171,11 @@ uint8_t sdres_find(uint16_t id, res_t *r) __banked
 	uint8_t e[16];
 	if (!sd_state) sd_state = packs_open() ? 1 : 2;
 	if (sd_state != 1 || !id) return 0;
-	if (!nslots && !slots_open()) return 0;   // после sdres_flush слоты заводятся заново
+	if (grow || !nslots) {                   // после sdres_flush слоты дозаводятся
+		slots_open();
+		grow = nslots < NSLOTS;
+		if (!nslots) return 0;
+	}
 	use_clock++;
 	for (uint8_t s = 0; s < nslots; s++)
 		if (slot_id[s] == id) { slot_use[s] = use_clock; *r = slot_res[s]; return 1; }
