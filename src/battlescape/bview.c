@@ -773,6 +773,13 @@ void bv_tile(uint8_t part) __banked
 
 void bv_draw(void) __banked
 {
+	if (away == 2) {                     // окно хода: холсты карты оно не трогало — только сплит
+		away = 0;
+		split_start();
+		show_cam();
+		draw_map();
+		return;
+	}
 	if (away) {                          // вернулись из окна поверх боя: оно рисовало в строки
 		away = 0;                        //   0–199 и в рабочую область ui (200..) основного
 		dl_ok = 0;                       //   холста — вид собрать заново, потом вернуть сплит
@@ -797,6 +804,12 @@ void bv_suspend(void) __banked
 
 // Окно поверх боя, сквозь которое видна карта (меню действий): видимый кусок кольца копируется в
 // строки 0–143 основного холста, сплит снимается — карта остаётся неподвижной картинкой
+void bv_pause(void) __banked
+{
+	split_stop();
+	away = 2;
+}
+
 void bv_message(uint8_t on) __banked
 {
 	if (on) { split_stop(); return; }

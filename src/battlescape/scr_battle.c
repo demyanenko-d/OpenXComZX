@@ -598,7 +598,7 @@ static void end_turn(void)
 	bv_sync(nunits);
 	path_n = 0;
 	turn_dir = 0xFF;
-	bv_suspend();                        // окно рисуется в строки 0–199 основного холста
+	bv_pause();                          // окно хода рисует в основной холст, карту не трогает
 	marks_show(0, 0);
 	UI_GO(A_PUSH, SCR_NEXT_TURN);
 }
@@ -650,7 +650,7 @@ static void ai_run(void)
 	if (sel < nsold && !units[sel].alive) sel_step(0);   // выбранного убили — следующий живой
 	see_update();                        // заново: кого отряд видит с мест, где стоит
 	if (hid_on) hidden_show(0);
-	bv_suspend();
+	bv_pause();
 	marks_show(0, 0);
 	UI_GO(A_PUSH, SCR_NEXT_TURN);
 }
