@@ -126,6 +126,7 @@
 #define SCR_ACTION_MENU      250       // ActionMenuState: что делать предметом в руке
 #define SCR_ABORT            251       // AbortMissionState: прервать миссию?
 #define SCR_UNIT_INFO        252       // UnitInfoState: характеристики бойца
+#define SCR_BATTLE_PAUSE     253       // PauseState(OPT_BATTLESCAPE): меню паузы боя
 
 #define SCR_LAST             255
 

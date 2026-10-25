@@ -85,6 +85,7 @@ static const wdef_t w_battle[] = {
 	HOT(176, 160, 32, 16, A_CUSTOM, 20, 0),          // следующий, этого больше не выбирать (btnNextStopClick)
 	CUSR(49, 177, 10, 23, NOSTR, A_CUSTOM, 21),      // потратить всё время — правой кнопкой (btnZeroTUsClick)
 	HOT(208, 144, 32, 16, A_CUSTOM, 9, 0),           // показывать все этажи или только текущий
+	HOT(208, 160, 32, 16, A_CUSTOM, 22, 0),          // меню паузы (btnHelpClick)
 	HOT(240, 144, 32, 16, A_CUSTOM, 8, 0),           // конец хода
 	HOT(240, 160, 32, 16, A_CUSTOM, 18, ESC),        // прервать миссию (btnAbortClick)
 	// резерв времени (BattlescapeState::btnReserveClick): не резервировать, навскидку, очередь, прицельный
@@ -133,12 +134,25 @@ static const wdef_t w_abort[] = {
 	BTN(184, 110, 120, 16, UI_EL_MESSAGEWINDOWBUTTONS, STR_CANCEL_UC, A_POP, 0, ESC),
 };
 
+// PauseState(OPT_BATTLESCAPE): окно 216x160 в (52, 20), всё цветом mainMenu.battlescapeTheme с
+// контрастом, фон TAC00.SCR (applyBattlescapeTheme). Кнопки «сохранить» нет: сохранение боя ещё
+// не сделано, а запись кампании посреди боя вернула бы на геоскейп до высадки (14_todo)
+static const wdef_t w_bpause[] = {
+	WINP(52, 20, 216, 160, UI_EL_BATTLESCAPETHEME, POPB),
+	BTN(70, 52, 180, 18, UI_EL_BATTLESCAPETHEME, STR_LOAD_GAME, A_PUSH, SCR_LOAD, 0),
+	BTN(70, 96, 180, 18, UI_EL_BATTLESCAPETHEME, STR_ABANDON_GAME, A_PUSH, SCR_ABANDON, 0),
+	BTN(70, 122, 180, 18, UI_EL_BATTLESCAPETHEME, STR_GAME_OPTIONS, A_PUSH, SCR_OPTIONS, 0),
+	BTN(70, 150, 180, 18, UI_EL_BATTLESCAPETHEME, STR_CANCEL_UC, A_POP, 0, ESC),
+	TXT(57, 32, 206, 17, UI_EL_BATTLESCAPETHEME, STR_OPTIONS_UC, BIG | TC),
+};
+
 static const scr_t tab[] = {
 	SCR(SCR_BATTLE, UI_SCR_SAVEMENUS, RES_PAL_BATTLESCAPE, 0, SF_RAWPAL, w_battle),
 	SCR(SCR_NEXT_TURN, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_RAWPAL, w_next),
 	SCR(SCR_ACTION_MENU, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, 0, SF_POPUP | SF_RAWPAL, w_amenu),
 	SCR(SCR_ABORT, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_POPUP | SF_RAWPAL, w_abort),
 	SCR(SCR_UNIT_INFO, UI_SCR_STATS, RES_PAL_BATTLESCAPE, 0, SF_RAWPAL, w_uinfo),
+	SCR(SCR_BATTLE_PAUSE, UI_SCR_MAINMENU, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_POPUP | SF_RAWPAL, w_bpause),
 };
 
 // Запись юнита для вида — в рабочую страницу; bv_sync переносит их виду
@@ -731,6 +745,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		return 0;
 	}
 	if (id == SCR_ACTION_MENU) { amenu_event(ev, arg); return 0; }
+	if (id == SCR_BATTLE_PAUSE) return 0;   // кнопки ведут в окна меню сами
 	if (id == SCR_UNIT_INFO) {
 		if (ev == EVT_DRAW) uinfo_draw();
 		else if (ev == EVT_BUTTON) {
@@ -884,6 +899,12 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			ui_dirty(0);
 			break;
 		case 15: bt_res_kneel = !bt_res_kneel; ui_dirty(0); break;
+		case 22:                             // меню паузы поверх боя (видно и карту, и панель)
+			if (bv_walking() != 0xFF) break;
+			bv_snapshot();
+			marks_show(0, 0);
+			UI_GO(A_PUSH, SCR_BATTLE_PAUSE);
+			break;
 		case 19:                             // характеристики выбранного бойца
 			if (!nsold || bv_walking() != 0xFF) break;
 			bv_suspend();

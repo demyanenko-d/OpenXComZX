@@ -1,0 +1,27 @@
+# Меню паузы боя (PauseState(OPT_BATTLESCAPE)): кнопка панели (208, 160) — окно 216x160 в (52, 20)
+# поверх карты и панели, цвет mainMenu.battlescapeTheme, фон TAC00.SCR; CANCEL — назад в бой.
+# Снимки — tmp/shots/bat_pause/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_pause.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _bat_still 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+pokew _cursor_x 224
+pokew _cursor_y 168
+click L
+waitmark 253 200
+wait 40
+shot tmp/shots/bat_pause/00_pause.png
+pokew _cursor_x 160
+pokew _cursor_y 158
+click L
+waitmark 248 200
+wait 60
+shot tmp/shots/bat_pause/01_back.png
+echo battle pause OK
+exit 0
