@@ -30,6 +30,10 @@ extern uint8_t gfx_key;                 // 1 — gfx_blit пропускает �
 uint8_t gfx_sprite(uint16_t res_id, uint16_t frame, int16_t x, int16_t y) __banked;
 // Палитра экрана: ресурс палитры + блок BACKPALS (16 цветов) в цвета 224..239 (-1 — нет).
 void gfx_palette(uint16_t pal_id, int8_t backpal) __banked;
+// Отложенная палитра (сборка экрана ui.c): при gfx_pal_hold gfx_palette только готовит её,
+// gfx_pal_commit — в CRAM (если было что) и снимает hold
+extern uint8_t gfx_pal_hold;
+void gfx_pal_commit(void) __banked;
 // Сдвиг цветов lo..lo+n-1 текущей палитры на шаг (цикл палитры; следующая gfx_palette сбросит).
 void gfx_pal_cycle(uint8_t lo, uint8_t n) __banked;
 // Фон под всплывающим окном уровня lvl стека: запомнить прямоугольник экрана (страницы пула; 0 — нет

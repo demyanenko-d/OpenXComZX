@@ -233,6 +233,29 @@ static uint16_t pwm(uint16_t w)
 	return (r << 10) | (g << 5) | b;
 }
 
+// Сборка экрана в рабочей области (ui.c): палитра готовится в буфере, а в CRAM уходит вместе с
+// выводом собранного (gfx_pal_commit) — последней выигрывает заданная позже (экран, затем свой
+// виджет: слайды заставки)
+uint8_t gfx_pal_hold, gfx_pal_pend;
+
+static void pal_out(void)
+{
+	dma_wait();
+	far_t s = near_phys(dma_palette);
+	TS_DMASAL = (uint8_t)s; TS_DMASAH = (uint8_t)(s >> 8) & 0x3F; TS_DMASAX = FAR_PAGE(s);
+	TS_DMADAL = 0; TS_DMADAH = 0; TS_DMADAX = 0;
+	TS_DMALEN = 255;
+	TS_DMANUM = 0;
+	TS_DMACTRL = DMA_RAM_CRAM;
+	dma_wait();
+}
+
+void gfx_pal_commit(void) __banked
+{
+	gfx_pal_hold = 0;
+	if (gfx_pal_pend) { gfx_pal_pend = 0; pal_out(); }
+}
+
 void gfx_palette(uint16_t pal_id, int8_t backpal) __banked
 {
 	res_t r;
@@ -244,14 +267,8 @@ void gfx_palette(uint16_t pal_id, int8_t backpal) __banked
 		for (uint16_t i = 0; i < 256; i++) dma_palette[i] = pwm(dma_palette[i]);
 	else
 		for (uint16_t i = 0; i < 256; i++) dma_palette[i] |= 0x8000;
-	dma_wait();
-	far_t s = near_phys(dma_palette);
-	TS_DMASAL = (uint8_t)s; TS_DMASAH = (uint8_t)(s >> 8) & 0x3F; TS_DMASAX = FAR_PAGE(s);
-	TS_DMADAL = 0; TS_DMADAH = 0; TS_DMADAX = 0;
-	TS_DMALEN = 255;
-	TS_DMANUM = 0;
-	TS_DMACTRL = DMA_RAM_CRAM;
-	dma_wait();
+	if (gfx_pal_hold) { gfx_pal_pend = 1; return; }
+	pal_out();
 }
 
 // Сдвиг цветов lo..lo+n-1 на шаг (цвет i показывает бывший i+1, последний — первый):

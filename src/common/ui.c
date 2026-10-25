@@ -761,6 +761,9 @@ static void redraw(void)
 		gfx_yb = tx_yb = STAGE_CANVAS_Y;
 		comp = 1;
 		ndefer = 0;
+		load(top);
+		gfx_pal_hold = 1;                    // палитра экрана, а свой виджет (слайд) может сменить её —
+		apply_palette();                     //   в CRAM уйдёт последняя, вместе с выводом
 		gfx_fill(0, 0, SCREEN_W, SCREEN_H, 0);
 		load(b);
 		draw_all();
@@ -768,7 +771,7 @@ static void redraw(void)
 		gfx_yb = tx_yb = 0;
 		load(top);
 		wait_frames(1);                      // с начала кадра: палитра и копия (DMA обгоняет луч) —
-		apply_palette();                     //   в одном кадре, без кадра «старая картинка, новая палитра»
+		gfx_pal_commit();                    //   в одном кадре, без кадра «старая картинка, новая палитра»
 		gfx_copy(0, STAGE_CANVAS_Y, 0, SCREEN_W, SCREEN_H);
 		draw_deferred();
 		b++;
