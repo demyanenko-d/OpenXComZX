@@ -590,8 +590,11 @@ static void side_prepare(uint8_t side)
 	}
 }
 
+static uint8_t battle_end(uint8_t aborted);   // конец боя (ниже)
+
 static void end_turn(void)
 {
+	if (battle_end(0)) return;           // BattlescapeGame::endTurn: пришельцев или отряда нет — разбор
 	bt_side = FACTION_HOSTILE;
 	side_prepare(FACTION_HOSTILE);
 	for (uint8_t i = nsold; i < nunits; i++) units[i].seen = 0;   // setVisible(false) не своим

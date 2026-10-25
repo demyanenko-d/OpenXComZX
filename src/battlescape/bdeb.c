@@ -56,15 +56,49 @@ static void add_stat(uint8_t k, int16_t score)
 
 // Итог для кампании (prepareDebriefing, DebriefingState.cpp:853-1070): корабль — домой, место миссии
 // исчезает (и при прерывании), НЛО — тоже, а севшее, если отряд не удержал зону, через 5 с
-// взлетает; погибшие солдаты — с базы; очки миссии — региону и стране, где стоял корабль.
-// Трофеи на склад и гибель снаряжения — дальше (14_todo).
-static void campaign(const debreq_t *q, uint8_t alive_x)
+// взлетает; погибшие солдаты — с базы; очки миссии — региону и стране, где стоял корабль; поле
+// за отрядом — трупы и предметы пришельцев (с recover) на склад базы корабля (recoverItems:
+// оружие и вставленная обойма отдельно). Гибель снаряжения и груза корабля — дальше (14_todo).
+static void store(uint8_t b, const rtab_t *ti, uint16_t item)
+{
+	if (b >= MAX_BASES || item >= ti->n || item >= MAX_ITEMS) return;
+	if (!(rtab_word(ti, item, offsetof(r_items_t, flags)) & ITEMS_F_RECOVER)) return;
+	ST->base[b].items[item]++;
+}
+
+static void campaign(const debreq_t *q, uint8_t alive_x, uint8_t success)
 {
 	uint8_t c = (uint8_t)q->craft;
 	craft_t *cr = &ST->craft[c];
 	if (cr->type == NONE8) return;
 	uint8_t dk = cr->dest_kind, di = cr->dest;
 	geo_t pos = cr->pos;
+	uint8_t b = cr->base;
+	if (success) {
+		rtab_t ti, ta;
+		unit_t u;
+		rtab_open(RES_RULE_ITEMS, &ti);
+		rtab_open(RES_RULE_ARMORS, &ta);
+		for (uint8_t i = q->nsold; i < q->n; i++) {     // трупы
+			far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
+			if (u.alive || u.hp || u.faction != FACTION_HOSTILE || u.armor_rule >= ta.n) continue;
+			r_armors_t a;
+			uint16_t corpse;
+			rtab_get(&ta, u.armor_rule, &a);
+			if (!a.corpse_battle.n) continue;
+			rtab_tail(&ta, a.corpse_battle.off, &corpse, 2);
+			store(b, &ti, corpse);
+		}
+		for (uint16_t i = 0; i < BI_MAX; i++) {          // предметы выбывших пришельцев
+			bitem_t it;
+			far_read(FAR(q->page + 1, TL_BITEMS) + i * sizeof it, &it, sizeof it);
+			if (it.owner == BI_NONE || it.owner == BI_GROUND || it.owner < q->nsold) continue;
+			far_read(UNITS_FAR + (uint16_t)it.owner * sizeof u, &u, sizeof u);
+			if (u.alive || u.faction != FACTION_HOSTILE) continue;
+			store(b, &ti, it.item);
+			if (it.ammo != 0xFFFF && it.rounds) store(b, &ti, it.ammo);
+		}
+	}
 	craft_return(c);                             // returnToBase: цель кораблю меняет — взята раньше
 	if (dk == DK_SITE && di < MAX_SITES && ST->site[di].id) { ST->site[di].id = 0; ST->nsites--; }
 	if (dk == DK_UFO && di < MAX_UFOS && ST->ufo[di].type != NONE8) {
@@ -141,7 +175,7 @@ void deb_start(const debreq_t *q) __banked
 		d_total += ds[k].score;
 		ds[ds_n++] = ds[k];
 	}
-	if (q->craft < MAX_CRAFTS) campaign(q, alive_x);
+	if (q->craft < MAX_CRAFTS) campaign(q, alive_x, success);
 }
 
 uint8_t deb_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
