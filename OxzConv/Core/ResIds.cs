@@ -46,6 +46,7 @@ namespace OxzConv
 			S("BIGOBS.PCK", 0x01A7); S("FLOOROB.PCK", 0x01A8); S("HANDOB.PCK", 0x01A9); S("HANDOB2.PCK", 0x01AA);
 			S("BREATH-1.PCK", 0x01AB);
 			S("KNEELBTN", 0x01AC);   // кадры кнопки «присесть» OpenXcom (extraSprites KneelButton; только UFO)
+			S("BULLETS", 0x01AD);    // частицы пуль OpenXcom (extraSprites Projectiles): 385 кадров 4x3 и их тени
 			// карты боя (BATTLE.PAK): готовые поля и их тайлсеты — пока нет генератора карт (Core/Battle.cs)
 			S("BATMAP0", 0x01C0); S("BATMAP1", 0x01C1); S("BATMAP2", 0x01C2);
 			S("BATTILE0", 0x01C8); S("BATTILE1", 0x01C9); S("BATTILE2", 0x01CA);

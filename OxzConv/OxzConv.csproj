@@ -48,6 +48,8 @@
     <EmbeddedResource Include="..\REF\OpenXcom\bin\standard\xcom2\*.rul" LogicalName="openxcom/standard/xcom2/%(Filename)%(Extension)" />
     <EmbeddedResource Include="..\REF\OpenXcom\bin\standard\xcom1\Resources\UI\globe_ufo.png" LogicalName="openxcom/standard/xcom1/Resources/UI/globe_ufo.png" />
     <EmbeddedResource Include="..\REF\OpenXcom\bin\standard\xcom1\Resources\UI\reserve.png;..\REF\OpenXcom\bin\standard\xcom1\Resources\UI\kneelButton.png" LogicalName="openxcom/standard/xcom1/Resources/UI/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\REF\OpenXcom\bin\standard\xcom1\Resources\BulletSprites\BulletSprites.png" LogicalName="openxcom/standard/xcom1/Resources/BulletSprites/BulletSprites.png" />
+    <EmbeddedResource Include="..\REF\OpenXcom\bin\standard\xcom2\Resources\BulletSprites\TFTD-LAND.png" LogicalName="openxcom/standard/xcom2/Resources/BulletSprites/TFTD-LAND.png" />
     <EmbeddedResource Include="..\REF\OpenXcom\bin\standard\xcom2\Resources\UI\globe_tftd.png" LogicalName="openxcom/standard/xcom2/Resources/UI/globe_tftd.png" />    <EmbeddedResource Include="..\REF\OpenXcom\bin\standard\xcom2\Language\en-US.yml" LogicalName="openxcom/standard/xcom2/Language/en-US.yml" />
   </ItemGroup>
 

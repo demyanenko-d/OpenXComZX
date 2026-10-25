@@ -35,6 +35,7 @@
 #include "state.h"
 #include "bstats.h"
 #include "bfire.h"
+#include "bfx.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 
@@ -709,6 +710,12 @@ static void shoot(uint8_t tx, uint8_t ty)
 		s.shooter = i; s.n = nunits; s.tx = tx; s.ty = ty; s.tz = bv_level();
 		s.action = bt_action; s.acc = bt_acc; s.weapon = b.item; s.dir = u->dir;
 		fire_shot(&s, f);
+		{                                    // полёт пули и вспышка (bfx.c), урон — после
+			fxshot_t x;
+			x.page = pf_page; x.weapon = b.item; x.ammo = b.ammo;
+			x.ox = s.ox; x.oy = s.oy; x.oz = s.oz; x.ex = s.vx; x.ey = s.vy; x.ez = s.vz;
+			fx_shot(&x);
+		}
 		if (s.res != V_UNIT || s.hit == 0xFF) continue;
 		unit_t *v = &units[s.hit];       // TileEngine::hit: урон, мораль
 		dmg_t d;

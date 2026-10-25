@@ -186,6 +186,7 @@ int8_t fire_shot(shot_t *s, const fu_t *u) __banked
 		}
 	}
 	ox += dir_xs[s->dir & 7] * sz; oy += dir_ys[s->dir & 7] * sz;
+	s->ox = ox; s->oy = oy; s->oz = oz;
 	// цель: юнит — середина его роста, иначе объект, стены, пол (ProjectileFlyBState::init)
 	far_read(cell_at(s->tx, s->ty, s->tz), c, 4);
 	int16_t tx = (int16_t)s->tx * 16 + 8, ty = (int16_t)s->ty * 16 + 8, tz = (int16_t)s->tz * 24;

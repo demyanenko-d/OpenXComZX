@@ -64,6 +64,7 @@ static uint8_t u_tftd;
 // (TL_ARROW), запись для блита — в памяти банка; рисуется последней в сборке вида.
 static uint8_t __at(0xBEF0) arrow_e[TE_SIZE];
 static uint8_t ar_on;
+static uint8_t fx_n;                     // спрайтов поверх вида (bv_fx, записи — loader.h TV_FX)
 static int16_t ar_x, ar_y;               // где нарисована (мировые)
 
 // Ходьба (BattleUnit::startWalking / keepWalking): идёт один юнит за раз. Фаза растёт раз в
@@ -453,6 +454,21 @@ static void build_range(int16_t lo, int16_t hi, int16_t top, int16_t bot)
 		dl_blit(arrow_e, ar_x, ar_y);
 		pg_map3(old);
 	}
+	for (uint8_t i = 0; i < fx_n; i++) {         // пуля и вспышка (bfx.c) — поверх всего
+		uint8_t e[4 + TE_SIZE];
+		far_read(FAR(pf_page + 2, TV_FX + 2) + (uint16_t)i * sizeof e, e, sizeof e);
+		int16_t x = (int16_t)(e[0] | (e[1] << 8)), y = (int16_t)(e[2] | (e[3] << 8));
+		if (x + 40 < lo || x > hi || y + 40 < top || y > bot) continue;
+		uint8_t old = pg_map3(dl_n >= DL_PAGE_N ? dl_page + 1 : dl_page);
+		dl_blit(e + 4, x, y);
+		pg_map3(old);
+	}
+}
+
+void bv_fx(uint8_t n, int16_t lo, int16_t hi, int16_t top, int16_t bot) __banked
+{
+	fx_n = n;
+	repaint(lo, hi, top, bot);
 }
 
 // Полная сборка: окно камеры с запасом PAD по краям

@@ -266,6 +266,31 @@ namespace OxzConv
 				bat.Add(ids.Id("KNEELBTN"), ResType.Sprset, Sprites.EncodeSprset(kf), 2, 32, 16);
 				nBat++;
 			}
+			// Частицы пуль (extraSprites Projectiles, 105x33 по 3x3: 35 на тип пули, Map::drawTerrain):
+			// кадр шириной 4 (DMA — словами), за ними — те же кадры тенью (blitNShade 16: цвет ->
+			// последний своего ряда палитры). У TFTD — наземный набор (UnderwaterProjectiles — когда
+			// у боя будет глубина)
+			string proj = Extra("Projectiles");
+			if (proj != null)
+			{
+				var p = Png.DecodeIndexed(ox.ReadBytes($"standard/{RuleFolder}/{proj}"));
+				var pf = new List<Img>();
+				for (int shade = 0; shade < 2; shade++)
+					for (int fy = 0; fy < p.H / 3; fy++)
+						for (int fx = 0; fx < p.W / 3; fx++)
+						{
+							var fr = new Img(4, 3);
+							for (int y = 0; y < 3; y++)
+								for (int x = 0; x < 3; x++)
+								{
+									byte c = p.Px[(fy * 3 + y) * p.W + fx * 3 + x];
+									fr.Px[y * 4 + x] = c != 0 && shade != 0 ? (byte)((c & 0xF0) | 0x0F) : c;
+								}
+							pf.Add(fr);
+						}
+				bat.Add(ids.Id("BULLETS"), ResType.Sprset, Sprites.EncodeSprset(pf), pf.Count, 4, 3);
+				nBat++;
+			}
 			foreach (var file in gfs.List("UFOGRAPH", "BDY"))
 			{
 				string bas = file.Substring(0, file.Length - 3);

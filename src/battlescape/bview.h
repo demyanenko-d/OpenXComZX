@@ -48,5 +48,8 @@ uint8_t bv_walk_tick(void) __banked;
 void bv_walk_done(void) __banked;            // после 2: новый шаг не начат — нарисовать стойку
 uint8_t bv_walking(void) __banked;           // кто идёт (#FF — никто)
 uint16_t bv_dl_n(void) __banked;             // команд в списке вида (отладка)
+// Спрайты поверх вида (пуля, вспышка — bfx.c): n записей в третьей рабочей странице (loader.h
+// TV_FX); перерисовать прямоугольник [lo, hi] x [top, bot] (мировые) — прежние и новые
+void bv_fx(uint8_t n, int16_t lo, int16_t hi, int16_t top, int16_t bot) __banked;
 
 #endif

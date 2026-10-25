@@ -48,6 +48,17 @@
 #define TV_PROPS  3072         // 12 байт: armor, heBlock, dieMcd (часть миссии, 0 — нет), flammable,
 #define TV_PSIZE  12           //   footstep, heType, heStrength, smokeBlockage, fuel, lightSource,
                                //   targetType, tuFly (до #1800)
+// Выстрел на экране (bfx.c): спрайты поверх вида — число (байт) и записи с TV_FX + 2: мировые x, y
+// и запись для блита (12 байт); кадры частиц пуль по типам (ключ — первый кадр BULLETS, 35 частиц
+// и 35 теней) и вспышек попадания (ключ — hitAnimation, 10 кадров SMOKE.PCK); пиксели — в своей
+// странице (номер — TV_FXPG, её заводит bload.c)
+#define TV_FX     6144
+#define FX_MAX    72
+#define TV_FXB    7040         // FXB_MAX x (2 + 70 x TE_SIZE)
+#define FXB_MAX   4
+#define TV_FXH    9344         // FXH_MAX x (2 + 10 x TE_SIZE)
+#define FXH_MAX   4
+#define TV_FXPG   9728
 
 typedef struct {
 	uint16_t set[TL_SETS];     // ресурсы MCDSET наборов миссии

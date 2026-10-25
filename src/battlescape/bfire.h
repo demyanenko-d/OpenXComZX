@@ -36,6 +36,7 @@ typedef struct {
 	// результат
 	int8_t res;                // V_*: во что попали
 	int16_t vx, vy, vz;        // воксель попадания
+	int16_t ox, oy, oz;        // откуда летит (getOriginVoxel)
 	uint8_t hit;               // юнит, в которого попали (#FF — нет)
 } shot_t;
 

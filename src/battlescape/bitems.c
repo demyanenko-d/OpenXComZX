@@ -18,6 +18,7 @@
 #include "units.h"
 #include "bitems.h"
 #include "bequip.h"
+#include "bfx.h"
 
 static uint8_t bi_n;                     // занято записей
 
@@ -104,6 +105,7 @@ uint8_t bi_crew(uint8_t page, const uint8_t *sol, uint8_t n) __banked
 		bi_n = be_auto(&q);
 	}
 	hands_build(page, n);
+	fx_build(page, n);                       // кадры пуль и вспышек оружия отряда (bfx.c)
 	return bi_n;
 }
 
