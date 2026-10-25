@@ -1,0 +1,45 @@
+# Ход пришельцев (bai.c, AIModule): боец у пришельца (Shift+J, как в bat_fire.oxs), пришелец
+# развёрнут к нему (units[6].dir, #39A3 страницы #4E = 2 — на восток), конец хода: окно хода
+# пришельцев, ИИ видит бойца и стреляет (selectFireMethod), окно хода X-COM. Проверка —
+# units[0].hp (#3888) == 0 (ГСЧ сценария воспроизводим; меняется расход случайных чисел —
+# поправить ожидание). Снимки — tmp/shots/bat_ai/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_ai.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _bat_still 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+key j
+wait 60
+key x
+wait 10
+key CS+J
+poke 4E:3898 120
+wait 60
+poke 4E:39A3 2
+shot tmp/shots/bat_ai/00.png
+pokew _cursor_x 250
+pokew _cursor_y 150
+click L
+wait 60
+shot tmp/shots/bat_ai/01_aliens.png
+click L
+wait 4
+shot tmp/shots/bat_ai/02.png
+wait 4
+shot tmp/shots/bat_ai/03.png
+wait 4
+shot tmp/shots/bat_ai/04.png
+wait 4
+shot tmp/shots/bat_ai/05.png
+wait 4
+shot tmp/shots/bat_ai/06.png
+wait 4
+shot tmp/shots/bat_ai/07.png
+wait 100
+shot tmp/shots/bat_ai/08.png
+expect 4E:3888 0
+exit 0

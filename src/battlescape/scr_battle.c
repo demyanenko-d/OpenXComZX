@@ -37,6 +37,7 @@
 #include "bfire.h"
 #include "bfx.h"
 #include "bact.h"
+#include "bai.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 
@@ -603,15 +604,27 @@ static void end_turn(void)
 
 static void next_turn_close(void)
 {
-	if (bt_side == FACTION_HOSTILE) {    // ход пришельцев: ИИ ещё нет — сразу ход X-COM
-		bt_side = FACTION_PLAYER;
-		bt_turn++;
-		side_prepare(FACTION_PLAYER);
-		see_update();                    // заново: кого отряд видит с мест, где стоит
-		UI_GO(A_POP_PUSH, SCR_NEXT_TURN);
-		return;
-	}
+	if (bt_side == FACTION_HOSTILE) ai_start();   // ход пришельцев — ИИ по тактам (bai.c)
 	UI_GO(A_POP, 0);                     // назад в бой: вид соберётся заново (bv_draw)
+}
+
+// Такт хода пришельцев (bai.c): сдвинулись или стреляли — обзор отряда заново; походили все —
+// ход X-COM и его окно
+static void ai_run(void)
+{
+	aictx_t c;
+	c.page = pf_page; c.cells = cells; c.sx = m_sx; c.sy = m_sy; c.sz = m_sz; c.n = nunits; c.nsold = nsold;
+	uint8_t r = ai_tick(&c);
+	if (r & AI_SEE) { see_update(); ui_dirty(0); }
+	if (!(r & AI_DONE)) return;
+	bt_side = FACTION_PLAYER;
+	bt_turn++;
+	side_prepare(FACTION_PLAYER);
+	if (sel < nsold && !units[sel].alive) sel_step(0);   // выбранного убили — следующий живой
+	see_update();                        // заново: кого отряд видит с мест, где стоит
+	bv_suspend();
+	marks_show(0, 0);
+	UI_GO(A_PUSH, SCR_NEXT_TURN);
 }
 
 // ---------------------------------------------------------------- прервать миссию
@@ -850,6 +863,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		break;
 	case EVT_TICK: {
 		if (!gen_mode || !loaded) break;
+		if (bt_side == FACTION_HOSTILE) { ai_run(); break; }
 		if (turn_dir != 0xFF && nunits) {    // правая кнопка: разворот по одной восьмой,
 			uint8_t i = sel < nunits ? sel : 0;   // в конце — попытка открыть дверь
 			if (move_wait) move_wait--;
@@ -910,6 +924,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		globe_prepare();                 // собрать планету в задний буфер целиком, поверх следов боя
 		break;
 	case EVT_BUTTON:
+		if (bt_side != FACTION_PLAYER) break;   // ход пришельцев: интерфейс ждёт (BattlescapeState)
 		switch (arg) {
 		case 0: {                            // клик по карте
 			uint8_t mk = mark_at();
