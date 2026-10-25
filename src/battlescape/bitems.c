@@ -90,6 +90,19 @@ uint8_t bi_crew(uint8_t page, const uint8_t *sol, uint8_t n) __banked
 	return bi_n;
 }
 
+uint8_t bi_spend(uint8_t page, uint8_t unit, uint8_t right) __banked
+{
+	uint8_t h = sec_named(right ? STR_RIGHT_HAND : STR_LEFT_HAND);
+	bitem_t b;
+	for (uint8_t i = 0; i < bi_n; i++) {
+		far_read(bi_at(page, i), &b, sizeof b);
+		if (b.owner != unit || b.slot != h) continue;
+		if (b.rounds) { b.rounds--; far_write(bi_at(page, i), &b, sizeof b); }
+		return b.rounds;
+	}
+	return 0;
+}
+
 uint8_t bi_hand(uint8_t page, uint8_t unit, uint8_t right, bitem_t *out) __banked
 {
 	uint8_t h = sec_named(right ? STR_RIGHT_HAND : STR_LEFT_HAND);

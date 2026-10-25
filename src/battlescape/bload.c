@@ -96,8 +96,8 @@ uint8_t bat_load(bload_t *q) __banked
 	}
 	// Рамка курсора клетки из CURSOR.PCK: задние и передние половины красной и жёлтой
 	if (cur_page == PG_NONE) {
-		uint8_t want[4] = { 0, 1, 3, 4 };
-		sheet_load(RES_CURSOR_PCK, &cur_page, &cur_np, 4, want, t + TL_CURSOR);
+		uint8_t want[9] = { 0, 1, 3, 4, 6, 7, 8, 9, 10 };   // рамка и прицел (Map.cpp:684-696)
+		sheet_load(RES_CURSOR_PCK, &cur_page, &cur_np, 9, want, t + TL_CURSOR);
 	}
 	// Стрелка: 10 точек в строке (DMA адресует словами), запись для блита рядом
 	uint8_t row[10];

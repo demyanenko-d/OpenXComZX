@@ -159,6 +159,8 @@ static uint16_t alien_make(unit_t *a, uint16_t type, uint8_t rank, uint8_t diff,
 	a->strength = st[7]; a->psi_str = st[8]; a->psi_skill = st[9]; a->melee = st[10];
 	a->mor = 100;
 	a->en_rec = ur.energy_recovery;
+	a->h_stand = ur.stand_height; a->h_kneel = ur.kneel_height;
+	a->armor_rule = ur.armor;
 	return sheet;
 }
 

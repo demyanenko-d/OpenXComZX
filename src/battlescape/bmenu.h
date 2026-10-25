@@ -30,6 +30,6 @@ uint8_t am_build(const amreq_t *r) __banked;       // собрать пункт�
 void am_draw(uint8_t hl) __banked;                 // все пункты; hl — под курсором (#FF — нет)
 void am_hover(uint8_t old, uint8_t now) __banked;  // перерисовать два пункта: покинутый и новый
 uint8_t am_hit(int16_t x, int16_t y) __banked;     // пункт под точкой (#FF — мимо)
-uint8_t am_action(uint8_t i, uint8_t *tu) __banked;   // действие пункта (BA_*) и его цена
+uint8_t am_action(uint8_t i, uint8_t *tu, uint8_t *acc) __banked;   // действие пункта (BA_*), цена, меткость
 
 #endif

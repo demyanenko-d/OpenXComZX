@@ -167,7 +167,8 @@ namespace OxzConv
 					F("spriteInv", "str", comment: "имя куклы инвентаря (MAN_*), пока через таблицу строк"),
 					Fn("sheet", "res", (e, k, rs) => ArmorSheet(rs, k),
 						"готовые кадры юнита ASHEET_* (UNITS.PAK, BattleData.cs/UnitFrames.cs); 0 — листа нет"),
-					F("loftempsSet", "nums", comment: "маски вокселей юнита LOFTEMPS (по клетке крупного)"),
+					Fn("loftempsSet", "nums", (e, k, rs) => Y.Get(e, "loftempsSet") ?? (Y.Get(e, "loftemps") != null ? new List<object> { Y.Get(e, "loftemps") } : null),
+						"маски вокселей юнита LOFTEMPS (по клетке крупного); старый ключ loftemps — одна (Armor::load)"),
 				},
 				Flags = { "allowInv=true", "constantAnimation", "drawBubbles" },
 			});

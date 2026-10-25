@@ -34,6 +34,7 @@
 #include "bmenu.h"
 #include "state.h"
 #include "bstats.h"
+#include "bfire.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 
@@ -57,6 +58,8 @@ static uint8_t nunits;
 static uint8_t nsold;                    // бойцы X-COM — первые nsold юнитов, дальше пришельцы
 static uint8_t bt_turn = 1, bt_side;     // номер хода и чей ход (FACTION_*)
 static uint8_t bt_reserve, bt_res_kneel; // резерв времени (RES_*) и «на колено» — BattlescapeGame
+static uint8_t bt_action, bt_action_tu, bt_hand;   // выбранное действие, его цена и рука
+static uint8_t bt_acc, bt_aim;                     // меткость действия; ждём клетку-цель (прицел)
 static void next_turn_close(void);       // окно хода (ниже)
 static void unit_armor(unit_t *u, uint16_t arm);   // броня бойца (ниже)
 static uint8_t reserve_ok(uint8_t i, uint8_t cost);   // резерв времени (ниже)
@@ -497,7 +500,8 @@ static uint8_t load_gen(uint16_t terrain)
 	}
 	for (uint8_t i = 0; i < nsold; i++) {   // боевые показатели: солдат кампании или отладочные
 		unit_t *u = &units[i];
-		uint16_t arm;
+		uint16_t arm = 0xFFFF;
+		uint8_t st = 0;                      // тип солдата (soldiers): рост и броня по умолчанию
 		u->hand = 1;                         // активная рука — правая (BattleUnit: STR_RIGHT_HAND)
 		if (u->sol != 0xFF) {
 			soldier_t s;
@@ -506,11 +510,19 @@ static uint8_t load_gen(uint16_t terrain)
 			u->throwing = s.cur.throwing; u->strength = s.cur.strength; u->psi_str = s.cur.psi_strength;
 			u->psi_skill = s.cur.psi_skill; u->melee = s.cur.melee;
 			arm = s.armor == 0xFF ? 0xFFFF : s.armor;
+			st = s.type;
 		} else {
 			u->bravery = 50; u->reactions = 50; u->firing = 60; u->throwing = 60;
 			u->strength = 30; u->melee = 40;
-			rtab_t t;                        // броня солдата по умолчанию (soldiers.armor)
-			arm = rtab_open(RES_RULE_SOLDIERS, &t) && t.n ? rtab_word(&t, 0, offsetof(r_soldiers_t, armor)) : 0xFFFF;
+		}
+		{
+			rtab_t t;
+			r_soldiers_t sr;
+			if (rtab_open(RES_RULE_SOLDIERS, &t) && st < t.n) {
+				rtab_get(&t, st, &sr);
+				u->h_stand = sr.stand_height; u->h_kneel = sr.kneel_height;
+				if (u->sol == 0xFF) arm = sr.armor;   // отладочный боец — броня типа солдата
+			}
 		}
 		unit_armor(u, arm);
 	}
@@ -615,6 +627,7 @@ static void unit_armor(unit_t *u, uint16_t arm)
 {
 	rtab_t t;
 	r_armors_t a;
+	u->armor_rule = arm;
 	if (!rtab_open(RES_RULE_ARMORS, &t) || arm >= t.n) return;
 	rtab_get(&t, arm, &a);
 	u->armor[0] = a.front_armor; u->armor[1] = u->armor[2] = a.side_armor;
@@ -640,11 +653,93 @@ static void uinfo_draw(void)
 	stats_draw(&s);
 }
 
+// ---------------------------------------------------------------- выстрел
+// ProjectileFlyBState::init: времени хватает, обойма есть и не пуста, цель в пределах maxRange;
+// боец поворачивается к цели, тратит время, очередь — autoShots выстрелов по патрону. Траектория
+// и урон — bfire.c (банк 35); выбывший (здоровье 0 или оглушение не меньше здоровья) — со
+// сцены (трупа и падения ещё нет). Полёт пули и вспышка попадания — дальше.
+static void aim_off(void)
+{
+	bt_aim = 0;
+	bv_aim(0);
+}
+
+static void shoot(uint8_t tx, uint8_t ty)
+{
+	uint8_t i = sel < nsold ? sel : 0;
+	unit_t *u = &units[i];
+	bitem_t b;
+	rtab_t t;
+	r_items_t w;
+	if (!bi_hand(pf_page, i, bt_hand, &b) || !rtab_open(RES_RULE_ITEMS, &t) || b.item >= t.n) { aim_off(); return; }
+	rtab_get(&t, b.item, &w);
+	if (u->tu < bt_action_tu) { hud_warn(STR_NOT_ENOUGH_TIME_UNITS); return; }
+	if (w.compatible_ammo.n && b.ammo == 0xFFFF) { hud_warn(STR_NO_AMMUNITION_LOADED); return; }
+	if (w.compatible_ammo.n && !b.rounds) { hud_warn(STR_NO_ROUNDS_LEFT); return; }
+	int16_t dx = (int16_t)tx - u->x, dy = (int16_t)ty - u->y;
+	if ((uint16_t)(dx * dx + dy * dy) > (uint16_t)w.max_range * w.max_range) { hud_warn(STR_OUT_OF_RANGE); return; }
+	uint16_t power = w.power;
+	uint8_t type = w.damage_type;
+	if (b.ammo != 0xFFFF && b.ammo < t.n) {
+		r_items_t a;
+		rtab_get(&t, b.ammo, &a);
+		power = a.power; type = a.damage_type;
+	}
+	u->dir = dir_to(dx, dy);             // lookAt
+	u->tu -= bt_action_tu;
+	fu_t f[MAX_BUNITS];
+	for (uint8_t k = 0; k < nunits; k++) {
+		const unit_t *v = &units[k];
+		f[k].x = v->x; f[k].y = v->y; f[k].z = v->z;
+		f[k].flags = (v->alive ? FU_ALIVE : 0) | (v->size > 1 ? FU_BIG : 0) | (v->kneel ? FU_KNEEL : 0);
+		f[k].height = v->kneel ? v->h_kneel : v->h_stand;
+		f[k].armor = v->armor_rule;
+	}
+	uint8_t shots = bt_action == BA_AUTOSHOT ? w.auto_shots : 1;
+	for (uint8_t k = 0; k < shots; k++) {
+		if (w.compatible_ammo.n) {           // BattleItem::spendBullet; кончились — очередь обрывается
+			bitem_t c;
+			if (!bi_hand(pf_page, i, bt_hand, &c) || !c.rounds) break;
+			bi_spend(pf_page, i, bt_hand);
+		}
+		shot_t s;
+		s.page = pf_page; s.cells = cells; s.sx = m_sx; s.sy = m_sy; s.sz = m_sz;
+		s.shooter = i; s.n = nunits; s.tx = tx; s.ty = ty; s.tz = bv_level();
+		s.action = bt_action; s.acc = bt_acc; s.weapon = b.item; s.dir = u->dir;
+		fire_shot(&s, f);
+		if (s.res != V_UNIT || s.hit == 0xFF) continue;
+		unit_t *v = &units[s.hit];       // TileEngine::hit: урон, мораль
+		dmg_t d;
+		uint8_t hs = v->size * 8;
+		d.power = power; d.type = type;
+		d.rx = s.vx - ((int16_t)v->x * 16 + hs); d.ry = s.vy - ((int16_t)v->y * 16 + hs);
+		d.rz = s.vz - (int16_t)v->z * 24;
+		d.dir = v->dir; d.height = f[s.hit].height; d.armor_rule = v->armor_rule;
+		memcpy(d.armor, v->armor, 5);
+		d.hp = v->hp; d.stun = v->stun;
+		uint8_t adj = fire_damage(&d);
+		memcpy(v->armor, d.armor, 5);
+		v->hp = d.hp; v->stun = d.stun;
+		uint16_t loss = (uint16_t)adj * ((110 - v->bravery) / 10) / 10;
+		v->mor = loss >= v->mor ? 0 : (uint8_t)(v->mor - loss);
+		if (!v->hp || v->stun >= v->hp) {   // выбыл
+			v->alive = 0;
+			f[s.hit].flags &= (uint8_t)~FU_ALIVE;
+			ru_put(s.hit);
+			for (uint8_t q = 0; q < v->size * v->size; q++)
+				bv_cell((uint8_t)(v->x + (q & 1)), (uint8_t)(v->y + (q >> 1)), v->z);
+		}
+	}
+	unit_changed(i);                     // повернулся
+	aim_off();
+	see_update();
+	ui_dirty(0);
+}
+
 // ---------------------------------------------------------------- меню действий
 // BattlescapeState::handleItemClick -> ActionMenuState: пункты — по предмету в руке (bmenu.c),
 // выбранное действие ждёт цели (прицел и выстрел — дальше)
 static uint8_t am_hl = 0xFF;             // пункт под курсором
-static uint8_t bt_action, bt_action_tu, bt_hand;   // выбранное действие, его цена и рука
 
 static void amenu_open(uint8_t right)
 {
@@ -679,7 +774,10 @@ static void amenu_event(uint8_t ev, uint8_t arg)
 		if (ui_arrow_max) { UI_GO(A_POP, 0); break; }   // правая кнопка — закрыть
 		uint8_t h = am_hit(cursor_x, cursor_y);
 		if (h == 0xFF) break;
-		bt_action = am_action(h, &bt_action_tu);
+		bt_action = am_action(h, &bt_action_tu, &bt_acc);
+		// выстрелы ждут цель: курсор — прицел (BattlescapeGame::setupCursor, CT_AIM)
+		bt_aim = bt_action == BA_AUTOSHOT || bt_action == BA_SNAPSHOT || bt_action == BA_AIMEDSHOT;
+		bv_aim(bt_aim);
 		UI_GO(A_POP, 0);
 		break;
 	}
@@ -855,6 +953,10 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			if (!gen_mode || !nunits || bv_walking() != 0xFF) break;   // идёт — ждать
 			uint8_t tx, ty;
 			if (!bv_cursor(&tx, &ty)) break;
+			if (bt_aim) {                    // прицел: левая — выстрел, правая — отмена
+				if (ui_arrow_max) aim_off(); else shoot(tx, ty);
+				break;
+			}
 			unit_t *u = &units[sel < nunits ? sel : 0];
 			if (ui_arrow_max) {              // правая кнопка: развернуться туда и открыть дверь
 				path_n = 0;

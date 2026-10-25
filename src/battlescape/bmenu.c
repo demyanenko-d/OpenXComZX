@@ -179,9 +179,10 @@ uint8_t am_hit(int16_t x, int16_t y) __banked
 	return 0xFF;
 }
 
-uint8_t am_action(uint8_t i, uint8_t *tu) __banked
+uint8_t am_action(uint8_t i, uint8_t *tu, uint8_t *acc) __banked
 {
 	if (i >= am.n) return BA_NONE;
 	*tu = am.tu[i];
+	*acc = am.acc[i] < 0 ? 0 : am.acc[i] > 255 ? 255 : (uint8_t)am.acc[i];
 	return am.act[i];
 }

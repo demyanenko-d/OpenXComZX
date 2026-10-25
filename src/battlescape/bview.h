@@ -40,6 +40,7 @@ uint8_t bv_level(void) __banked;
 void bv_set_level(uint8_t l, uint8_t recenter) __banked;
 void bv_all_levels(void) __banked;           // «1/2»: все этажи или только текущий
 uint8_t bv_cursor(uint8_t *x, uint8_t *y) __banked;   // клетка под мышью; 1 — на поле
+void bv_aim(uint8_t aim) __banked;           // курсор клетки — прицел (CT_AIM) или рамка
 // Шаг идущего юнита i из (lx, ly) в (dx, dy) по направлению d: фазы ходьбы рисует вид
 void bv_walk(uint8_t i, uint8_t lx, uint8_t ly, uint8_t dx, uint8_t dy, uint8_t z, uint8_t d) __banked;
 // Такт ходьбы: 0 — идёт (или никто), 1 — прошёл середину (числится в новой клетке), 2 — дошёл

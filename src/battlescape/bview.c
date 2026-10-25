@@ -82,10 +82,14 @@ static uint8_t pf_page = PG_NONE;        // рабочая страница бо
 // на две части. Задняя (кадр 0) рисуется до содержимого клетки, передняя (кадр 3) — после
 // бойца, поэтому рамка охватывает клетку объёмно: боец стоит внутри неё, а не поверх.
 // Аппаратным спрайтом такого не сделать — спрайты TSU всегда поверх графики.
-// Кадры: 0 — задняя половина красной рамки, 1 — жёлтой (на клетке боец), 3 и 4 — передние
-#define CUR_FRAMES 4
-static uint8_t __at(0xBE90) cur_tab[CUR_FRAMES * TE_SIZE];
+// Кадры CURSOR.PCK (в cur_tab по порядку): 0 и 1 — задняя половина рамки, 3 и 4 — передняя (на
+// клетке юнит — мигают 0/1 и 3/4 раз в 100 мс: _animFrame % 2, пусто — красные 0 и 3), 6 — красный
+// прицел, 7..10 — жёлтый анимированный прицел над юнитом (7 + _animFrame / 2)
+#define CUR_FRAMES 9
+static uint8_t __at(0xB340) cur_tab[CUR_FRAMES * TE_SIZE];   // до #B388
 static uint8_t cur_on, cur_cx, cur_cy;   // курсор на клетке (cur_cx, cur_cy) текущего этажа
+static uint8_t cur_aim;                  // курсор прицела (CT_AIM)
+static uint8_t cur_anim;                 // _animFrame: 0..7, шаг 100 мс
 
 // Дисплей-лист (17_battle_render.md §2): вид раскладывается в список готовых команд DMA —
 // по 8 байт, ровно то, что выгружается в регистры. Строится при смене камеры, этажа или карты,
@@ -393,21 +397,23 @@ static void build_range(int16_t lo, int16_t hi, int16_t top, int16_t bot)
 			for (int16_t x = x0; x <= x1; x++, p += 4, px += 16, py += 8) {
 				uint8_t cx = cur_cx, cy = cur_cy;   // сравнения байтов — с копиями (SDCC 4.5)
 				uint8_t here = cur_on && z == level && (uint8_t)x == cx && (uint8_t)y == cy;
-				// на клетке юнит — рамка жёлтая, пустая клетка — красная (как в оригинале)
-				uint8_t cf = here && unit_no(z, (uint8_t)y, (uint8_t)x) ? 1 : 0;
+				// на клетке юнит — рамка мигает жёлтым, пустая клетка — красная (Map.cpp:684-696)
+				uint8_t un = here && unit_no(z, (uint8_t)y, (uint8_t)x), cb = 0, cf = 2;
+				if (cur_aim) cb = cf = un ? (uint8_t)(5 + (cur_anim >> 1)) : 4;
+				else if (un) { cb = cur_anim & 1; cf = (uint8_t)(2 + (cur_anim & 1)); }
 				for (uint8_t k = 0; k < 4; k++) {
 					uint8_t t = p[k];
 					if (t) dl_tile((uint8_t)(t - 1), px, py - (int16_t)tile_y[t - 1]);   // px — мировая X
 					if (k) continue;
 					// после пола (Map.cpp:668-721): задняя половина рамки курсора и идущий юнит
 					// из клеток «за» этой — до её стен, чтобы стены его закрывали
-					if (here) dl_blit(cur_tab + cf * TE_SIZE, px, py);
+					if (here) dl_blit(cur_tab + cb * TE_SIZE, px, py);
 					if (ru && wu != 0xFF) draw_units_cell((uint8_t)y, (uint8_t)x, px, py, 1);
 				}
 				// Юнит идёт сразу за своей клеткой: клетки правее и ниже рисуются позже и
 				// закрывают его — иначе он виден сквозь стены и закрытые двери.
 				if (ru) draw_units_cell((uint8_t)y, (uint8_t)x, px, py, 0);
-				if (here) dl_blit(cur_tab + (2 + cf) * TE_SIZE, px, py);    // передняя половина
+				if (here) dl_blit(cur_tab + cf * TE_SIZE, px, py);    // передняя половина
 			}
 			pg_map3(old);
 		}
@@ -676,7 +682,19 @@ void bv_tick(uint8_t s) __banked
 		if (oon) cell_repaint(ox, oy, level);
 		if (on) cell_repaint(cx, cy, level);
 	}
+	// такт анимации курсора (100 мс): над юнитом рамка мигает, прицел крутится — перерисовать клетку
+	uint8_t an = bat_still ? 0 : (uint8_t)((frames / 5) & 7), oa = cur_anim;
+	if (an != oa) {
+		cur_anim = an;
+		if (on && (cur_aim || unit_no(level, cy, cx))) cell_repaint(cx, cy, level);
+	}
 	arrow_tick();                        // стрелка над выбранным — после шага и прокрутки
+}
+
+void bv_aim(uint8_t aim) __banked
+{
+	cur_aim = aim;
+	if (cur_on) cell_repaint(cur_cx, cur_cy, level);
 }
 
 uint8_t bv_cursor(uint8_t *ox, uint8_t *oy) __banked

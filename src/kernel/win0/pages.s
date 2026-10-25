@@ -14,7 +14,7 @@
 	.globl	_gfx_map
 
 POOL_FIRST	= 0xB0
-POOL_LAST	= 0xEF
+POOL_LAST	= 0xEB			; #EC–#EF — банки кода 35–38 (build.ps1, map.h)
 POOL_N		= 64
 SCREEN_PAGE	= 0x10
 PAGE3_PORT	= 0x13AF
