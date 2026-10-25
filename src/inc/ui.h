@@ -127,10 +127,10 @@ extern char ui_msg[256];      // по контракту str_fmt (до 256 ба�
 extern char ui_edit[UI_EDIT_MAX];
 
 // --- диспетчер экранов (общий код, src/common/screens.c): по номеру экрана — в банк
-uint8_t scr_get(uint8_t id, sdef_t *s, wdef_t *w);                // описание -> Win1; 0 — нет экрана
-void scr_text(uint8_t id, uint8_t slot, uint8_t row, char *buf);   // динамический текст/строка списка (buf >= 256)
-uint8_t scr_rows(uint8_t id, uint8_t slot);                        // число строк списка
-uint8_t scr_event(uint8_t id, uint8_t ev, uint8_t arg);            // 1 — обработано
+uint8_t scr_get(uint8_t id, sdef_t *s, wdef_t *w) __banked;                // описание -> Win1; 0 — нет экрана
+void scr_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked;   // динамический текст/строка списка (buf >= 256)
+uint8_t scr_rows(uint8_t id, uint8_t slot) __banked;                        // число строк списка
+uint8_t scr_event(uint8_t id, uint8_t ev, uint8_t arg) __banked;            // 1 — обработано
 
 // Строка списка: колонки через '\t'; в начале может быть #03 и номер цвета — цвет
 // всей строки (TextList::setRowColor). Раскладка колонок — scr_text(id, slot, LIST_COLS, buf):

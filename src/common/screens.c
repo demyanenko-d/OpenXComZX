@@ -1,4 +1,4 @@
-// Диспетчер экранов (банк 1, рядом с ui.c — зовёт только ядро интерфейса): по номеру
+// Диспетчер экранов (банк 15; зовёт только ядро интерфейса ui.c из банка 1): по номеру
 // экрана — в функцию банка экранов. craft_name/ufo_name/fmt_funds — __banked (их
 // зовут экраны других банков; пишут только в буфер вызывающего). scr_find и
 // list_cols — static inline в scrdef.h (своя копия в каждом банке экранов).
@@ -45,7 +45,7 @@ combo_t combo;
 // Экраны боя (SCR_BATTLE..) — в конце той же группы: их раздаёт scr_graph.c (банк 4),
 // чтобы не растить резидентный банк 1 ещё одной веткой на каждую точку входа.
 
-uint8_t scr_get(uint8_t id, sdef_t *s, wdef_t *w)
+uint8_t scr_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
 {
 	uint8_t r, old = pg_map3(STATE_PAGE);
 	DISPATCH(r =, get, id, s, w)
@@ -53,7 +53,7 @@ uint8_t scr_get(uint8_t id, sdef_t *s, wdef_t *w)
 	return r;
 }
 
-void scr_text(uint8_t id, uint8_t slot, uint8_t row, char *buf)
+void scr_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked
 {
 	uint8_t old = pg_map3(STATE_PAGE);
 	buf[0] = 0;
@@ -61,7 +61,7 @@ void scr_text(uint8_t id, uint8_t slot, uint8_t row, char *buf)
 	pg_map3(old);
 }
 
-uint8_t scr_rows(uint8_t id, uint8_t slot)
+uint8_t scr_rows(uint8_t id, uint8_t slot) __banked
 {
 	uint8_t r, old = pg_map3(STATE_PAGE);
 	DISPATCH(r =, rows, id, slot)
@@ -69,7 +69,7 @@ uint8_t scr_rows(uint8_t id, uint8_t slot)
 	return r;
 }
 
-uint8_t scr_event(uint8_t id, uint8_t ev, uint8_t arg)
+uint8_t scr_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 {
 	uint8_t r, old = pg_map3(STATE_PAGE);
 	DISPATCH(r =, event, id, ev, arg)

@@ -476,12 +476,24 @@ static void mark_one(uint8_t i)
 #define STAGE_BIG_H   56
 #define STAGE_SAFE_Y  480
 #define STAGE_SAFE_H  32
+// Вне боя холсты карты боя (#90..) свободны: рабочая область — целый экран в холсте #90 (строка
+// 4096 основного: страница SCREEN_PAGE + y >> 5). Туда собираются и экран целиком, и окна, и
+// прокрутка списков — на экран всё уходит одним DMA, ничего не появляется по пунктам.
+#define STAGE_CANVAS_Y ((CANVAS2_PAGE - SCREEN_PAGE) * 32)
 static int16_t stage_y, stage_h;
+
+static uint8_t in_battle(void)
+{
+	for (uint8_t i = 0; i < depth; i++)
+		if (stk[i] >= SCR_BATTLE) return 1;
+	return 0;
+}
 
 static void stage_pick(void)
 {
 	stage_y = STAGE_BIG_Y;
 	stage_h = STAGE_BIG_H;
+	if (!in_battle()) { stage_y = STAGE_CANVAS_Y; stage_h = SCREEN_H; return; }
 	for (uint8_t i = 0; i < depth; i++)
 		if (stk[i] == SCR_DOGFIGHT) { stage_y = STAGE_SAFE_Y; stage_h = STAGE_SAFE_H; return; }
 }
@@ -661,30 +673,112 @@ static uint8_t load(uint8_t l)
 	return 1;
 }
 
+// Сборка в рабочей области (comp): W_CUSTOM глобуса и воздушного боя пишут в экран сами (globe.s,
+// scr_dogf.c — свои строки и DMA мимо gfx_yb), их рисуем после выброса собранного на экран
+#define NDEFER 6
+static uint8_t comp, ndefer, defer_l[NDEFER], defer_i[NDEFER];
+
 static void draw_all(void)
 {
 	memset(sig, 0, sizeof sig);                  // экран другой — подписи прошлого не годятся
+	uint8_t direct = comp && (cur == SCR_GEOSCAPE || cur == SCR_DOGFIGHT);
 	for (uint8_t i = 0; i < S.n; i++) {
+		if (direct && W[i].type == W_CUSTOM) {
+			uint8_t n = ndefer;
+			if (n < NDEFER) { defer_l[n] = lvl; defer_i[n] = i; ndefer = n + 1; }
+			continue;
+		}
 		draw_widget(i);
 		mus_fill();                          // отрисовка целого экрана длится дольше запаса
 	}                                        //   кольца — иначе музыка «залипает» (20 §8.2)
 }
 
+// Отложенные W_CUSTOM — прямо на экран (сборка уже выброшена)
+static void draw_deferred(void)
+{
+	uint8_t n = ndefer, l0 = lvl;
+	ndefer = 0;
+	for (uint8_t k = 0; k < n; k++) {
+		load(defer_l[k]);
+		draw_widget(defer_i[k]);
+	}
+	if (n) load(l0);
+}
+
 static uint8_t bg_broken;                     // закрыто окно без перерисовки — на экране его остатки
 
-// Весь видимый стек: от последнего полноэкранного экрана до верхнего.
+// Загруженный экран (окно) — в рабочую область по прямоугольнику всех его виджетов (могут выступать
+// за рамку) и на экран одним DMA; его глобус / воздушный бой — следом прямо на экран
+static void draw_staged(void)
+{
+	uint8_t st = 0;
+	if (!in_battle()) {
+		int16_t x0 = SCREEN_W, y0 = SCREEN_H, x1 = 0, y1 = 0;
+		for (uint8_t i = 0; i < S.n; i++) {
+			const wdef_t *v = &W[i];
+			if (v->x < x0) x0 = v->x;
+			if (v->y < y0) y0 = v->y;
+			if (v->x + v->w > x1) x1 = v->x + v->w;
+			if (v->y + v->h + 1 > y1) y1 = v->y + v->h + 1;
+		}
+		if (x0 < 0) x0 = 0;
+		if (y0 < 0) y0 = 0;
+		if (x1 > SCREEN_W) x1 = SCREEN_W;
+		if (y1 > SCREEN_H) y1 = SCREEN_H;
+		if (x1 > x0 && y1 > y0) st = stage_begin(x0, y0, x1 - x0, y1 - y0);
+	}
+	comp = st;
+	ndefer = 0;
+	draw_all();
+	comp = 0;
+	if (st) stage_end();
+	draw_deferred();
+}
+
+// Весь видимый стек: от последнего полноэкранного экрана до верхнего. Вне боя полноэкранный
+// собирается в холсте #90 и уходит на экран одним DMA вместе со сменой палитры (без чёрной вспышки
+// и появления виджетов по одному), за ним — его глобус, потом окна над ним, каждое своей сборкой:
+// глобус пишет в экран сам и после общей сборки лёг бы поверх окон.
 static void redraw(void)
 {
 	uint8_t top = depth - 1, b = top;
 	while (b > 0 && (stkf[b] & SF_POPUP)) b--;
 	dirty_clear();                           // всё и так перерисуется
 	bg_broken = 0;
-	load(top);
-	apply_palette();
-	if (!(stkf[b] & SF_POPUP)) gfx_fill(0, 0, SCREEN_W, SCREEN_H, 0);   // полноэкранный: под ним ничего
+	uint8_t full = !(stkf[b] & SF_POPUP);
+	if (in_battle()) {
+		load(top);
+		apply_palette();
+		if (full) gfx_fill(0, 0, SCREEN_W, SCREEN_H, 0);   // полноэкранный: под ним ничего
+		for (uint8_t l = b; l <= top; l++) {
+			load(l);
+			draw_all();
+		}
+		dirty = 0;
+		return;
+	}
+	if (full) {
+		gfx_yb = tx_yb = STAGE_CANVAS_Y;
+		comp = 1;
+		ndefer = 0;
+		gfx_fill(0, 0, SCREEN_W, SCREEN_H, 0);
+		load(b);
+		draw_all();
+		comp = 0;
+		gfx_yb = tx_yb = 0;
+		load(top);
+		wait_frames(1);                      // с начала кадра: палитра и копия (DMA обгоняет луч) —
+		apply_palette();                     //   в одном кадре, без кадра «старая картинка, новая палитра»
+		gfx_copy(0, STAGE_CANVAS_Y, 0, SCREEN_W, SCREEN_H);
+		draw_deferred();
+		b++;
+	} else {
+		load(top);
+		apply_palette();
+	}
 	for (uint8_t l = b; l <= top; l++) {
 		load(l);
-		draw_all();
+		draw_staged();
 	}
 	dirty = 0;
 }
@@ -752,7 +846,7 @@ static void do_push(uint8_t id)
 	}
 	if (pop) {
 		apply_palette();
-		draw_all();
+		draw_staged();
 	} else
 		redraw();
 }
@@ -904,11 +998,10 @@ static uint8_t list_click(uint8_t i, int16_t x, int16_t y, uint8_t rclick)
 			(*s)++;
 		} else
 			return 0;
-		restore(i, w->x, w->y, w->w, w->h + 1);
-		wcolors(w);
 		hov_w = 0xFF;                            // подсветка — заново по курсору
 		hov_x = -1;
-		draw_list(i);
+		mark_one(i);                             // фон и строки — в рабочей области, на экран разом
+		flush_marked();
 		return 1;
 	}
 	// невыделяемый список щелчок не держит (TextList): кнопки под ним (статьи 16/17) работают

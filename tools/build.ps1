@@ -29,7 +29,7 @@ $c_common   = @()   # Win0 — только ассемблер (14_todo.md §1.3
 # Банки кода (Win2): номер -> физическая страница и файлы C.
 # Страницы: резидентные #30-#3F, оверлей #40-#4F (08 §4.2, §4.3a).
 $banks = @(
-    @{ n = 1; page = 0x30; files = @('common\ui', 'common\screens') }   # ядро интерфейса + диспетчер экранов
+    @{ n = 1; page = 0x30; files = @('common\ui') }   # ядро интерфейса (диспетчер экранов screens.c — банк 15)
     @{ n = 2; page = 0x31; files = @('common\scr_menu', 'common\names', 'geoscape\scr_end', 'geoscape\earth\globe_ui', 'geoscape\earth\globe_ui_tab') }   # меню; имена объектов для всех окон; концовки; точки глобуса
     @{ n = 3; page = 0x32; files = @('geoscape\earth\scr_geo') }
     @{ n = 4; page = 0x33; files = @('geoscape\earth\scr_geo2', 'geoscape\earth\scr_graph') }
@@ -43,7 +43,7 @@ $banks = @(
     @{ n = 12; page = 0x3B; files = @('kernel\fat', 'kernel\sdres', 'kernel\music'); ram = 0xBB00 }   # музыка: состояние плеера с #BF00, каталог и кэш SD (sdres.c) — с #BB00
     @{ n = 13; page = 0x3C; files = @('common\scr_ufop') }
     @{ n = 14; page = 0x3E; files = @('test\bank_a', 'test\mathtest', 'kernel\sddiag'); ram = 0xB000 }   # служебный: самотест джампера, диагностика SD (с #B000 — её результаты)
-    @{ n = 15; page = 0x3F; files = @('test\bank_b') }
+    @{ n = 15; page = 0x3F; files = @('test\bank_b', 'common\screens') }   # самотест джампера; диспетчер экранов (зовёт ui.c; банк 1 переполнился)
     @{ n = 16; page = 0x3D; files = @('geoscape\month') }   # конец месяца
     @{ n = 17; page = 0x40; files = @('geoscape\earth\world', 'geoscape\earth\geo') }   # ГСЧ, регионы, сфера, маска суши
     @{ n = 18; page = 0x41; files = @('geoscape\earth\alien') }   # стратегия и миссии пришельцев
