@@ -36,6 +36,7 @@
 #include "bstats.h"
 #include "bfire.h"
 #include "bfx.h"
+#include "bact.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 
@@ -681,65 +682,20 @@ static void shoot(uint8_t tx, uint8_t ty)
 	if (w.compatible_ammo.n && !b.rounds) { hud_warn(STR_NO_ROUNDS_LEFT); return; }
 	int16_t dx = (int16_t)tx - u->x, dy = (int16_t)ty - u->y;
 	if ((uint16_t)(dx * dx + dy * dy) > (uint16_t)w.max_range * w.max_range) { hud_warn(STR_OUT_OF_RANGE); return; }
-	uint16_t power = w.power;
-	uint8_t type = w.damage_type;
-	if (b.ammo != 0xFFFF && b.ammo < t.n) {
-		r_items_t a;
-		rtab_get(&t, b.ammo, &a);
-		power = a.power; type = a.damage_type;
-	}
 	u->dir = dir_to(dx, dy);             // lookAt
 	u->tu -= bt_action_tu;
-	fu_t f[MAX_BUNITS];
-	for (uint8_t k = 0; k < nunits; k++) {
-		const unit_t *v = &units[k];
-		f[k].x = v->x; f[k].y = v->y; f[k].z = v->z;
-		f[k].flags = (v->alive ? FU_ALIVE : 0) | (v->size > 1 ? FU_BIG : 0) | (v->kneel ? FU_KNEEL : 0);
-		f[k].height = v->kneel ? v->h_kneel : v->h_stand;
-		f[k].armor = v->armor_rule;
-	}
 	uint8_t shots = bt_action == BA_AUTOSHOT ? w.auto_shots : 1;
+	bashot_t q;                              // пуля — bact.c (банк 36): траектория, полёт, урон
+	q.page = pf_page; q.cells = cells; q.sx = m_sx; q.sy = m_sy; q.sz = m_sz;
+	q.shooter = i; q.n = nunits; q.tx = tx; q.ty = ty; q.tz = bv_level();
+	q.action = bt_action; q.acc = bt_acc; q.weapon = b.item; q.ammo = b.ammo;
 	for (uint8_t k = 0; k < shots; k++) {
 		if (w.compatible_ammo.n) {           // BattleItem::spendBullet; кончились — очередь обрывается
 			bitem_t c;
 			if (!bi_hand(pf_page, i, bt_hand, &c) || !c.rounds) break;
 			bi_spend(pf_page, i, bt_hand);
 		}
-		shot_t s;
-		s.page = pf_page; s.cells = cells; s.sx = m_sx; s.sy = m_sy; s.sz = m_sz;
-		s.shooter = i; s.n = nunits; s.tx = tx; s.ty = ty; s.tz = bv_level();
-		s.action = bt_action; s.acc = bt_acc; s.weapon = b.item; s.dir = u->dir;
-		fire_shot(&s, f);
-		{                                    // полёт пули и вспышка (bfx.c), урон — после
-			fxshot_t x;
-			x.page = pf_page; x.weapon = b.item; x.ammo = b.ammo;
-			x.ox = s.ox; x.oy = s.oy; x.oz = s.oz; x.ex = s.vx; x.ey = s.vy; x.ez = s.vz;
-			fx_shot(&x);
-		}
-		if (s.res != V_UNIT || s.hit == 0xFF) continue;
-		unit_t *v = &units[s.hit];       // TileEngine::hit: урон, мораль
-		dmg_t d;
-		uint8_t hs = v->size * 8;
-		d.power = power; d.type = type;
-		d.rx = s.vx - ((int16_t)v->x * 16 + hs); d.ry = s.vy - ((int16_t)v->y * 16 + hs);
-		d.rz = s.vz - (int16_t)v->z * 24;
-		d.dir = v->dir; d.height = f[s.hit].height; d.armor_rule = v->armor_rule;
-		memcpy(d.armor, v->armor, 5);
-		d.hp = v->hp; d.stun = v->stun;
-		uint8_t adj = fire_damage(&d);
-		memcpy(v->armor, d.armor, 5);
-		v->hp = d.hp; v->stun = d.stun;
-		uint16_t loss = (uint16_t)adj * ((110 - v->bravery) / 10) / 10;
-		v->mor = loss >= v->mor ? 0 : (uint8_t)(v->mor - loss);
-		if (!v->hp || v->stun >= v->hp) {   // выбыл
-			v->alive = 0;
-			f[s.hit].flags &= (uint8_t)~FU_ALIVE;
-			ru_put(s.hit);
-			fl_corpse(pf_page, v->x, v->y, v->z, v->size, v->armor_rule);   // труп на пол (bfx.c)
-			bv_sync(nunits);
-			for (uint8_t q = 0; q < v->size * v->size; q++)
-				bv_cell((uint8_t)(v->x + (q & 1)), (uint8_t)(v->y + (q >> 1)), v->z);
-		}
+		ba_shot(&q);
 	}
 	unit_changed(i);                     // повернулся
 	aim_off();
