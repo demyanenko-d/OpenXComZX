@@ -658,10 +658,25 @@ static uint8_t battle_end(uint8_t aborted)
 	return 1;
 }
 
+static void ai_ctx(aictx_t *c)
+{
+	c->page = pf_page; c->cells = cells; c->sx = m_sx; c->sy = m_sy; c->sz = m_sz; c->n = nunits; c->nsold = nsold;
+}
+
+// Огонь в ответ на действие юнита m (bai.c ai_react): 1 — кто-то стрелял (конец боя — у вызывающего)
+static uint8_t react(uint8_t m)
+{
+	aictx_t c;
+	ai_ctx(&c);
+	if (!ai_react(&c, m)) return 0;
+	see_update();
+	return 1;
+}
+
 static void ai_run(void)
 {
 	aictx_t c;
-	c.page = pf_page; c.cells = cells; c.sx = m_sx; c.sy = m_sy; c.sz = m_sz; c.n = nunits; c.nsold = nsold;
+	ai_ctx(&c);
 	uint8_t r = ai_tick(&c);
 	if (r & AI_SEE) see_update();
 	if (r & AI_HIT) { if (battle_end(0)) return; ui_dirty(0); }   // панель — только после выстрела
@@ -767,6 +782,7 @@ static void shoot(uint8_t tx, uint8_t ty)
 	unit_changed(i);                     // повернулся
 	aim_off();
 	see_update();
+	react(i);                            // после выстрела — огонь в ответ (ProjectileFlyBState)
 	if (!battle_end(0)) ui_dirty(0);     // последний пришелец выбыл — разбор (бой не перерисовывать)
 }
 
@@ -936,6 +952,12 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				ru_put(i);
 				see_update();                // шаг — пересчёт обзора (UnitWalkBState)
 			} else if (r == 2) {             // следующий шаг — в том же такте, без кадра стойки
+				if (react(i)) {              // шаг сделан: огонь в ответ обрывает путь
+					path_n = 0;
+					bv_walk_done();
+					if (!battle_end(0)) ui_dirty(0);
+					break;
+				}
 				if (path_n) step_unit();     //   (обзор — после: он может перерисовать вид)
 				bv_walk_done();              // не пошёл (поворот, дверь, конец) — стойка
 				see_update();

@@ -31,7 +31,7 @@
   `craft.oxs`, `ufopaedia.oxs`, `month.oxs`,
   `aliens.oxs`, `dogfight.oxs`, `dogfight2.oxs`, `basedefense.oxs`, `ironman.oxs`,
   `globe.oxs` (скорость глобуса по зумам — `tools\globeprof.ps1`), `bat_render.oxs`,
-  `bat_geo.oxs` (вход в бой с геоскейпа — панель на месте), `bat_kill.oxs` (гибель и труп), `bat_ai.oxs` (ход пришельцев), `bat_deb.oxs` (разбор боя), `bat_geo_win.oxs` (победа в кампании), `bat_exact.oxs` (частичная перерисовка боя = полной: команды `shotmark`/`shotsame`),
+  `bat_geo.oxs` (вход в бой с геоскейпа — панель на месте), `bat_kill.oxs` (гибель и труп), `bat_ai.oxs` (ход пришельцев), `bat_deb.oxs` (разбор боя), `bat_geo_win.oxs` (победа в кампании), `bat_react.oxs` (огонь в ответ), `bat_exact.oxs` (частичная перерисовка боя = полной: команды `shotmark`/`shotsame`),
   `bat_walk.oxs` (ходьба бойца фазами, снимки), `bat_scroll.oxs` (прокрутка мышью у края и
   стрелками, кольцо 512x512; курсор в сценариях боя — в середину, у края камера едет),
   `sdinfo*.oxs` (окно диагностики SD: норма, отказ DMA, SDHC, нет карты; настройки

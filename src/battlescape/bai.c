@@ -84,27 +84,76 @@ static void next_alien(void)
 	ai_pn = ai_pi = ai_moved = ai_atk = 0;
 }
 
-// Атака видимого бойца: 1 — выстрелил
-static uint8_t attack(const aictx_t *c, unit_t *u)
+// Оружие в руке юнита a (getMainHandWeapon): огнестрельное с патронами — правой, иначе левой
+static uint8_t gun(const aictx_t *c, uint8_t a, bitem_t *b, uint8_t *right, r_items_t *w)
 {
-	if (ai_atk >= ATK_MAX) return 0;
-	bitem_t b, o;
-	uint8_t right = 1;
-	if (!bi_hand(c->page, ai_a, 1, &b)) { right = 0; if (!bi_hand(c->page, ai_a, 0, &b)) return 0; }
 	rtab_t t;
-	r_items_t w;
-	if (!rtab_open(RES_RULE_ITEMS, &t) || b.item >= t.n) return 0;
-	rtab_get(&t, b.item, &w);
-	if (w.battle_type != 1) return 0;             // BT_FIREARM
-	if (w.compatible_ammo.n && (b.ammo == 0xFFFF || !b.rounds)) return 0;
-	// кого видит (тот же обзор, что у отряда: сектор и линия взгляда)
-	vu_t v[MAX_BUNITS];
+	if (!rtab_open(RES_RULE_ITEMS, &t)) return 0;
+	for (uint8_t h = 1; h != 0xFF; h--) {
+		if (!bi_hand(c->page, a, h, b) || b->item >= t.n) continue;
+		rtab_get(&t, b->item, w);
+		if (w->battle_type != 1) continue;            // BT_FIREARM
+		if (w->compatible_ammo.n && (b->ammo == 0xFFFF || !b->rounds)) continue;
+		*right = h;
+		return 1;
+	}
+	return 0;
+}
+
+// Цена действия (getActionTUs): процент от времени юнита, flatRate — как есть
+static uint8_t tu_cost(const unit_t *u, const r_items_t *w, uint8_t v)
+{
+	return (w->flags & ITEMS_F_FLAT_RATE) ? v : (uint8_t)((uint16_t)u->tu_max * v / 100);
+}
+
+// Обзор: юниты копией на стеке (vision.c)
+static void fill_vu(const aictx_t *c, vu_t *v)
+{
 	unit_t x;
 	for (uint8_t i = 0; i < c->n; i++) {
 		u_get(i, &x);
 		v[i].x = x.x; v[i].y = x.y; v[i].z = x.z; v[i].dir = x.dir;
 		v[i].flags = (x.alive ? VU_ALIVE : 0) | (x.size > 1 ? VU_BIG : 0);
 	}
+}
+
+// Выстрел юнита a действием act по клетке t (getFiringAccuracy: firing · точность оружия, с колена
+// · 1.15, двуручное при занятой второй руке · 0.8): время, патроны, пули (bact.c)
+static void fire(const aictx_t *c, uint8_t a, unit_t *u, const vu_t *t, uint8_t act, uint8_t cost,
+		 uint8_t right, const bitem_t *b, const r_items_t *w)
+{
+	bitem_t o;
+	uint16_t acc = act == BA_AIMEDSHOT ? w->accuracy_aimed : act == BA_AUTOSHOT ? w->accuracy_auto : w->accuracy_snap;
+	acc = (uint16_t)u->firing * acc / 100;
+	if (u->kneel) acc = acc * 115 / 100;
+	if ((w->flags & ITEMS_F_TWO_HANDED) && bi_hand(c->page, a, !right, &o)) acc = acc * 80 / 100;
+	u->tu -= cost;
+	u_set(a, u);
+	bashot_t q;
+	q.page = c->page; q.cells = c->cells; q.sx = c->sx; q.sy = c->sy; q.sz = c->sz;
+	q.shooter = a; q.n = c->n; q.tx = t->x; q.ty = t->y; q.tz = t->z;
+	q.action = act; q.acc = acc > 255 ? 255 : (uint8_t)acc; q.weapon = b->item; q.ammo = b->ammo;
+	uint8_t shots = act == BA_AUTOSHOT ? w->auto_shots : 1;
+	for (uint8_t k = 0; k < shots; k++) {
+		if (w->compatible_ammo.n) {
+			bitem_t r;
+			if (!bi_hand(c->page, a, right, &r) || !r.rounds) break;
+			bi_spend(c->page, a, right);
+		}
+		ba_shot(&q);
+	}
+}
+
+// Атака видимого бойца: 1 — выстрелил
+static uint8_t attack(const aictx_t *c, unit_t *u)
+{
+	if (ai_atk >= ATK_MAX) return 0;
+	bitem_t b;
+	uint8_t right;
+	r_items_t w;
+	if (!gun(c, ai_a, &b, &right, &w)) return 0;
+	vu_t v[MAX_BUNITS];                               // кого видит (тот же обзор, что у отряда)
+	fill_vu(c, v);
 	uint8_t list[8], nl = vis_list(v, c->nsold, 0, ai_a, list, sizeof list), tg = 0xFF;
 	uint16_t best = 0xFFFF;
 	for (uint8_t k = 0; k < nl; k++) {               // ближайший
@@ -115,14 +164,8 @@ static uint8_t attack(const aictx_t *c, unit_t *u)
 	if (tg == 0xFF || best > (uint16_t)w.max_range * w.max_range) return 0;
 	uint16_t dist = isqrt(best);
 	if (dist * dist < best) dist++;                   // TileEngine::distance — вверх
-	// selectFireMethod: цена — процент от времени юнита (flatRate — как есть)
-	uint8_t tu_a = w.tu_auto, tu_s = w.tu_snap, tu_m = w.tu_aimed;
-	if (!(w.flags & ITEMS_F_FLAT_RATE)) {
-		tu_a = (uint8_t)((uint16_t)u->tu_max * tu_a / 100);
-		tu_s = (uint8_t)((uint16_t)u->tu_max * tu_s / 100);
-		tu_m = (uint8_t)((uint16_t)u->tu_max * tu_m / 100);
-	}
-	uint8_t tu = u->tu, act = 0, cost = 0;
+	uint8_t tu_a = tu_cost(u, &w, w.tu_auto), tu_s = tu_cost(u, &w, w.tu_snap), tu_m = tu_cost(u, &w, w.tu_aimed);
+	uint8_t tu = u->tu, act = 0, cost = 0;           // selectFireMethod
 	if (dist < 4) {
 		if (w.tu_auto && tu >= tu_a) { act = BA_AUTOSHOT; cost = tu_a; }
 		else if (w.tu_snap && tu >= tu_s) { act = BA_SNAPSHOT; cost = tu_s; }
@@ -144,27 +187,60 @@ static uint8_t attack(const aictx_t *c, unit_t *u)
 		return 1;
 	}
 	ai_aim = 0;
-	uint16_t acc = act == BA_AIMEDSHOT ? w.accuracy_aimed : act == BA_AUTOSHOT ? w.accuracy_auto : w.accuracy_snap;
-	acc = (uint16_t)u->firing * acc / 100;
-	if (u->kneel) acc = acc * 115 / 100;
-	if ((w.flags & ITEMS_F_TWO_HANDED) && bi_hand(c->page, ai_a, !right, &o)) acc = acc * 80 / 100;
-	u->tu -= cost;
-	u_set(ai_a, u);
-	bashot_t q;
-	q.page = c->page; q.cells = c->cells; q.sx = c->sx; q.sy = c->sy; q.sz = c->sz;
-	q.shooter = ai_a; q.n = c->n; q.tx = v[tg].x; q.ty = v[tg].y; q.tz = v[tg].z;
-	q.action = act; q.acc = acc > 255 ? 255 : (uint8_t)acc; q.weapon = b.item; q.ammo = b.ammo;
-	uint8_t shots = act == BA_AUTOSHOT ? w.auto_shots : 1;
-	for (uint8_t k = 0; k < shots; k++) {
-		if (w.compatible_ammo.n) {
-			bitem_t r;
-			if (!bi_hand(c->page, ai_a, right, &r) || !r.rounds) break;
-			bi_spend(c->page, ai_a, right);
-		}
-		ba_shot(&q);
-	}
+	fire(c, ai_a, u, &v[tg], act, cost, right, &b, &w);
 	ai_atk++;
 	return 1;
+}
+
+// Огонь в ответ (TileEngine::checkReactionFire, TileEngine.cpp:828-1090): на действие юнита m
+// стреляют юниты другой стороны ближе 20 клеток, которые его видят (сектор и линия взгляда), с
+// оружием навскидку в руке (determineReactionType: snap, патроны, дальность, времени больше цены);
+// первым — с наибольшими очками реакции (getReactionScore: reactions · TU / TU max), и только если
+// они не меньше очков самого m (getReactor); после выстрела выбор заново
+uint8_t ai_react(const aictx_t *c, uint8_t m) __banked
+{
+	unit_t mv, r;
+	vu_t v[MAX_BUNITS];
+	uint8_t res = 0;
+	for (uint8_t tries = 0; tries < 8; tries++) {
+		u_get(m, &mv);
+		if (!mv.alive || mv.faction == FACTION_NEUTRAL) break;
+		fill_vu(c, v);
+		uint8_t player = mv.faction == FACTION_PLAYER, br = 0xFF, bright = 0, bcost = 0;
+		uint8_t lo = player ? c->nsold : 0, hi = player ? c->n : c->nsold;
+		int16_t ms = mv.tu_max ? (int16_t)((uint16_t)mv.reactions * mv.tu / mv.tu_max) : 0, bs = -1;
+		bitem_t bb;
+		r_items_t bw;
+		for (uint8_t i = lo; i < hi; i++) {
+			u_get(i, &r);
+			if (!r.alive || r.stun >= r.hp || r.faction == mv.faction || r.faction == FACTION_NEUTRAL) continue;
+			int16_t dx = (int16_t)r.x - mv.x, dy = (int16_t)r.y - mv.y, dz = (int16_t)r.z - mv.z;
+			uint16_t d2 = (uint16_t)(dx * dx + dy * dy + dz * dz);
+			if (d2 > 400) continue;                       // MAX_VIEW_DISTANCE_SQR
+			bitem_t b;
+			uint8_t right;
+			r_items_t w;
+			if (!gun(c, i, &b, &right, &w) || !w.tu_snap || d2 >= (uint16_t)w.max_range * w.max_range) continue;
+			uint8_t cost = tu_cost(&r, &w, w.tu_snap);
+			if (!cost || r.tu <= cost) continue;
+			// видит ли i юнита m: пришелец смотрит на бойцов [0, nsold), боец — на пришельцев [nsold, n)
+			uint8_t list[16], nl = player ? vis_list(v, c->nsold, 0, i, list, sizeof list)
+			                              : vis_list(v, c->n, c->nsold, i, list, sizeof list), seen = 0;
+			for (uint8_t k = 0; k < nl; k++) if (list[k] == m) seen = 1;
+			if (!seen) continue;
+			int16_t sc = r.tu_max ? (int16_t)((uint16_t)r.reactions * r.tu / r.tu_max) : 0;
+			if (sc > bs) { bs = sc; br = i; bright = right; bcost = cost; bb = b; bw = w; }
+		}
+		if (br == 0xFF || ms > bs) break;
+		u_get(br, &r);
+		r.dir = dir_to((int16_t)mv.x - r.x, (int16_t)mv.y - r.y);
+		u_set(br, &r);
+		show(c, br, &r);
+		if (r.seen || r.faction == FACTION_PLAYER) bv_cell(r.x, r.y, r.z);
+		fire(c, br, &r, &v[m], BA_SNAPSHOT, bcost, bright, &bb, &bw);
+		res = AI_SEE | AI_HIT;
+	}
+	return res;
 }
 
 // Куда патрулировать (setupPatrol): связанный с его узлом узел, иначе любой; путь — в ai_path
@@ -263,20 +339,23 @@ static uint8_t ai_step(const aictx_t *c)
 		}
 		if (r != 2) return 0;
 		ai_walk = 0;
+		uint8_t rf = ai_react(c, ai_a);              // шаг сделан — отряд может ответить огнём
+		if (rf) ai_pn = 0;                           //   (UnitWalkBState: путь обрывается)
 		u_get(ai_a, &u);
-		if (ai_pi < ai_pn && step(c, &u)) return AI_SEE;   // следующий шаг — без кадра стойки
+		if (u.alive && ai_pi < ai_pn && step(c, &u)) return AI_SEE;   // следующий шаг — без кадра стойки
 		bv_walk_done();
-		return AI_SEE;
+		return AI_SEE | rf;
 	}
 	while (ai_a < c->n) {
 		u_get(ai_a, &u);
 		if (!u.alive || u.faction != FACTION_HOSTILE || ai_a < c->nsold) { next_alien(); continue; }
-		if (attack(c, &u)) return AI_SEE | AI_HIT;   // стрелял — в следующем такте думает снова
-		if (ai_pi < ai_pn) { if (step(c, &u)) return AI_SEE; }
-		else if (!ai_moved) {
-			ai_moved = 1;
-			plan_patrol(c, &u);
-			if (ai_pn && step(c, &u)) return AI_SEE;
+		if (attack(c, &u))                           // стрелял — в следующем такте думает снова
+			return AI_SEE | AI_HIT | (ai_aim ? 0 : ai_react(c, ai_a));   // после выстрела — ответ отряда
+		if (ai_pi >= ai_pn && !ai_moved) { ai_moved = 1; plan_patrol(c, &u); }
+		if (ai_pi < ai_pn && step(c, &u)) {
+			uint8_t rf = ai_walk ? 0 : ai_react(c, ai_a);   // шаг без анимации — сразу ответ
+			if (rf) ai_pn = 0;
+			return AI_SEE | rf;
 		}
 		next_alien();
 		return 0;                                    // по пришельцу на такт
