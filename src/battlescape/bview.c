@@ -829,7 +829,7 @@ void bv_snapshot(void) __banked
 		if (w1 < SCREEN_W) far_copy(dst + w1, src, SCREEN_W - w1);
 	}
 	split_stop();
-	away = 1;
+	away = 2;                                // холсты карты окно не трогает: вернуть — сплитом
 }
 
 void bv_center(uint8_t x, uint8_t y) __banked

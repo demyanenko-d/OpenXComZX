@@ -1022,13 +1022,13 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			break;
 		case 19:                             // характеристики выбранного бойца
 			if (!nsold || bv_walking() != 0xFF) break;
-			bv_suspend();
+			bv_pause();                      // окно рисует в основной холст, карту не трогает
 			marks_show(0, 0);
 			UI_GO(A_PUSH, SCR_UNIT_INFO);
 			break;
 		case 18:                             // прервать миссию: окно поверх карты, панель видна
 			if (bv_walking() != 0xFF) break;
-			bv_suspend();
+			bv_pause();
 			marks_show(0, 0);
 			UI_GO(A_PUSH, SCR_ABORT);
 			break;
