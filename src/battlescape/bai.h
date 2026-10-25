@@ -14,6 +14,8 @@ typedef struct {
 
 #define AI_DONE 1              // все пришельцы походили — ход X-COM
 #define AI_SEE  2              // пришелец сдвинулся или стрелял — пересчитать обзор отряда
+#define AI_HIDDEN 4            // действует пришелец, которого отряд не видит: «Hidden Movement»
+#define AI_HIT  8              // стрелял: панели — показатели бойца заново
 
 void ai_start(void) __banked;               // начало хода пришельцев
 uint8_t ai_tick(const aictx_t *c) __banked; // такт хода: AI_*

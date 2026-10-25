@@ -28,6 +28,7 @@
 #include "vision.h"
 #include "rules.h"
 #include "text.h"
+#include "gfx.h"
 #include "bitems.h"
 #include "bhud.h"
 #include "bspr.h"
@@ -610,18 +611,45 @@ static void next_turn_close(void)
 
 // Такт хода пришельцев (bai.c): сдвинулись или стреляли — обзор отряда заново; походили все —
 // ход X-COM и его окно
+// BattlescapeMessage «Hidden Movement» (Map.cpp:96-101, 221-228): окно на месте карты на фоне
+// TAC00.SCR, крупно по центру, пока ходит невидимый пришелец (bai.c AI_HIDDEN). Не окно
+// интерфейса: рисуется в основной холст, а вид просто перестаёт показывать карту — её холсты
+// целы, и вернуть её — без пересборки (окна интерфейса в бою закрываются полной перерисовкой)
+static uint8_t hid_on;
+static void hidden_show(uint8_t on)
+{
+	hid_on = on;
+	bv_message(on);
+	if (!on) { marks_on(); return; }
+	marks_show(0, 0);
+	gfx_window(0, 0, SCREEN_W, VIEW_H, ui_color_in(UI_SCR_BATTLESCAPE, UI_EL_MESSAGEWINDOWBORDER, 0), RES_TAC00_SCR, 0);
+	char s[32];
+	tbox_t b;
+	str_copy(STR_HIDDEN_MOVEMENT, s, sizeof s);
+	b.x = 0; b.y = 64; b.w = SCREEN_W; b.h = 17; b.font = FNT_BIG; b.flags = TX_CENTER;
+	b.color = ui_color_in(UI_SCR_BATTLESCAPE, UI_EL_MESSAGEWINDOWS, 0);
+	b.color2 = ui_color_in(UI_SCR_BATTLESCAPE, UI_EL_MESSAGEWINDOWS, 1);
+	text_draw(&b, s);
+}
+
 static void ai_run(void)
 {
 	aictx_t c;
 	c.page = pf_page; c.cells = cells; c.sx = m_sx; c.sy = m_sy; c.sz = m_sz; c.n = nunits; c.nsold = nsold;
 	uint8_t r = ai_tick(&c);
-	if (r & AI_SEE) { see_update(); ui_dirty(0); }
-	if (!(r & AI_DONE)) return;
+	if (r & AI_SEE) see_update();
+	if (r & AI_HIT) ui_dirty(0);         // панель — только после выстрела: каждый такт она мигала
+	if (!(r & AI_DONE)) {                // «Hidden Movement»: ходит невидимый — окно вместо карты
+		uint8_t want = (r & AI_HIDDEN) != 0, on = hid_on;
+		if (want != on) hidden_show(want);
+		return;
+	}
 	bt_side = FACTION_PLAYER;
 	bt_turn++;
 	side_prepare(FACTION_PLAYER);
 	if (sel < nsold && !units[sel].alive) sel_step(0);   // выбранного убили — следующий живой
 	see_update();                        // заново: кого отряд видит с мест, где стоит
+	if (hid_on) hidden_show(0);
 	bv_suspend();
 	marks_show(0, 0);
 	UI_GO(A_PUSH, SCR_NEXT_TURN);

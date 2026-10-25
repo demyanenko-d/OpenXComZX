@@ -43,6 +43,7 @@ static uint8_t __at(0xB034) ai_atk;      // атак в этот ход
 static uint8_t __at(0xB035) ai_walk;     // идёт шаг с анимацией
 static uint8_t __at(0xB036) ai_wx;       // куда шаг
 static uint8_t __at(0xB037) ai_wy;
+static uint8_t __at(0xB038) ai_aim;      // повернулся к цели — выстрел в следующем такте (карта видна)
 
 static const int8_t dir_dx[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
 static const int8_t dir_dy[8] = { -1, -1, 0, 1, 1, 1, 0, -1 };
@@ -73,7 +74,7 @@ static uint16_t isqrt(uint16_t v)
 void ai_start(void) __banked
 {
 	ai_a = 0;
-	ai_pn = ai_pi = ai_moved = ai_atk = ai_walk = 0;
+	ai_pn = ai_pi = ai_moved = ai_atk = ai_walk = ai_aim = 0;
 }
 
 // Следующий пришелец
@@ -134,15 +135,21 @@ static uint8_t attack(const aictx_t *c, unit_t *u)
 		else if (w.tu_auto && tu >= tu_a) { act = BA_AUTOSHOT; cost = tu_a; }
 	}
 	if (!act) return 0;
+	if (!ai_aim) {                                    // сперва поворот: экран покажет карту
+		u->dir = dir_to((int16_t)v[tg].x - u->x, (int16_t)v[tg].y - u->y);   // lookAt
+		u_set(ai_a, u);
+		show(c, ai_a, u);
+		if (u->seen) bv_cell(u->x, u->y, u->z);
+		ai_aim = 1;
+		return 1;
+	}
+	ai_aim = 0;
 	uint16_t acc = act == BA_AIMEDSHOT ? w.accuracy_aimed : act == BA_AUTOSHOT ? w.accuracy_auto : w.accuracy_snap;
 	acc = (uint16_t)u->firing * acc / 100;
 	if (u->kneel) acc = acc * 115 / 100;
 	if ((w.flags & ITEMS_F_TWO_HANDED) && bi_hand(c->page, ai_a, !right, &o)) acc = acc * 80 / 100;
-	u->dir = dir_to((int16_t)v[tg].x - u->x, (int16_t)v[tg].y - u->y);   // lookAt
 	u->tu -= cost;
 	u_set(ai_a, u);
-	show(c, ai_a, u);
-	if (u->seen) bv_cell(u->x, u->y, u->z);
 	bashot_t q;
 	q.page = c->page; q.cells = c->cells; q.sx = c->sx; q.sy = c->sy; q.sz = c->sz;
 	q.shooter = ai_a; q.n = c->n; q.tx = v[tg].x; q.ty = v[tg].y; q.tz = v[tg].z;
@@ -181,7 +188,9 @@ static void plan_patrol(const aictx_t *c, unit_t *u)
 	r.cells = c->cells; r.sx = c->sx; r.sy = c->sy; r.z = u->z; r.sz = c->sz;
 	r.fx = u->x; r.fy = u->y; r.tx = b.x; r.ty = b.y;
 	r.budget = u->tu; r.step = STEP_TU; r.page = c->page;
-	ai_pn = pf_find(&r, ai_path, PATH_MAX);
+	uint8_t path[PATH_MAX];                     // буфер — на стеке: банку 30 память банка 36 не видна
+	ai_pn = pf_find(&r, path, PATH_MAX);
+	memcpy(ai_path, path, ai_pn);
 	ai_pi = 0;
 	if (ai_pn) { u->node = to; u_set(ai_a, u); }
 }
@@ -223,7 +232,24 @@ static uint8_t step(const aictx_t *c, unit_t *u)
 	return 1;
 }
 
+static uint8_t ai_step(const aictx_t *c);
+
+// Ходит невидимый отряду пришелец (и не целится): экрану — «Hidden Movement» (Map::draw)
+static uint8_t hidden(const aictx_t *c)
+{
+	unit_t u;
+	if (ai_a >= c->n || ai_aim) return 0;
+	u_get(ai_a, &u);
+	return u.seen ? 0 : AI_HIDDEN;
+}
+
 uint8_t ai_tick(const aictx_t *c) __banked
+{
+	uint8_t r = ai_step(c);
+	return r & AI_DONE ? r : r | hidden(c);
+}
+
+static uint8_t ai_step(const aictx_t *c)
 {
 	unit_t u;
 	if (ai_walk) {                                   // шаг с анимацией
@@ -245,7 +271,7 @@ uint8_t ai_tick(const aictx_t *c) __banked
 	while (ai_a < c->n) {
 		u_get(ai_a, &u);
 		if (!u.alive || u.faction != FACTION_HOSTILE || ai_a < c->nsold) { next_alien(); continue; }
-		if (attack(c, &u)) return AI_SEE;            // стрелял — в следующем такте думает снова
+		if (attack(c, &u)) return AI_SEE | AI_HIT;   // стрелял — в следующем такте думает снова
 		if (ai_pi < ai_pn) { if (step(c, &u)) return AI_SEE; }
 		else if (!ai_moved) {
 			ai_moved = 1;

@@ -797,6 +797,13 @@ void bv_suspend(void) __banked
 
 // Окно поверх боя, сквозь которое видна карта (меню действий): видимый кусок кольца копируется в
 // строки 0–143 основного холста, сплит снимается — карта остаётся неподвижной картинкой
+void bv_message(uint8_t on) __banked
+{
+	if (on) { split_stop(); return; }
+	split_start();                           // ставит смещения по умолчанию — вернуть камеру
+	show_cam();
+}
+
 void bv_snapshot(void) __banked
 {
 	uint16_t gx = (uint16_t)(BIAS - cam_x) & (RING - 1), gy = (uint16_t)(BIAS - cam_y) & (RING - 1);

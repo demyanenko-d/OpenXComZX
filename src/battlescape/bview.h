@@ -33,6 +33,9 @@ void bv_cell(uint8_t x, uint8_t y, uint8_t z) __banked;   // перерисов�
 void bv_draw(void) __banked;                 // EVT_DRAW: дорисовать или собрать вид заново
 void bv_redraw(void) __banked;               // собрать вид заново при следующей отрисовке
 void bv_suspend(void) __banked;              // поверх боя открывается окно (инвентарь)
+// «Hidden Movement»: 1 — экран показывает основной холст (там рисуют сообщение) вместо карты,
+// 0 — снова карта (она в своих холстах цела, без пересборки)
+void bv_message(uint8_t on) __banked;
 void bv_snapshot(void) __banked;             // то же, но карта остаётся картинкой под окном
 void bv_tick(uint8_t sel) __banked;          // прокрутка, курсор клетки, стрелка над sel
 void bv_center(uint8_t x, uint8_t y) __banked;   // камера на клетку (этаж — камеры)
