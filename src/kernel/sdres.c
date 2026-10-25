@@ -37,7 +37,7 @@ typedef struct {
 	res_t slot_res[NSLOTS];
 	uint16_t use_clock;
 	uint8_t idx_page, nslots;
-	uint8_t grow;                   // 1 — после sdres_flush: слоты дозаводить, как только дадут память
+	uint8_t grow;                   // 1 — после sdres_flush: слоты дозаводить по одному на промах
 } sdst_t;
 static sdst_t __at(0xBB00) S;
 #define pk        S.pk
@@ -58,8 +58,8 @@ uint8_t sd_state;                      // 0 — не открывали, 1 — �
 #define IDX_PAGES 2
 #define IDX_MAX   2000
 
-// Завести (дозавести) слоты кэша: по SLOT_PAGES страниц на слот, сколько дадут. Зовётся и после
-// sdres_flush — тот отдаёт страницы бою, и вернуть их надо при первом же запросе ресурса,
+// Завести (дозавести) слоты кэша: по SLOT_PAGES страниц на слот, сколько дадут. Зовётся и тогда,
+// когда слотов нет вовсе (sdres_flush до первого запроса) — их надо завести при первом же запросе,
 // иначе slot_page[] остаётся PG_NONE, а чтение уходит по адресу #3FC000 — в запретные
 // страницы #F0-#FF (загрузчики, TS-BIOS, vDOS), до 64 КБ за раз.
 static uint8_t slots_open(void)
@@ -108,7 +108,7 @@ static uint8_t packs_open(void)
 // миссии (каждый слот — 4 страницы, всего до 24). Первый слот остаётся: с геоскейпа в пуле
 // меньше места (атлас глифов, подписи глобуса, сохранения в памяти), и после наборов тайлов
 // четырёх страниц подряд уже не находилось — панель боя (ICONS с карты) не рисовалась
-// (findings_log 2026-10-25). Остальные слоты дозаводятся при запросах, когда память освободится.
+// (findings_log 2026-10-25). Остальные слоты дозаводятся по одному на промах, когда пул даст.
 void sdres_flush(void) __banked
 {
 	if (sd_state != 1) return;           // до packs_open в S лежит мусор из памяти банка
@@ -171,11 +171,7 @@ uint8_t sdres_find(uint16_t id, res_t *r) __banked
 	uint8_t e[16];
 	if (!sd_state) sd_state = packs_open() ? 1 : 2;
 	if (sd_state != 1 || !id) return 0;
-	if (grow || !nslots) {                   // после sdres_flush слоты дозаводятся
-		slots_open();
-		grow = nslots < NSLOTS;
-		if (!nslots) return 0;
-	}
+	if (!nslots && !slots_open()) return 0;
 	use_clock++;
 	for (uint8_t s = 0; s < nslots; s++)
 		if (slot_id[s] == id) { slot_use[s] = use_clock; *r = slot_res[s]; return 1; }
@@ -190,6 +186,13 @@ uint8_t sdres_find(uint16_t id, res_t *r) __banked
 			for (uint8_t k = 1; k < nslots; k++)
 				if (!slot_id[s]) break;
 				else if (!slot_id[k] || (uint16_t)(use_clock - slot_use[k]) > (uint16_t)(use_clock - slot_use[s])) s = k;
+			// Свободных нет — после sdres_flush сперва ещё слот, если пул даст: лениво, по одному
+			// на промах, иначе запрос в загрузке боя забирал бы страницы, нужные листам пришельцев
+			if (slot_id[s] && grow) {
+				uint8_t pg = pg_alloc(SLOT_PAGES, SLOT_PAGES);
+				if (pg != PG_NONE) { slot_page[nslots] = pg; s = nslots++; }
+				grow = nslots < NSLOTS;
+			}
 			slot_id[s] = 0;
 			mus_fill();                  // долгое чтение: кольцо не должно опустеть (20 §8.2)
 			if (fat_read(&pk[p], off, FAR(slot_page[s], 0), size)) return 0;

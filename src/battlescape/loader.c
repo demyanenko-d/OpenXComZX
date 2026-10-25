@@ -63,6 +63,19 @@ uint8_t sheet_load(uint16_t res, uint8_t *page, uint8_t *np, uint8_t n,
 	return 1;
 }
 
+void sheet_more(uint8_t page, uint16_t first, uint8_t n, far_t dst) __banked
+{
+	far_t phys = FAR(page, 0);
+	uint16_t nfr = far_word(phys);
+	far_t fdata = phys + 4 + (uint32_t)nfr * 6;
+	uint8_t e[TE_SIZE];
+	for (uint8_t i = 0; i < n; i++) {
+		memset(e, 0, TE_SIZE);
+		if (first + i < nfr) tile_entry(e, phys, fdata, first + i);
+		far_write(dst + (uint32_t)i * TE_SIZE, e, TE_SIZE);
+	}
+}
+
 // Заведённая часть двери НЛО: кадр, смещение и свойства закрытой створки, своя цена прохода.
 // Обзор не держит: створка, тронувшаяся с места, уже открыта (Tile::isUfoDoorOpen — кадр != 0,
 // TileEngine::blockage тогда 0)

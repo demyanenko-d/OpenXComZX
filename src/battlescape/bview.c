@@ -265,11 +265,19 @@ static uint8_t unit_no(uint8_t z, uint8_t y, uint8_t x)
 }
 
 // Части бойца в порядке наложения по направлению (UnitSprite::drawRoutine0, без предметов в
-// руках): 0 — левая рука, 1 — правая, 2 — ноги, 3 — торс
-static const uint8_t part_order[8][4] = {
-	{ 0, 2, 3, 1 }, { 0, 2, 3, 1 }, { 0, 2, 3, 1 }, { 2, 3, 0, 1 },
-	{ 2, 1, 3, 0 }, { 1, 2, 3, 0 }, { 1, 2, 3, 0 }, { 0, 1, 2, 3 },
+// руках): 0 — левая рука, 1 — правая, 2 — ноги, 3 — торс, 4 — предмет в правой, 5 — в левой;
+// у направлений 3, 5, 7 с двуручным в руках — свой порядок (ряды 8..10)
+static const uint8_t part_order[11][6] = {
+	{ 4, 5, 0, 2, 3, 1 }, { 0, 2, 5, 3, 4, 1 }, { 0, 2, 3, 5, 4, 1 }, { 2, 3, 0, 1, 4, 5 },
+	{ 2, 1, 3, 0, 4, 5 }, { 1, 2, 4, 5, 3, 0 }, { 1, 4, 5, 2, 3, 0 }, { 4, 5, 0, 1, 2, 3 },
+	{ 2, 3, 0, 4, 5, 1 }, { 1, 2, 3, 0, 4, 5 }, { 1, 4, 5, 0, 2, 3 },
 };
+// Руки, держащие предмет (кадры листа 232.. в TL_HARMS, номер — от 232): rarm1H, larm2H, rarm2H;
+// у UFO 232, 240, 248, у TFTD (правило 13) 248, 232, 240
+static const uint8_t harm_ufo[3] = { 0, 8, 16 }, harm_tftd[3] = { 16, 0, 8 };
+// Предмет в левой руке: сдвиг кадра (offX2/offY2, у двуручного — offX6/offY6)
+static const int8_t lh_x[2][8] = { { -8, 3, 5, 12, 6, -1, -5, -13 }, { 0, 6, 6, 12, -4, -5, -5, -13 } };
+static const int8_t lh_y[2][8] = { { 1, -4, -2, 0, 3, 3, 5, 0 }, { -4, -4, -1, 0, 5, 0, 1, 0 } };
 static const int8_t walk_bob[8] = { 1, 0, -1, 0, 1, 0, -1, 0 };   // YoffWalk: торс при ходьбе
 
 // Боец (кадр в точке px, py): стоя — руки, ноги и торс листа; на колене — свои ноги, остальное
@@ -286,23 +294,40 @@ static void draw_sheet(const runit_t *u, uint8_t walking, uint8_t q, int16_t px,
 	else dl_blit(e, px, py);
 }
 
+// Оружие в руках (u->pad: слоты кадров предметов правой и левой руки, loader.h TL_UHS): рука с
+// предметом — свой кадр, не машет при ходьбе, качается с торсом; предмет — кадр HANDOB поверх
 static void draw_unit(const runit_t *u, uint8_t walking, int16_t px, int16_t py, int16_t cx0, int16_t cx1, int16_t cy0)
 {
 	if (u->sheet) { draw_sheet(u, walking, 0, px, py, cx0, cx1, cy0); return; }
 	uint8_t d = u->dir & 7, ph = wk_ph & 7, kn = u->flags & RU_KNEEL, e[TE_SIZE];
 	int16_t dy = walking ? walk_bob[ph] + u_tftd : kn ? KNEEL_DY + u_tftd : 0;
-	for (uint8_t k = 0; k < 4; k++) {
-		uint8_t p = part_order[d][k];
-		const uint8_t *f;
-		int16_t y = py;
-		if (p == 3) { f = unit_tab + (uint16_t)(24 + d) * TE_SIZE; y += dy; }
-		else if (walking) {
+	uint8_t hr = u->pad[0], hl = u->pad[1], two = (hr | hl) & 0x80;
+	const uint8_t *hm = u_tftd ? harm_tftd : harm_ufo;
+	uint8_t held_l = hl || (hr & 0x80);
+	const uint8_t *ord = part_order[two && (d & 1) && d >= 3 ? 8 + ((d - 3) >> 1) : d];
+	for (uint8_t k = 0; k < 6; k++) {
+		uint8_t p = ord[k];
+		const uint8_t *f = e;
+		int16_t x = px, y = py;
+		if (p >= 4) {                                // предмет: кадр слота по направлению
+			uint8_t h = p == 4 ? hr : hl;
+			if (!h) continue;
+			far_read(FAR(pf_page + 1, TL_HAND) + (uint16_t)(((h & 0x7F) - 1) * 8 + d) * TE_SIZE, e, TE_SIZE);
+			if (!e[7]) continue;
+			y += dy;
+			if (p == 5) { uint8_t t2 = (hl & 0x80) != 0; x += lh_x[t2][d]; y += lh_y[t2][d]; }
+		} else if (p == 3) { f = unit_tab + (uint16_t)(24 + d) * TE_SIZE; y += dy; }
+		else if (p < 2 && (p ? hr : held_l)) {       // рука держит предмет
+			uint8_t a = p ? hm[(hr & 0x80) ? 2 : 0] : hm[1];
+			far_read(FAR(pf_page + 1, TL_HARMS) + (uint16_t)(a + d) * TE_SIZE, e, TE_SIZE);
+			y += dy;
+		} else if (walking) {                        // машет; при двуручном в другой — качается
 			far_read(FAR(pf_page + 1, TL_SHEET) + (uint16_t)(40 + p * 8 + 24 * d + ph) * TE_SIZE, e, TE_SIZE);
-			f = e;
+			if (p == 1 && (hl & 0x80)) y += dy;
 		} else if (p == 2) f = kn ? kneel_tab + (uint16_t)d * TE_SIZE : unit_tab + (uint16_t)(16 + d) * TE_SIZE;
 		else { f = unit_tab + (uint16_t)(p * 8 + d) * TE_SIZE; y += dy; }
-		if (walking) dl_blit_clip(f, px, y, cx0, cx1, cy0, cy0 + 72);
-		else dl_blit(f, px, y);
+		if (walking) dl_blit_clip(f, x, y, cx0, cx1, cy0, cy0 + 72);
+		else dl_blit(f, x, y);
 	}
 }
 
@@ -783,7 +808,10 @@ void bv_sync(uint8_t n) __banked
 {
 	if (n > MAX_BUNITS) n = MAX_BUNITS;
 	nunits = n;
-	if (pf_page != PG_NONE && n) far_read(FAR(pf_page + 1, TL_RUNITS), units, (uint16_t)n * sizeof(runit_t));
+	if (pf_page == PG_NONE || !n) return;
+	far_read(FAR(pf_page + 1, TL_RUNITS), units, (uint16_t)n * sizeof(runit_t));
+	for (uint8_t i = 0; i < n && i < MAX_UNITS; i++)   // оружие в руках бойцов (bitems.c)
+		far_read(FAR(pf_page + 1, TL_UHS) + i * 2, units[i].pad, 2);
 }
 
 void bv_tile(uint8_t part) __banked

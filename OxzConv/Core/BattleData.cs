@@ -544,7 +544,7 @@ namespace OxzConv
 				// larm 0, rarm 8, legsStand 16, legsKneel 24, торс 32 у UFO и 270 у наземных
 				// юнитов TFTD) и ходьбу. Порядок кадров в листе — 232 штуки:
 				//   0-7 левая рука, 8-15 правая, 16-23 ноги стоя, 24-31 торс, 32-39 ноги на колене,
-				//   40-231 ходьба — кадры оригинала с теми же номерами: для направления d левая рука
+				//   40-231 ходьба, 232-263 руки с оружием — кадры оригинала с теми же номерами: для направления d левая рука
 				//   40+24d, правая 48+24d, ноги 56+24d, по восемь фаз (larmWalk, rarmWalk, legsWalk).
 				// Остальные позы (оружие в руках, смерть, полёт) — когда дойдёт до них.
 				int torso = game == "TFTD" && all.Count > 277 ? 270 : 32;
@@ -554,8 +554,11 @@ namespace OxzConv
 				for (int i = 24; i < 32; i++) idx.Add(i);            // ноги на колене
 				// ходьба — пока у бойцов X-COM (правила 0 и 13): у пришельцев раскладка листа своя
 				// (drawRoutine 1..), и 232 кадра крупных пришельцев не влезают в SPRSET (128 КБ)
+				// 232-263 — руки с оружием, кадры оригинала с теми же номерами: у UFO rarm1H 232,
+				// larm2H 240, rarm2H 248, rarmShoot 256; у TFTD (правило 13) larm2H 232,
+				// rarm2H = rarmShoot 240, rarm1H 248 (UnitSprite::drawRoutine0)
 				if (name.StartsWith("XCOM_") || name.StartsWith("TDXCOM_"))
-					for (int i = 40; i < 232; i++) idx.Add(i);
+					for (int i = 40; i < 264; i++) idx.Add(i);
 				var frames = new List<Img>();
 				foreach (var i in idx) frames.Add(i < all.Count ? all[i] : all[0]);
 				var sprset = Sprites.EncodeSprset(frames);

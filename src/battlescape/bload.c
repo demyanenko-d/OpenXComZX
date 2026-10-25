@@ -16,6 +16,7 @@
 static uint8_t gen_page[TL_SETS], gen_np[TL_SETS], gen_ns;   // страницы тайлсетов наборов
 static uint8_t unit_page = PG_NONE, unit_np;                // лист бойца
 static uint8_t cur_page = PG_NONE, cur_np;                  // рамка курсора клетки
+static uint8_t hand_page = PG_NONE;                         // пиксели кадров оружия в руках (bitems.c)
 
 // Стрелка (Map::init): по строке — начало каймы и начало жёлтого (строка симметрична, 9 — нет);
 // 15 — чёрный, 16 — жёлтый (Palette::blockOffset(1))
@@ -35,6 +36,7 @@ void bat_unload(void) __banked
 	sets_free();
 	if (unit_page != PG_NONE) { pg_free(unit_page, unit_np); unit_page = PG_NONE; }
 	if (cur_page != PG_NONE) { pg_free(cur_page, cur_np); cur_page = PG_NONE; }
+	if (hand_page != PG_NONE) { pg_free(hand_page, 1); hand_page = PG_NONE; }
 	mapgen_free();
 }
 
@@ -69,6 +71,7 @@ uint8_t bat_load(bload_t *q) __banked
 	if (unit_page != PG_NONE) { pg_free(unit_page, unit_np); unit_page = PG_NONE; }
 	if (sheet_load(res_game() == 2 ? RES_UNIT_TDXCOM_0 : RES_UNIT_XCOM_0, &unit_page, &unit_np,
 		       232, 0, t + TL_SHEET)) {
+		sheet_more(unit_page, 232, 32, t + TL_HARMS);   // руки с оружием (кадры 232..263)
 		// Отряд: экипаж корабля миссии со своими показателями, в отладочном бою — шесть фигур
 		crew_req_t c;
 		cunit_t cu[MAX_UNITS];
@@ -94,6 +97,10 @@ uint8_t bat_load(bload_t *q) __banked
 		}
 		q->nunits = n;
 	}
+	// Оружие в руках: страница под пиксели кадров HANDOB (заполняет bi_crew), слотов пока нет
+	if (hand_page == PG_NONE) hand_page = pg_alloc(1, 1);
+	far_write(t + TL_HANDPG, &hand_page, 1);
+	far_fill(t + TL_UHS, 0, MAX_UNITS * 2);
 	// Рамка курсора клетки из CURSOR.PCK: задние и передние половины красной и жёлтой
 	if (cur_page == PG_NONE) {
 		uint8_t want[9] = { 0, 1, 3, 4, 6, 7, 8, 9, 10 };   // рамка и прицел (Map.cpp:684-696)

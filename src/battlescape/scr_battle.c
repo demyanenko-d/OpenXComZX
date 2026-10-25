@@ -478,6 +478,13 @@ static uint8_t load_gen(uint16_t terrain)
 		nunits = nsold + na;
 	}
 	vis_build(q.cells, q.sx, q.sy, q.sz, pf_page);   // маска обзора (vision.c)
+	// Снаряжение отряда (bitems.c): раскладка из кампании — до записей вида (им нужно
+	// оружие в руках), но после листов пришельцев и маски обзора: HANDOB берёт слот кэша SD
+	{
+		uint8_t sol[MAX_UNITS];
+		for (uint8_t i = 0; i < nsold; i++) sol[i] = units[i].sol;
+		bi_crew(pf_page, sol, nsold);
+	}
 	ndoors = q.ndoors;
 	m_sx = q.sx; m_sy = q.sy; m_sz = q.sz;
 	m_cx = q.cx; m_cy = q.cy; m_cw = q.cw; m_cl = q.cl; m_cbase = q.cbase;
@@ -493,11 +500,6 @@ static uint8_t load_gen(uint16_t terrain)
 	bt_side = FACTION_PLAYER;
 	gen_mode = 1;
 	sel = 0;
-	{                                    // снаряжение отряда (bitems.c): раскладка из кампании
-		uint8_t sol[MAX_UNITS];
-		for (uint8_t i = 0; i < nsold; i++) sol[i] = units[i].sol;
-		bi_crew(pf_page, sol, nsold);
-	}
 	for (uint8_t i = 0; i < nsold; i++) {   // боевые показатели: солдат кампании или отладочные
 		unit_t *u = &units[i];
 		uint16_t arm = 0xFFFF;

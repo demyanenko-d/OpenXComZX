@@ -33,6 +33,15 @@
 #define TL_BIGW   11264        // 256 байт: MCD.Big_Wall части по номеру (Pathfinding::bigWallTypes)
 #define TL_BITEMS 11520        // предметы боя: bitem_t (bitems.h), BI_MAX по 10 байт (до #3700)
 #define TL_AUNITS 14080        // пришельцы от расстановки (deploy.c): unit_t, до 28 записей (до #3C40)
+// Оружие в руках бойцов X-COM (UnitSprite::drawRoutine0): кадры листа 232..263 — руки, держащие
+// предмет; у бойца i — два байта слотов кадров предмета (правая, левая): 0 — пусто, иначе
+// номер слота + 1, бит 7 — двуручное; кадры предметов HANDOB по слотам — по 8 направлений,
+// пиксели — в своей странице (номер — TL_HANDPG), её заводит bload.c, заполняет bitems.c
+#define TL_HARMS  15424        // 32 кадра рук с оружием (TE_SIZE)
+#define TL_UHS    15680        // MAX_UNITS x 2 байта: слоты предметов в руках
+#define TL_HANDPG 15704        // страница пикселей кадров предметов (PG_NONE — нет)
+#define TL_HAND   15712        // кадры предметов: слот s, направление d — запись s * 8 + d (до #4000)
+#define HAND_MAX  10
 
 // Третья рабочая страница — части миссии для выстрелов и разрушений (по номеру части):
 #define TV_LOFT   0            // 12 байт: MCD.LOFT — маска LOFTEMPS на каждые 2 вокселя высоты
@@ -59,5 +68,7 @@ uint16_t tiles_load(const tiles_req_t *q, uint8_t *pages, uint8_t *nps,
 // должен лежать в стеке, страница банка вызывающего при вызове отключена).
 uint8_t sheet_load(uint16_t res, uint8_t *page, uint8_t *np, uint8_t n,
 		   const uint8_t *want, far_t dst) __banked;
+// Ещё n кадров (first..) листа, уже загруженного sheet_load в page, — таблицей по адресу dst
+void sheet_more(uint8_t page, uint16_t first, uint8_t n, far_t dst) __banked;
 
 #endif
