@@ -1,4 +1,4 @@
-// Снаряжение отряда из груза корабля (банк 35): порт той части BattlescapeGenerator::deployXCOM
+// Снаряжение отряда из груза корабля (банк 15): порт той части BattlescapeGenerator::deployXCOM
 // (REF/OpenXcom/src/Battlescape/BattlescapeGenerator.cpp:719-797), что идёт после раскладок:
 // груз корабля ложится на «землю» корабля (в порядке std::map — sort_rank), loadWeapons заряжает
 // оружие обоймами с земли, autoEquip (там же, :799-866) в четыре прохода — винтовки, пистолеты,
@@ -24,7 +24,7 @@
 #define BT_FLARE  10
 #define GI_MAX    96
 typedef struct { uint16_t item, ammo; uint8_t rounds, used; } gitem_t;
-// Память банка (после таблиц bfire.c с #B000; Win1 забит): земля корабля, правила, секции
+// Память банка (с #B300; Win1 забит): земля корабля, правила, секции
 static gitem_t __at(0xB300) gi[GI_MAX];  // до #B540
 static rtab_t __at(0xB540) ti;           // правила items
 static rtab_t __at(0xB550) tv;           //   и invs
@@ -161,6 +161,113 @@ static uint8_t add_item(const gitem_t *g, uint8_t u, uint8_t str, uint8_t second
 		if (str < wt) return 0;
 		return place_grid(u, g, it.inv_width ? it.inv_width : 1, it.inv_height ? it.inv_height : 1);
 	}
+}
+
+// _addItem для пришельца: оружие — в правую руку, занята — в левую; обойма заряжает оружие в
+// руке, иначе — как прочее: в первую подходящую клетку секций (вес пришельцам не считается)
+static void alien_item(uint8_t u, uint16_t item)
+{
+	r_items_t it;
+	bitem_t b;
+	gitem_t g;
+	uint8_t ri = 0xFF, li = 0xFF;
+	for (uint8_t i = 0; i < eq_n; i++) {
+		far_read(bat(i), &b, sizeof b);
+		if (b.owner != u) continue;
+		uint8_t s = b.slot;
+		if (s == sec_r) ri = i;
+		if (s == sec_l) li = i;
+	}
+	rtab_get(&ti, item, &it);
+	g.item = item; g.ammo = 0xFFFF; g.rounds = rounds_of(item); g.used = 0;
+	if ((it.flags & ITEMS_F_FIXED_WEAPON) || it.battle_type == BT_FIREARM || it.battle_type == BT_MELEE) {
+		if (ri == 0xFF) put(u, sec_r, 0, 0, 0, &g);
+		else if (li == 0xFF) put(u, sec_l, 0, 0, 0, &g);
+		return;
+	}
+	if (it.battle_type == BT_AMMO)
+		for (uint8_t h = 0; h < 2; h++) {
+			uint8_t i = h ? li : ri;
+			if (i == 0xFF) continue;
+			far_read(bat(i), &b, sizeof b);
+			if (b.ammo != 0xFFFF || !compat(b.item, item)) continue;
+			b.ammo = item;
+			b.rounds = g.rounds;
+			far_write(bat(i), &b, sizeof b);
+			return;
+		}
+	place_grid(u, &g, it.inv_width ? it.inv_width : 1, it.inv_height ? it.inv_height : 1);
+}
+
+// Список уровня *lv из [n, предметы] x уровней (с байта off, элементов cnt) — в lst, вернёт n.
+// Уровня нет — последний, и *lv урезается до него (как itemLevel в deployAliens)
+static uint8_t pick_level(const rtab_t *t, uint16_t off, uint8_t cnt, uint8_t *lv, uint16_t *lst)
+{
+	uint8_t p = 0, l = 0;
+	while (p < cnt) {
+		uint16_t m;
+		rtab_tail(t, off + p * 2, &m, 2);
+		p++;
+		uint8_t want = *lv;
+		if (l == want || p + m >= cnt) {
+			uint8_t n = m > 24 ? 24 : (uint8_t)m;
+			if (n) rtab_tail(t, off + p * 2, lst, (uint16_t)n * 2);
+			*lv = l;
+			return n;
+		}
+		p += (uint8_t)m;
+		l++;
+	}
+	return 0;
+}
+
+uint8_t be_aliens(uint8_t page, uint8_t nb, uint8_t first) __banked
+{
+	rtab_t tu, td;
+	r_units_t ur;
+	r_alienDeployments_t d;
+	uint16_t dep, lst[24];
+	far_t t2 = FAR(page + 1, 0);
+	eq_page = page;
+	eq_n = nb;
+	uint8_t na = far_byte(t2 + TL_ANUM);
+	far_read(t2 + TL_ADEP, &dep, 2);
+	if (!na || !rtab_open(RES_RULE_ITEMS, &ti) || !rtab_open(RES_RULE_INVS, &tv) || !rtab_open(RES_RULE_UNITS, &tu)
+	    || !rtab_open(RES_RULE_ALIENDEPLOYMENTS, &td) || dep >= td.n) return eq_n;
+	sec_r = sec_named(STR_RIGHT_HAND);
+	sec_l = sec_named(STR_LEFT_HAND);
+	rtab_get(&td, dep, &d);
+	for (uint8_t k = 0; k < na; k++) {
+		unit_t a;
+		far_read(t2 + TL_AUNITS + (uint16_t)k * sizeof a, &a, sizeof a);
+		if (a.type >= tu.n) continue;
+		rtab_get(&tu, a.type, &ur);
+		uint8_t lv = a.ilevel, n;
+		if (ur.built_in_weapons.n) {             // встроенное оружие — при любом снаряжении
+			n = pick_level(&tu, ur.built_in_weapons.off, (uint8_t)ur.built_in_weapons.n, &lv, lst);
+			for (uint8_t i = 0; i < n; i++) alien_item(first + k, lst[i]);
+		}
+		if (ur.living_weapon_item != 0xFFFF) { alien_item(first + k, ur.living_weapon_item); continue; }
+		uint8_t p = 0, cnt = (uint8_t)d.item_sets.n;   // itemSets записи dset: записи до неё — мимо
+		for (uint8_t e = 0; e <= a.dset && p < cnt; e++) {
+			uint16_t nl;
+			rtab_tail(&td, d.item_sets.off + p * 2, &nl, 2);
+			p++;
+			if (e == a.dset) {
+				if (!nl) break;
+				if (lv >= nl) lv = (uint8_t)(nl - 1);
+				n = pick_level(&td, d.item_sets.off + p * 2, (uint8_t)(cnt - p), &lv, lst);
+				for (uint8_t i = 0; i < n; i++) alien_item(first + k, lst[i]);
+				break;
+			}
+			for (uint16_t l = 0; l < nl && p < cnt; l++) {
+				uint16_t m;
+				rtab_tail(&td, d.item_sets.off + p * 2, &m, 2);
+				p += 1 + (uint8_t)m;
+			}
+		}
+	}
+	return eq_n;
 }
 
 uint8_t be_auto(const beq_t *q) __banked

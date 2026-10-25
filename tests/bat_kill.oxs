@@ -1,5 +1,5 @@
 # Гибель пришельца: тот же бой и выстрелы, что в bat_fire.oxs, но здоровье пришельца — 1: первое же
-# попадание убивает, на пол его клетки ложится труп (armors corpseBattle -> кадр FLOOROB, bfx.c
+# попадание убивает (меткость бойца — 120, как в bat_fire), на пол его клетки ложится труп (armors corpseBattle -> кадр FLOOROB, bfx.c
 # fl_corpse; Tile::getTopItemSprite). Проверка — units[6].alive (#39A4 страницы банка 31 #4E) == 0.
 # Снимки — tmp/shots/bat_kill/ (последний — курсор в стороне: труп не закрыт прицелом).
 # Запуск: powershell -File tools\run.ps1 -Script tests\bat_kill.oxs -Headless
@@ -16,6 +16,7 @@ wait 60
 key x
 wait 10
 key CS+J
+poke 4E:3898 120
 poke 4E:39A8 1
 wait 60
 shot tmp/shots/bat_kill/00_seen.png

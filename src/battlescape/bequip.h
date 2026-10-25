@@ -1,4 +1,4 @@
-// Снаряжение отряда из груза корабля (bequip.c, банк 35): loadWeapons и autoEquip оригинала.
+// Снаряжение отряда из груза корабля (bequip.c, банк 15): loadWeapons и autoEquip оригинала.
 #ifndef BEQUIP_H
 #define BEQUIP_H
 
@@ -13,5 +13,10 @@ typedef struct {
 
 // Груз корабля craft — бойцам без раскладки и на землю; вернёт новое число записей bitem_t
 uint8_t be_auto(const beq_t *q) __banked;
+
+// Предметы пришельцев (deployAliens): itemSets записи развёртывания на их уровне, встроенное и
+// живое оружие; юниты — TL_AUNITS (номера с first), развёртывание — TL_ADEP, число — TL_ANUM.
+// nb — занято записей bitem_t; вернёт новое число
+uint8_t be_aliens(uint8_t page, uint8_t nb, uint8_t first) __banked;
 
 #endif

@@ -176,7 +176,7 @@ uint8_t aliens_deploy(const adreq_t *r, uint8_t nsold, uint8_t sx, uint8_t sy) _
 	uint8_t diff = ST->difficulty;
 	if (diff > 4) diff = 4;
 	uint8_t coef = gv.diff_coef[diff];       // difficultyCoefficient (difficulty.rul)
-	if (!rtab_open(RES_RULE_ALIENDEPLOYMENTS, &t) || !t.n) return n;
+	if (!rtab_open(RES_RULE_ALIENDEPLOYMENTS, &t) || !t.n) return 0;
 	uint16_t dep = q->deploy < t.n ? q->deploy : 0;
 	rtab_get(&t, dep, &d);
 	uint16_t race = d.race != RNONE ? d.race : q->race != 0xFFFF ? q->race : 0;
@@ -207,6 +207,12 @@ uint8_t aliens_deploy(const adreq_t *r, uint8_t nsold, uint8_t sx, uint8_t sy) _
 	dbg_puts("aliens: deploy "); dbg_dec(dep); dbg_puts(" race "); dbg_dec(race);
 	dbg_puts(" nodes "); dbg_dec(nn); dbg_puts(" spawn "); dbg_dec(nsn);
 	uint8_t n0 = n;
+	res_t il;                                    // alienItemLevels: месяцев, по 10 уровней
+	uint8_t nil = res_find(RES_ITEMLEVELS, &il) ? far_byte(il.phys) : 0, mon = 0;
+	{
+		int16_t mp = ST->months;
+		if (mp > 0) mon = mp >= nil ? (nil ? nil - 1 : 0) : (uint8_t)mp;
+	}
 	for (uint8_t e = 0; e < nd; e++) {
 		const int16_t *r = data + e * 6;
 		uint8_t rank = (uint8_t)r[0] > 7 ? 7 : (uint8_t)r[0];
@@ -233,11 +239,16 @@ uint8_t aliens_deploy(const adreq_t *r, uint8_t nsold, uint8_t sx, uint8_t sy) _
 			if (n0 && cx * cx + cy * cy <= 400 && rng_percent((uint8_t)(20 * coef))) a->dir = dir_to(cx, cy);
 			else a->dir = (uint8_t)(rng_next() & 7);
 			a->sheet = sheet_of(q, res, a->size);
+			a->dset = e;                         // предметы — itemSets этой записи (bequip.c)
+			a->ilevel = nil ? far_byte(il.phys + 1 + mon * 10 + rng_range(0, 9)) : 0;
 			a->seen = 0;                         // виден, когда его заметит отряд (vision.c)
 			n++;
 		}
 	}
 	dbg_puts(" aliens "); dbg_dec(n - n0); dbg_puts("\n");
 	if (n > n0) far_write(FAR(q->page + 1, TL_AUNITS), du + n0, (uint16_t)(n - n0) * sizeof(unit_t));
-	return n - n0;
+	far_write(FAR(q->page + 1, TL_ADEP), &dep, 2);
+	n0 = n - n0;
+	far_write(FAR(q->page + 1, TL_ANUM), &n0, 1);
+	return n0;
 }

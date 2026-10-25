@@ -105,6 +105,7 @@ uint8_t bat_load(bload_t *q) __banked
 	if (fx_page == PG_NONE) fx_page = pg_alloc(1, 1);
 	far_write(FAR(q->page + 2, TV_FXPG), &fx_page, 1);
 	far_fill(t + TL_UHS, 0, MAX_UNITS * 2);
+	far_fill(t + TL_ANUM, 0, 1);                 // пришельцев ещё нет (deploy.c)
 	// Рамка курсора клетки из CURSOR.PCK: задние и передние половины красной и жёлтой
 	if (cur_page == PG_NONE) {
 		uint8_t want[9] = { 0, 1, 3, 4, 6, 7, 8, 9, 10 };   // рамка и прицел (Map.cpp:684-696)

@@ -146,7 +146,7 @@ void fx_build(uint8_t page, uint8_t n) __banked
 	for (uint8_t k = 0; k < FXB_MAX; k++) far_write(t3 + TV_FXB + k * FXB_SIZE, &key, 2);
 	for (uint8_t k = 0; k < FXH_MAX; k++) far_write(t3 + TV_FXH + k * FXH_SIZE, &key, 2);
 	if (pg == PG_NONE || !rtab_open(RES_RULE_ITEMS, &t)) return;
-	if (n > MAX_UNITS) n = MAX_UNITS;
+	if (n > MAX_BUNITS) n = MAX_BUNITS;
 	int16_t bkeys[FXB_MAX], hkeys[FXH_MAX];
 	for (uint8_t u = 0; u < n; u++)              // что стреляет у отряда: типы пуль и вспышек
 		for (uint8_t side = 0; side < 2; side++) {

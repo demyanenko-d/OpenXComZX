@@ -1,6 +1,7 @@
 # Выстрел (bfire.c, ProjectileFlyBState / Projectile / TileEngine::hit): боец у пришельца (Shift+J),
 # меню правой руки — «Snap Shot», клик по пришельцу — прицел; четыре выстрела по 12 единиц времени
-# (60 -> 12), часть пуль — в кораллы, две — в пришельца: здоровье 30 -> 4 (ГСЧ сценария
+# (60 -> 12); меткость бойца поднята до 120 (units[0].firing, #3898) — часть пуль всё равно в кораллы:
+# здоровье пришельца 30 -> 18 (ГСЧ сценария
 # воспроизводим; меняется расход случайных чисел — поправить ожидание).
 # units[0].tu — #3886, units[6].hp — #39A8 (страница банка 31 #4E). Снимки — tmp/shots/bat_fire/.
 # Запуск: powershell -File tools\run.ps1 -Script tests\bat_fire.oxs -Headless
@@ -18,6 +19,7 @@ wait 60
 key x
 wait 10
 key CS+J
+poke 4E:3898 120
 wait 60
 shot tmp/shots/bat_fire/00_seen.png
 # правая рука -> навскидку -> клик по пришельцу (середина экрана)
@@ -84,7 +86,7 @@ wait 20
 click L
 wait 60
 shot tmp/shots/bat_fire/03_more.png
-expect 4E:39A8 4
+expect 4E:39A8 18
 expect 4E:3886 12
 echo battle fire OK
 exit 0

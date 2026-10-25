@@ -40,6 +40,8 @@
 #define TL_HARMS  15424        // 32 кадра рук с оружием (TE_SIZE)
 #define TL_UHS    15680        // MAX_UNITS x 2 байта: слоты предметов в руках
 #define TL_HANDPG 15704        // страница пикселей кадров предметов (PG_NONE — нет)
+#define TL_ADEP   15706        // 2 байта: развёртывание пришельцев (deploy.c) — их предметы (bequip.c)
+#define TL_ANUM   15708        // пришельцев в TL_AUNITS
 #define TL_HAND   15712        // кадры предметов: слот s, направление d — запись s * 8 + d (до #4000)
 #define HAND_MAX  10
 

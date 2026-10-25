@@ -104,8 +104,9 @@ uint8_t bi_crew(uint8_t page, const uint8_t *sol, uint8_t n) __banked
 		q.page = page; q.nb = bi_n; q.craft = craft; q.n = n < MAX_UNITS ? n : MAX_UNITS; q.who = who;
 		bi_n = be_auto(&q);
 	}
+	bi_n = be_aliens(page, bi_n, n);         // предметы пришельцев (bequip.c)
 	hands_build(page, n);
-	fx_build(page, n);                       // кадры пуль и вспышек оружия отряда (bfx.c)
+	fx_build(page, n + far_byte(FAR(page + 1, TL_ANUM)));   // кадры пуль и вспышек (bfx.c)
 	return bi_n;
 }
 

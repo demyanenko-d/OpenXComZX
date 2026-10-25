@@ -34,7 +34,9 @@ typedef struct {
 	uint8_t done;              // «больше не выбирать» в этот ход (_dontReselect, кнопка NextStop)
 	uint8_t h_stand, h_kneel;  // рост стоя и на колене (standHeight, kneelHeight) — воксели
 	uint16_t armor_rule;       // правило armors: маски вокселей, модификаторы урона (#FFFF — нет)
-	uint8_t pad[3];            // запас: запись — 48 байт, адреса полей в тестах не плывут
+	uint8_t dset;              // пришелец: запись data развёртывания (её itemSets), #FF — нет
+	uint8_t ilevel;            //   уровень предметов (alienItemLevels[месяц][случайный])
+	uint8_t pad[1];            // запас: запись — 48 байт, адреса полей в тестах не плывут
 } unit_t;
 _Static_assert(sizeof(unit_t) == 48, "unit_t");
 
