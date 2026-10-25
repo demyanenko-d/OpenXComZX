@@ -75,6 +75,9 @@ static uint8_t wk_lx, wk_ly, wk_dx, wk_dy, wk_z;   // откуда и куда (
 static uint8_t wk_acc;                   // мс к следующей фазе
 static uint16_t wk_fr;                   // кадр прошлого такта
 static int16_t wk_ox, wk_oy;             // смещение спрайта от клетки, где юнит числится (Map::calculateWalkingOffset)
+// Шаг кончился, а стойку ещё не рисовали: следующий шаг пути начинается в том же такте
+// (UnitWalkBState::think), и кадр стойки между клетками мелькал бы рывком рук и ног
+static uint8_t wk_pend, wk_plx, wk_ply;  // прежняя клетка законченного шага — перерисовать с новым
 extern volatile uint16_t frames;         // crt0.s
 static uint8_t pf_page = PG_NONE;        // рабочая страница боя (таблицы — во второй)
 
@@ -474,13 +477,28 @@ static void walk_paint(void)
 void bv_walk(uint8_t i, uint8_t lx, uint8_t ly, uint8_t dx, uint8_t dy, uint8_t z, uint8_t d) __banked
 {
 	wk_u = i;
-	wk_lx = lx; wk_ly = ly; wk_z = z;
-	wk_dx = dx; wk_dy = dy;
+	wk_z = z;
 	wk_mid = 4 + 4 * (d & 1);
 	wk_end = 8 + 8 * (d & 1);
 	wk_ph = 0;
 	wk_acc = 0;
 	wk_fr = frames;
+	if (wk_pend) {                       // хвост прошлого шага (прежняя клетка) — уже с фазой 0
+		wk_pend = 0;
+		wk_lx = wk_plx; wk_ly = wk_ply;
+		wk_dx = lx; wk_dy = ly;
+		walk_paint();
+	}
+	wk_lx = lx; wk_ly = ly;
+	wk_dx = dx; wk_dy = dy;
+	walk_paint();
+}
+
+// Шаг кончился, нового нет (путь кончился, поворот, дверь): стойка в клетках шага
+void bv_walk_done(void) __banked
+{
+	if (!wk_pend) return;
+	wk_pend = 0;
 	walk_paint();
 }
 
@@ -498,7 +516,13 @@ uint8_t bv_walk_tick(void) __banked
 		if (a >= 30) a = 29;
 		wk_ph++;
 		if (wk_ph == wk_mid) { units[wk_u].x = wk_dx; units[wk_u].y = wk_dy; r = 1; }
-		if (wk_ph >= wk_end) { wk_u = 0xFF; r = 2; }
+		if (wk_ph >= wk_end) {               // стойку не рисуем: дальше bv_walk или bv_walk_done
+			wk_u = 0xFF;
+			wk_pend = 1;
+			wk_plx = wk_lx; wk_ply = wk_ly;
+			wk_acc = 0;
+			return 2;
+		}
 		walk_paint();
 	}
 	wk_acc = (uint8_t)a;

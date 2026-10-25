@@ -896,7 +896,9 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				u->x = wl_x; u->y = wl_y;
 				ru_put(i);
 				see_update();                // шаг — пересчёт обзора (UnitWalkBState)
-			} else if (r == 2) {
+			} else if (r == 2) {             // следующий шаг — в том же такте, без кадра стойки
+				if (path_n) step_unit();     //   (обзор — после: он может перерисовать вид)
+				bv_walk_done();              // не пошёл (поворот, дверь, конец) — стойка
 				see_update();
 				if (!path_n) ui_dirty(0);    // путь кончился — обновить панель
 			}

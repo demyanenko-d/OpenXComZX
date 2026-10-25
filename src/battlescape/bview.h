@@ -45,6 +45,7 @@ void bv_aim(uint8_t aim) __banked;           // курсор клетки — п
 void bv_walk(uint8_t i, uint8_t lx, uint8_t ly, uint8_t dx, uint8_t dy, uint8_t z, uint8_t d) __banked;
 // Такт ходьбы: 0 — идёт (или никто), 1 — прошёл середину (числится в новой клетке), 2 — дошёл
 uint8_t bv_walk_tick(void) __banked;
+void bv_walk_done(void) __banked;            // после 2: новый шаг не начат — нарисовать стойку
 uint8_t bv_walking(void) __banked;           // кто идёт (#FF — никто)
 uint16_t bv_dl_n(void) __banked;             // команд в списке вида (отладка)
 
