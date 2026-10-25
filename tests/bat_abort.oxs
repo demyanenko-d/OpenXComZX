@@ -25,12 +25,16 @@ click L
 waitmark 248 200
 wait 60
 shot tmp/shots/bat_abort/01_cancel.png
-# ESC (на ZX — SPACE) — то же окно, OK — выход
+# ESC (на ZX — SPACE) — то же окно, OK — разбор (прервали: «UFO не взят» / «террор продолжается»), OK — выход
 key SPACE
 waitmark 251 200
 pokew _cursor_x 76
 pokew _cursor_y 118
 click L
+waitmark 254 600
+wait 100
+shot tmp/shots/bat_abort/02_debriefing.png
+key ENTER
 waitmark 1 300
 echo battle abort OK
 exit 0

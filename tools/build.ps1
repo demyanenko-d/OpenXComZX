@@ -64,6 +64,7 @@ $banks = @(
     @{ n = 33; page = 0x8E; files = @('battlescape\bitems', 'battlescape\bhud', 'battlescape\bspr', 'battlescape\bmenu', 'battlescape\bstats'); ram = 0xB000 }   # бой: предметы (bitems.c), панель ICONS и показатели (bhud.c), значки замеченных — спрайты TSU (bspr.c), меню действий (bmenu.c), характеристики (bstats.c); с #B000 — пункты меню
     @{ n = 34; page = 0x8F; files = @('battlescape\deploy'); ram = 0xA000 }   # бой: расстановка пришельцев (deploy.c); с #A000 — юниты, узлы появления, листы брони
     @{ n = 36; page = 0xED; files = @('battlescape\bact', 'battlescape\bai'); ram = 0xB000 }   # бой: действия юнитов — выстрел (bact.c), общее для бойца и ИИ; ход пришельцев (bai.c, с #B000 — его состояние); юниты — дальним доступом к памяти банка 31
+    @{ n = 37; page = 0xEE; files = @('battlescape\bdeb'); ram = 0xB000 }   # бой: разбор (DebriefingState, bdeb.c; с #B000 — строки очков)
     @{ n = 35; page = 0xEC; files = @('battlescape\bfire'); ram = 0xB000 }   # бой: выстрел — траектория в вокселях, урон (bfire.c); с #B000 — таблицы z и маски юнитов; страница из бывшего пула (map.h BANK3_PAGE)
 )
 

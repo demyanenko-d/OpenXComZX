@@ -39,6 +39,7 @@
 #include "bfx.h"
 #include "bact.h"
 #include "bai.h"
+#include "bdeb.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 
@@ -632,13 +633,34 @@ static void hidden_show(uint8_t on)
 	text_draw(&b, s);
 }
 
+// Конец боя (BattlescapeGame::checkForCasualties -> finishBattle): живых пришельцев или бойцов
+// не осталось, или миссию прервали — разбор (bdeb.c). 1 — бой кончился
+static uint8_t battle_end(uint8_t aborted)
+{
+	uint8_t al = 0, xc = 0;
+	for (uint8_t i = 0; i < nunits; i++) {
+		if (!units[i].alive) continue;
+		if (units[i].faction == FACTION_HOSTILE) al++;
+		else if (units[i].faction == FACTION_PLAYER) xc++;
+	}
+	if (!aborted && al && xc) return 0;
+	debreq_t q;
+	q.page = pf_page; q.n = nunits; q.nsold = nsold; q.aborted = aborted; q.ufo = mis_ufo != 0xFFFF;
+	deb_start(&q);
+	if (hid_on) hidden_show(0);
+	bv_pause();
+	marks_show(0, 0);
+	UI_GO(aborted ? A_POP_PUSH : A_PUSH, SCR_DEBRIEFING);   // прервали — из окна вопроса
+	return 1;
+}
+
 static void ai_run(void)
 {
 	aictx_t c;
 	c.page = pf_page; c.cells = cells; c.sx = m_sx; c.sy = m_sy; c.sz = m_sz; c.n = nunits; c.nsold = nsold;
 	uint8_t r = ai_tick(&c);
 	if (r & AI_SEE) see_update();
-	if (r & AI_HIT) ui_dirty(0);         // панель — только после выстрела: каждый такт она мигала
+	if (r & AI_HIT) { if (battle_end(0)) return; ui_dirty(0); }   // панель — только после выстрела
 	if (!(r & AI_DONE)) {                // «Hidden Movement»: ходит невидимый — окно вместо карты
 		uint8_t want = (r & AI_HIDDEN) != 0, on = hid_on;
 		if (want != on) hidden_show(want);
@@ -741,7 +763,7 @@ static void shoot(uint8_t tx, uint8_t ty)
 	unit_changed(i);                     // повернулся
 	aim_off();
 	see_update();
-	ui_dirty(0);
+	if (!battle_end(0)) ui_dirty(0);     // последний пришелец выбыл — разбор (бой не перерисовывать)
 }
 
 // ---------------------------------------------------------------- меню действий
@@ -810,11 +832,13 @@ void bat_mission(uint16_t deploy, uint16_t ufo, uint16_t craft_map, uint16_t cre
 
 uint8_t bat_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
 {
+	if (id == SCR_DEBRIEFING) return deb_get(id, s, w);
 	return scr_find(tab, sizeof tab / sizeof tab[0], id, s, w);
 }
 
 void bat_text(uint8_t id, uint8_t slot, uint8_t line, char *buf) __banked
 {
+	if (id == SCR_DEBRIEFING) { deb_text(id, slot, line, buf); return; }
 	(void)line;
 	buf[0] = 0;
 	if (id == SCR_UNIT_INFO) {
@@ -840,12 +864,14 @@ void bat_text(uint8_t id, uint8_t slot, uint8_t line, char *buf) __banked
 
 uint8_t bat_rows(uint8_t id, uint8_t slot) __banked
 {
+	if (id == SCR_DEBRIEFING) return deb_rows(id, slot);
 	(void)id; (void)slot;
 	return 0;
 }
 
 uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 {
+	if (id == SCR_DEBRIEFING) return deb_event(id, ev, arg);
 	if (id == SCR_NEXT_TURN) {
 		if (ev == EVT_BUTTON || ev == EVT_KEY) next_turn_close();
 		return 0;
@@ -864,7 +890,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		return 0;
 	}
 	if (id == SCR_ABORT) {               // OK: finishBattle(aborted) — разбора ещё нет, просто выход
-		if (ev == EVT_BUTTON && arg == 1) UI_GO(A_POP2, 0);
+		if (ev == EVT_BUTTON && arg == 1) battle_end(1);   // finishBattle(true): разбор
 		return 0;
 	}
 	switch (ev) {

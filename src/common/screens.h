@@ -127,6 +127,7 @@
 #define SCR_ABORT            251       // AbortMissionState: прервать миссию?
 #define SCR_UNIT_INFO        252       // UnitInfoState: характеристики бойца
 #define SCR_BATTLE_PAUSE     253       // PauseState(OPT_BATTLESCAPE): меню паузы боя
+#define SCR_DEBRIEFING       254       // DebriefingState: разбор боя (bdeb.c, банк 37)
 
 #define SCR_LAST             255
 

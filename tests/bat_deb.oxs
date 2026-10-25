@@ -1,0 +1,49 @@
+# Разбор боя (DebriefingState, bdeb.c): тот же бой, что в bat_kill.oxs — первый же выстрел
+# кончает бой: пришелец заранее «убит» (units[6].alive и hp = 0), после выстрела checkForCasualties
+# видит, что пришельцев нет, — разбор:
+# «пришельцы убиты», труп, оценка. OK — назад (из отладочного боя — в главное меню).
+# Снимки — tmp/shots/bat_deb/. Запуск: powershell -File tools\run.ps1 -Script tests\bat_deb.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _bat_still 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+key j
+wait 60
+key x
+wait 10
+key CS+J
+poke 4E:3898 120
+poke 4E:39A8 0
+poke 4E:39A4 0
+wait 60
+shot tmp/shots/bat_deb/00_seen.png
+# правая рука -> навскидку -> клик по пришельцу (середина экрана)
+pokew _cursor_x 296
+pokew _cursor_y 172
+click L
+waitmark 250 200
+wait 30
+pokew _cursor_x 160
+pokew _cursor_y 135
+click L
+waitmark 248 200
+wait 40
+pokew _cursor_x 176
+pokew _cursor_y 96
+wait 20
+shot tmp/shots/bat_deb/01_aim.png
+click L
+waitmark 254 600
+wait 120
+shot tmp/shots/bat_deb/02_debriefing.png
+pokew _cursor_x 36
+pokew _cursor_y 186
+click L
+waitmark 1 600
+wait 30
+shot tmp/shots/bat_deb/03_back.png
+exit 0
