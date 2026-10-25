@@ -52,7 +52,7 @@ static uint8_t gen_mode;             // 1 — показывается сген�
 
 // Юниты миссии (unit_t, units.h) — в памяти банка (build.ps1 ram); вид получает их записями
 // runit_t через рабочую страницу (ru_put, bv_sync)
-static unit_t __at(0xB000) units[MAX_BUNITS];
+static unit_t __at(0xB880) units[MAX_BUNITS];   // до конца страницы
 static uint8_t nunits;
 static uint8_t nsold;                    // бойцы X-COM — первые nsold юнитов, дальше пришельцы
 static uint8_t bt_turn = 1, bt_side;     // номер хода и чей ход (FACTION_*)

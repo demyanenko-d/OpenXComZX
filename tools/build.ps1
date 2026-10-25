@@ -59,7 +59,7 @@ $banks = @(
     @{ n = 28; page = 0x4B; files = @('battlescape\bview', 'battlescape\scr_battle_s'); ram = 0xB190 }   # наземный бой: вид (bview.c — карта, юниты, камера); scr_battle_s.s — команды списка DMA; с #B190 — юниты вида, с #B300 — рабочие таблицы
     @{ n = 29; page = 0x4C; files = @('battlescape\mapgen'); ram = 0xB000 }   # генератор миссии: карта из блоков по mapScript (16 §3)
     @{ n = 30; page = 0x4D; files = @('battlescape\pathfind', 'battlescape\units', 'battlescape\doors', 'battlescape\loader', 'battlescape\bload') }   # поиск пути (16 §5.4), бойцы миссии, клетки карты (двери, цена прохода), загрузка графики и миссии (bload.c — для экрана боя)
-    @{ n = 31; page = 0x4E; files = @('battlescape\scr_battle'); ram = 0xB000 }   # наземный бой: экран, события и логика бойцов (вид — банк 28); с #B000 — юниты миссии
+    @{ n = 31; page = 0x4E; files = @('battlescape\scr_battle'); ram = 0xB880 }   # наземный бой: экран, события и логика бойцов (вид — банк 28); с #B880 — юниты миссии
     @{ n = 32; page = 0x4F; files = @('battlescape\vision') }   # бой: видимость — линия взгляда по клеткам, сектор обзора (vision.c)
     @{ n = 33; page = 0x8E; files = @('battlescape\bitems', 'battlescape\bhud', 'battlescape\bspr', 'battlescape\bmenu', 'battlescape\bstats'); ram = 0xB000 }   # бой: предметы (bitems.c), панель ICONS и показатели (bhud.c), значки замеченных — спрайты TSU (bspr.c), меню действий (bmenu.c), характеристики (bstats.c); с #B000 — пункты меню
     @{ n = 34; page = 0x8F; files = @('battlescape\deploy'); ram = 0xA000 }   # бой: расстановка пришельцев (deploy.c); с #A000 — юниты, узлы появления, листы брони
