@@ -144,6 +144,10 @@ extern uint8_t in_prev_keys;             // input.s: клавиша, нажат�
 uint8_t vis_pg;                          // первая страница видимого холста (0 — ещё не выбран)
 uint8_t tgt_d;                           // и того, куда рисуют ring_fill и dl_run
 static uint8_t away;                     // поверх боя открывали экран (инвентарь): сплит снят
+// Камера, этаж и «все этажи» на момент ухода под окно (away 2): вернуть вид без пересборки можно,
+// только если они те же
+static int16_t aw_x, aw_y;
+static uint8_t aw_l, aw_a;
 static int16_t vy_lo, vy_hi;             // нарисованный мировой диапазон Y (X — vx_lo, vx_hi)
 
 static void repaint(int16_t lo, int16_t hi, int16_t top, int16_t bot);   // кусок вида (ниже)
@@ -773,6 +777,8 @@ void bv_tile(uint8_t part) __banked
 
 void bv_draw(void) __banked
 {
+	if (away == 2 && (cam_x != aw_x || cam_y != aw_y || level != aw_l || all_levels != aw_a))
+		away = 1;                        // камера уехала, пока было окно (листали бойцов) — заново
 	if (away == 2) {                     // окно хода: холсты карты оно не трогало — только сплит
 		away = 0;
 		split_start();
@@ -804,10 +810,16 @@ void bv_suspend(void) __banked
 
 // Окно поверх боя, сквозь которое видна карта (меню действий): видимый кусок кольца копируется в
 // строки 0–143 основного холста, сплит снимается — карта остаётся неподвижной картинкой
+static void away_keep(void)
+{
+	aw_x = cam_x; aw_y = cam_y; aw_l = level; aw_a = all_levels;
+	away = 2;
+}
+
 void bv_pause(void) __banked
 {
 	split_stop();
-	away = 2;
+	away_keep();
 }
 
 void bv_message(uint8_t on) __banked
@@ -829,7 +841,7 @@ void bv_snapshot(void) __banked
 		if (w1 < SCREEN_W) far_copy(dst + w1, src, SCREEN_W - w1);
 	}
 	split_stop();
-	away = 2;                                // холсты карты окно не трогает: вернуть — сплитом
+	away_keep();                             // холсты карты окно не трогает: вернуть — сплитом
 }
 
 void bv_center(uint8_t x, uint8_t y) __banked
