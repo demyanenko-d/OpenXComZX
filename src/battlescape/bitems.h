@@ -8,6 +8,7 @@
 #define BI_MAX     256
 #define BI_GROUND  0xFE        // owner: лежит на земле, клетка (x, y, z)
 #define BI_NONE    0xFF        // owner: запись свободна
+#define BI_DROP    0xFE        // slot лежащего: упало в бою (вещи убитого, труп) — не груз корабля
 typedef struct {
 	uint8_t owner, slot, x, y; // юнит (или BI_GROUND / BI_NONE); секция invs и клетка в ней
 	uint16_t item, ammo;       // правило items; вставленная обойма (#FFFF — нет)

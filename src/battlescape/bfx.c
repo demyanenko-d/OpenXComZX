@@ -117,18 +117,41 @@ static void fl_put(far_t t3, uint8_t x, uint8_t y, uint8_t z, uint16_t item)
 	if (i == n) { n++; far_write(t3 + TV_FLOOR, &n, 1); }
 }
 
-void fl_corpse(uint8_t page, uint8_t x, uint8_t y, uint8_t z, uint8_t size, uint16_t armor) __banked
+// Предмет b на пол клетки (x, y, z) — запись bitem_t i (BI_DROP: упало в бою, не груз корабля)
+static void drop(uint8_t page, far_t t3, uint16_t i, bitem_t *b, uint8_t x, uint8_t y, uint8_t z)
 {
-	far_t t3 = FAR(page + 2, 0);
+	b->owner = BI_GROUND; b->slot = BI_DROP; b->x = x; b->y = y; b->z = z;
+	far_write(FAR(page + 1, TL_BITEMS) + i * sizeof *b, b, sizeof *b);
+	fl_put(t3, x, y, z, b->item);
+}
+
+// convertUnitToCorpse (UnitDieBState): всё, что было у юнита, — на пол его клетки, туда же труп
+// (armors corpseBattle; у крупного — по четверти на клетку) записями bitem_t
+void fl_corpse(uint8_t page, uint8_t unit, uint8_t x, uint8_t y, uint8_t z, uint8_t size, uint16_t armor) __banked
+{
+	far_t t3 = FAR(page + 2, 0), tb = FAR(page + 1, TL_BITEMS);
 	rtab_t t;
 	r_armors_t a;
+	bitem_t b;
+	for (uint16_t i = 0; i < BI_MAX; i++) {
+		far_read(tb + i * sizeof b, &b, sizeof b);
+		if (b.owner == unit) drop(page, t3, i, &b, x, y, z);
+	}
 	if (!rtab_open(RES_RULE_ARMORS, &t) || armor >= t.n) return;
 	rtab_get(&t, armor, &a);
 	uint8_t k = size > 1 ? 4 : 1;
+	uint16_t i = 0;
 	for (uint8_t q = 0; q < k && q < a.corpse_battle.n; q++) {   // крупный: по клетке на четверть
 		uint16_t c;
 		rtab_tail(&t, a.corpse_battle.off + q * 2, &c, 2);
-		fl_put(t3, (uint8_t)(x + (q & 1)), (uint8_t)(y + (q >> 1)), z, c);
+		for (; i < BI_MAX; i++) {                      // свободная запись
+			far_read(tb + i * sizeof b, &b, 1);
+			if (b.owner == BI_NONE) break;
+		}
+		if (i == BI_MAX) return;
+		b.item = c; b.ammo = 0xFFFF; b.rounds = 0;
+		drop(page, t3, i, &b, (uint8_t)(x + (q & 1)), (uint8_t)(y + (q >> 1)), z);
+		bi_used((uint8_t)(i + 1));
 	}
 }
 

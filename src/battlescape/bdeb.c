@@ -48,6 +48,14 @@ static const uint16_t ds_str[DS_MAX] = {
 #define D_MIA    5
 #define D_CRAFT  6
 
+// Запись i — упавший в бою предмет (BI_DROP) и не труп: 1 — да, сама запись — в *b
+static uint8_t dropped(const debreq_t *q, uint16_t i, bitem_t *b, const rtab_t *ti)
+{
+	far_read(FAR(q->page + 1, TL_BITEMS) + i * sizeof *b, b, sizeof *b);
+	if (b->owner != BI_GROUND || b->slot != BI_DROP || b->item >= ti->n) return 0;
+	return (uint8_t)rtab_word(ti, b->item, offsetof(r_items_t, battle_type)) != 11;   // BT_CORPSE
+}
+
 static void add_stat(uint8_t k, int16_t score)
 {
 	ds[k].qty++;
@@ -89,12 +97,9 @@ static void campaign(const debreq_t *q, uint8_t alive_x, uint8_t success)
 			rtab_tail(&ta, a.corpse_battle.off, &corpse, 2);
 			store(b, &ti, corpse);
 		}
-		for (uint16_t i = 0; i < BI_MAX; i++) {          // предметы выбывших пришельцев
+		for (uint16_t i = 0; i < BI_MAX; i++) {          // упавшее в бою (вещи выбывших)
 			bitem_t it;
-			far_read(FAR(q->page + 1, TL_BITEMS) + i * sizeof it, &it, sizeof it);
-			if (it.owner == BI_NONE || it.owner == BI_GROUND || it.owner < q->nsold) continue;
-			far_read(UNITS_FAR + (uint16_t)it.owner * sizeof u, &u, sizeof u);
-			if (u.alive || u.faction != FACTION_HOSTILE) continue;
+			if (!dropped(q, i, &it, &ti)) continue;
 			store(b, &ti, it.item);
 			if (it.ammo != 0xFFFF && it.rounds) store(b, &ti, it.ammo);
 		}
@@ -152,15 +157,10 @@ void deb_start(const debreq_t *q) __banked
 			add_stat(D_XKIA, -value);
 		}
 	}
-	if (success)                                 // предметы пришельцев (не X-COM): их recoveryPoints
-		for (uint16_t i = 0; i < BI_MAX; i++) {
+	if (success)                                 // упавшее в бою (вещи выбывших; не груз корабля и не
+		for (uint16_t i = 0; i < BI_MAX; i++) {  //   трупы — те по убитым): их recoveryPoints
 			bitem_t b;
-			far_read(FAR(q->page + 1, TL_BITEMS) + i * sizeof b, &b, sizeof b);
-			if (b.owner == BI_NONE || b.owner < q->nsold || b.item >= ti.n) continue;
-			if (b.owner != BI_GROUND) {
-				far_read(UNITS_FAR + (uint16_t)b.owner * sizeof u, &u, sizeof u);
-				if (u.alive || u.faction != FACTION_HOSTILE) continue;
-			} else continue;                     // земля — груз корабля (X-COM)
+			if (!dropped(q, i, &b, &ti)) continue;
 			int16_t rp = (int16_t)rtab_word(&ti, b.item, offsetof(r_items_t, recovery_points));
 			if (rp) add_stat(D_ART, rp);
 		}

@@ -90,7 +90,7 @@ uint8_t ba_shot(const bashot_t *q) __banked
 	u_set(s.hit, &v);
 	if (dead) {                                  // выбыл: со сцены, труп на пол (bfx.c)
 		ru_write(q->page, s.hit, &v);
-		fl_corpse(q->page, v.x, v.y, v.z, v.size, v.armor_rule);
+		fl_corpse(q->page, s.hit, v.x, v.y, v.z, v.size, v.armor_rule);
 		bv_sync(n);
 		for (uint8_t k = 0; k < v.size * v.size; k++)
 			bv_cell((uint8_t)(v.x + (k & 1)), (uint8_t)(v.y + (k >> 1)), v.z);

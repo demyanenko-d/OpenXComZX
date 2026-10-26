@@ -19,8 +19,8 @@ typedef struct {
 // (ExplosionBState, SMOKE.PCK); возвращается, когда анимация кончилась
 void fx_shot(const fxshot_t *q) __banked;
 
-// Труп юнита (armors corpseBattle, по кадру на клетку у крупного) на пол клеток (x, y, z),
-// виду — перечитать (bv_sync) и перерисовать клетки
-void fl_corpse(uint8_t page, uint8_t x, uint8_t y, uint8_t z, uint8_t size, uint16_t armor) __banked;
+// Гибель юнита unit: его предметы и труп (armors corpseBattle, у крупного — по четверти на клетку)
+// на пол клеток (x, y, z) записями bitem_t (BI_DROP); виду — перечитать (bv_sync) и перерисовать
+void fl_corpse(uint8_t page, uint8_t unit, uint8_t x, uint8_t y, uint8_t z, uint8_t size, uint16_t armor) __banked;
 
 #endif
