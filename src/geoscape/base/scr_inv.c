@@ -47,11 +47,11 @@ typedef struct {                     // предмет бойца: копия з
 	uint8_t w, h;                    // размер в клетках
 } sv_t;
 
-// Память банка за кодом (build.ps1: ram банка 27 — с #B000)
-static uint8_t __at(0xB000) carry_buf[HAND_W * SLOT_W * HAND_H * SLOT_H];   // точки под несомым
-static r_invs_t __at(0xB600) secs[SEC_MAX];          // правила секций (читаются при открытии)
-static sv_t __at(0xB700) sv[SV_MAX];                 // предметы бойца
-static uint8_t __at(0xB900) gl_wh[CARGO_ITEMS];      // размер вида груза на земле: w | h << 4
+// Память банка за кодом (build.ps1: ram банка 27 — с #B700, страница #EF)
+static r_invs_t __at(0xB700) secs[SEC_MAX];          // правила секций (читаются при открытии), до #B7A8
+static sv_t __at(0xB800) sv[SV_MAX];                 // предметы бойца, до #B9C0
+static uint8_t __at(0xB9C0) gl_wh[CARGO_ITEMS];      // размер вида груза на земле: w | h << 4
+static uint8_t __at(0xBA00) carry_buf[HAND_W * SLOT_W * HAND_H * SLOT_H];   // точки под несомым, до #C000
 
 static char t1[40], t2[8];
 static uint16_t hover_item;          // предмет под курсором (подпись внизу)
