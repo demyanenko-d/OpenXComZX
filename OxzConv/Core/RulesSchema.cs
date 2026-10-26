@@ -300,6 +300,8 @@ namespace OxzConv
 					Fn("cols", "u8", (e, k, rs) => SlotSize(e, 0), "клеток в ширину (рука и земля — 0)"),
 					Fn("rows", "u8", (e, k, rs) => SlotSize(e, 1), "клеток в высоту"),
 					Fn("mask", "u16", (e, k, rs) => SlotMask(e), "занятые клетки сетки: бит (y * 4 + x)"),
+					Fn("costs", "nums", (e, k, rs) => Weights(rs, "invs", Y.Get(e, "costs"), $"invs.{k}.costs"),
+						"цена перекладывания в единицах времени: пары (секция-куда, цена) (RuleInventory::getCost)"),
 				},
 			});
 
