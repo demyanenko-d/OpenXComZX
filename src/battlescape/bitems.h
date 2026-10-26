@@ -31,5 +31,7 @@ uint8_t bi_crew(uint8_t page, const uint8_t *sol, uint8_t n) __banked;
 uint8_t bi_hand(uint8_t page, uint8_t unit, uint8_t right, bitem_t *out) __banked;
 // Выстрел: патрон из обоймы оружия в руке (BattleItem::spendBullet); вернёт, сколько осталось
 uint8_t bi_spend(uint8_t page, uint8_t unit, uint8_t right) __banked;
+void bi_used(uint8_t n) __banked;               // записей занято не меньше n
+void bi_hands(uint8_t page, uint8_t n) __banked; // оружие в руках n бойцов — кадры заново
 
 #endif

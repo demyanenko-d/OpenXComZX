@@ -168,6 +168,19 @@ static void hands_build(uint8_t page, uint8_t n)
 	}
 }
 
+// Записей занято не меньше n (инвентарь боя завёл запись за прежним концом)
+void bi_used(uint8_t n) __banked
+{
+	uint8_t c = bi_n;                        // сравнение — с копией (SDCC 4.5)
+	if (n > c) bi_n = n;
+}
+
+// Предметы в руках сменились (инвентарь боя) — слоты и кадры оружия на спрайтах заново
+void bi_hands(uint8_t page, uint8_t n) __banked
+{
+	hands_build(page, n);
+}
+
 uint8_t bi_spend(uint8_t page, uint8_t unit, uint8_t right) __banked
 {
 	uint8_t h = sec_named(right ? STR_RIGHT_HAND : STR_LEFT_HAND);

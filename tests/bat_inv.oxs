@@ -1,0 +1,35 @@
+# Инвентарь в бою (InventoryState(tu = true), scr_inv.c в режиме боя): отладочный бой, кнопка
+# инвентаря, оружие из правой руки — на землю (цена «правая рука -> земля» = 2 по invs.costs:
+# время бойца 60 -> 58, units[0].tu #3886), OK — назад в бой.
+# Снимки — tmp/shots/bat_inv/. Запуск: powershell -File tools\run.ps1 -Script tests\bat_inv.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _ui_request 248
+waitmark 248 900
+wait 150
+pokew _cursor_x 158
+pokew _cursor_y 150
+click L
+waitmark 198 300
+wait 60
+shot tmp/shots/bat_inv/0_open.png
+pokew _cursor_x 16
+pokew _cursor_y 87
+click L
+wait 10
+pokew _cursor_x 100
+pokew _cursor_y 170
+wait 10
+click L
+wait 30
+shot tmp/shots/bat_inv/1_ground.png
+pokew _cursor_x 250
+pokew _cursor_y 10
+click L
+waitmark 248 300
+wait 60
+shot tmp/shots/bat_inv/2_back.png
+expect 4E:3886 58
+exit 0

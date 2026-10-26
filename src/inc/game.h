@@ -190,6 +190,8 @@ void geo_center(const geo_t *p, uint8_t zmin) __banked;
 void inv_get(uint16_t i, inv_t *v) __banked;
 void inv_put(uint16_t i, const inv_t *v) __banked;
 uint16_t inv_alloc(void) __banked;
+// Следующее открытие инвентаря — в бою (scr_inv.c): рабочая страница боя, боец (юнит), бойцов, юнитов
+void inv_battle(uint8_t page, uint8_t unit, uint8_t nsold, uint8_t n) __banked;
 void inv_clear_soldier(uint8_t s) __banked;
 uint8_t waypoint_new(const geo_t *p) __banked;   // WP_PENDING до waypoint_confirm
 void waypoint_confirm(uint8_t w) __banked;

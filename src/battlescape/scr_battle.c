@@ -40,6 +40,7 @@
 #include "bact.h"
 #include "bai.h"
 #include "bdeb.h"
+#include "game.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 
@@ -1054,6 +1055,8 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		case 3: { uint8_t l = bv_level(); if (l + 1 < m_sz) { bv_set_level(l + 1, 1); ui_dirty(0); } break; }
 		case 4: { uint8_t l = bv_level(); if (l) { bv_set_level(l - 1, 1); ui_dirty(0); } break; }
 		case 5:                              // инвентарь: окно рисуется в строки 0–199 основного
+			if (!nsold || bv_walking() != 0xFF) break;
+			inv_battle(pf_page, sel < nsold ? sel : 0, nsold, nunits);   // над предметами боя
 			bv_suspend();                    //   холста — без сплита и с ним на экране
 			marks_show(0, 0);
 			UI_GO(A_PUSH, SCR_INVENTORY);

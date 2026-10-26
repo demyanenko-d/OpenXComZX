@@ -8,6 +8,13 @@
 // (обойма — в левую руку, оружие — в правую). Экран открывается из снаряжения корабля
 // («Inventory»), поэтому боец берётся из экипажа: стрелки листают экипаж.
 //
+// В бою (inv_battle перед открытием; InventoryState(tu = true)) — тот же экран над предметами боя
+// (bitem_t, рабочая страница боя): «земля» — предметы на клетке бойца (одинаковые — стопкой),
+// время бойца вместо веса, перекладывание стоит времени (RuleInventory::getCost: из секции, откуда
+// взят, в секцию, куда кладут; зарядить — 15, разрядить — 8, Inventory.cpp:587-850), не хватает —
+// предупреждение (WarningMessage 224x24 в (48, 176), цвета battlescape.warning). Листаются живые
+// бойцы отряда, кукла — по броне юнита. После закрытия бою — руки, кадры и пол заново.
+//
 // Перерисовка частичная: клик перерисовывает только затронутые секции (part), несомый предмет
 // ходит за курсором поверх экрана — точки под ним сохраняются и возвращаются (carry_io). Полный
 // вывод (кукла, подписи секций) — только при открытии и смене бойца: он идёт ~20 кадров.
@@ -26,6 +33,11 @@
 #include "input.h"
 #include "far.h"
 #include "pages.h"
+#include "../../battlescape/loader.h"
+#include "../../battlescape/units.h"
+#include "../../battlescape/bitems.h"
+#include "../../battlescape/bfx.h"
+#include "../../battlescape/bview.h"
 
 #define SLOT_W    16
 #define SLOT_H    16
@@ -52,6 +64,17 @@ static r_invs_t __at(0xB700) secs[SEC_MAX];          // правила секц�
 static sv_t __at(0xB800) sv[SV_MAX];                 // предметы бойца, до #B9C0
 static uint8_t __at(0xB9C0) gl_wh[CARGO_ITEMS];      // размер вида груза на земле: w | h << 4
 static uint8_t __at(0xBA00) carry_buf[HAND_W * SLOT_W * HAND_H * SLOT_H];   // точки под несомым, до #C000
+// Земля как список видов (груз корабля или предметы на клетке бойца): предмет и сколько их
+static uint16_t __at(0xB7A8) gtype[CARGO_ITEMS];     // до #B7E8
+static uint8_t __at(0xB9E0) gqty[CARGO_ITEMS];       // до #BA00
+// Режим боя (inv_battle): рабочая страница, юнитов всего, бойцов, выбранный, предупреждение
+static uint8_t __at(0xB7E8) bm;
+static uint8_t __at(0xB7E9) bm_page;
+static uint8_t __at(0xB7EA) bm_n;
+static uint8_t __at(0xB7EB) bm_ns;
+static uint8_t __at(0xB7EC) bm_u;
+static uint16_t __at(0xB7ED) bm_warn;    // строка предупреждения (NONE16 — нет)
+static uint8_t __at(0xB7EF) bm_wt;       // кадров до его исчезновения
 
 static char t1[40], t2[8];
 static uint16_t hover_item;          // предмет под курсором (подпись внизу)
@@ -132,6 +155,56 @@ static uint8_t sec_named(uint16_t name)
 	return 0xFF;
 }
 
+// --- данные: записи (кампания — пул inv_t, бой — bitem_t; боец — номер юнита) и земля
+
+static far_t bi_far(uint16_t r)
+{
+	return FAR(bm_page + 1, TL_BITEMS) + r * sizeof(bitem_t);
+}
+
+static void rec_get(uint16_t r, inv_t *v)
+{
+	bitem_t b;
+	if (!bm) { inv_get(r, v); return; }
+	far_read(bi_far(r), &b, sizeof b);
+	v->soldier = b.owner == BI_NONE || b.owner == BI_GROUND ? NONE8 : b.owner;
+	v->slot = b.slot; v->x = b.x; v->y = b.y;
+	v->item = b.item; v->ammo = b.ammo; v->rounds = b.rounds;
+}
+
+static void rec_put(uint16_t r, const inv_t *v)
+{
+	bitem_t b;
+	if (!bm) { inv_put(r, v); return; }
+	far_read(bi_far(r), &b, sizeof b);
+	b.owner = v->soldier == NONE8 ? BI_NONE : v->soldier;
+	b.slot = v->slot; b.x = v->x; b.y = v->y;
+	b.item = v->item; b.ammo = v->ammo; b.rounds = v->rounds > 255 ? 255 : (uint8_t)v->rounds;
+	far_write(bi_far(r), &b, sizeof b);
+}
+
+static uint16_t rec_alloc(void)
+{
+	bitem_t b;
+	if (!bm) return inv_alloc();
+	for (uint16_t i = 0; i < BI_MAX; i++) {
+		far_read(bi_far(i), &b, 1);
+		if (b.owner == BI_NONE) { bi_used((uint8_t)(i + 1)); return i; }
+	}
+	return INV_NONE;
+}
+
+static void unit_get(unit_t *u)
+{
+	far_read(UNITS_FAR + (uint16_t)bm_u * sizeof *u, u, sizeof *u);
+}
+
+// Предмет на клетке бойца (owner BI_GROUND): 1 — да
+static uint8_t on_tile(const bitem_t *b, const unit_t *u)
+{
+	return b->owner == BI_GROUND && b->x == u->x && b->y == u->y && b->z == u->z;
+}
+
 // Копия записей бойца: по ней рисуются секции и ищется предмет под курсором (пул — до 1024
 // записей, перебирать его каждый кадр дорого). Перечитывается после каждого изменения
 static void sol_load(void)
@@ -140,8 +213,9 @@ static void sol_load(void)
 	int16_t w, h;
 	nsv = 0;
 	if (sel_sol == NONE8) return;
-	for (uint16_t i = 0; i < ST->ninv && nsv < SV_MAX; i++) {
-		inv_get(i, &v);
+	uint16_t n = bm ? BI_MAX : ST->ninv;
+	for (uint16_t i = 0; i < n && nsv < SV_MAX; i++) {
+		rec_get(i, &v);
 		if (v.soldier != sel_sol || v.slot >= nsec) continue;
 		sv_t *s = &sv[nsv++];
 		item_big(v.item, &w, &h);
@@ -252,6 +326,36 @@ static void draw_grid(uint16_t m, uint8_t labels)
 // Виды груза в порядке std::map по id предмета (ItemContainer оригинала — так они и ложатся на
 // землю), каждый — в самую левую верхнюю клетку, где он помещается: сверху вниз, потом вправо, не
 // переходя границу страницы земли. Одинаковые предметы — стопкой в одной клетке.
+// Виды на земле: груз корабля, в бою — предметы на клетке бойца (одинаковые — стопкой)
+static void ground_build(void)
+{
+	memset(gtype, 0xFF, sizeof gtype);
+	memset(gqty, 0, sizeof gqty);
+	if (!bm) {
+		craft_t *cr = &ST->craft[ctx.craft];
+		if (cr->cargo == NONE8) return;
+		for (uint8_t i = 0; i < CARGO_ITEMS; i++) {
+			uint8_t it = ST->cargo[cr->cargo].it[i].item;
+			if (it == NONE8 || !ST->cargo[cr->cargo].it[i].qty) continue;
+			gtype[i] = it;
+			gqty[i] = ST->cargo[cr->cargo].it[i].qty;
+		}
+		return;
+	}
+	unit_t u;
+	bitem_t b;
+	unit_get(&u);
+	for (uint16_t i = 0; i < BI_MAX; i++) {
+		far_read(bi_far(i), &b, sizeof b);
+		if (!on_tile(&b, &u)) continue;
+		uint8_t k = 0;
+		while (k < CARGO_ITEMS && gtype[k] != 0xFFFF && gtype[k] != b.item) k++;
+		if (k == CARGO_ITEMS) continue;
+		gtype[k] = b.item;
+		gqty[k]++;
+	}
+}
+
 static void ground_arrange(void)
 {
 	rtab_t t;
@@ -262,15 +366,14 @@ static void ground_arrange(void)
 	gl_xmax = 0;
 	memset(gl_x, 0xFF, sizeof gl_x);
 	memset(occ, 0, sizeof occ);
-	craft_t *cr = &ST->craft[ctx.craft];
-	if (cr->cargo == NONE8 || !gl_sx || !gl_sy) return;
+	ground_build();
+	if (!gl_sx || !gl_sy) return;
 	rtab_open(RES_RULE_ITEMS, &t);
 	for (uint8_t i = 0; i < CARGO_ITEMS; i++) {  // вставкой по месту id
-		uint8_t it = ST->cargo[cr->cargo].it[i].item;
-		if (it == NONE8 || !ST->cargo[cr->cargo].it[i].qty) continue;
-		uint16_t rk = rtab_word(&t, it, offsetof(r_items_t, sort_rank));
+		if (gtype[i] == 0xFFFF || !gqty[i]) continue;
+		uint16_t rk = rtab_word(&t, gtype[i], offsetof(r_items_t, sort_rank));
 		uint8_t k = n++;
-		while (k && rtab_word(&t, ST->cargo[cr->cargo].it[ord[k - 1]].item, offsetof(r_items_t, sort_rank)) > rk) {
+		while (k && rtab_word(&t, gtype[ord[k - 1]], offsetof(r_items_t, sort_rank)) > rk) {
 			ord[k] = ord[k - 1];
 			k--;
 		}
@@ -279,7 +382,7 @@ static void ground_arrange(void)
 	for (uint8_t j = 0; j < n; j++) {
 		uint8_t ci = ord[j];
 		int16_t w, h;
-		item_big(ST->cargo[cr->cargo].it[ci].item, &w, &h);
+		item_big(gtype[ci], &w, &h);
 		gl_wh[ci] = (uint8_t)(w | (h << 4));
 		if (w > gl_sx || h > gl_sy) continue;
 		uint8_t x = 0, y = 0, rows = (uint8_t)(((1u << h) - 1) & 0xFF);
@@ -299,19 +402,18 @@ static void ground_arrange(void)
 
 // Вид груза в клетке земли (cx, cy — клетка на экране; прокрутка учтена); NONE8 — пусто.
 // Взятый последний из стопки оставляет пустое место до следующей раскладки — как в оригинале
-static uint8_t ground_item(uint8_t cx, uint8_t cy, uint8_t *slot_out)
+static uint16_t ground_item(uint8_t cx, uint8_t cy, uint8_t *slot_out)
 {
-	craft_t *cr = &ST->craft[ctx.craft];
-	if (cr->cargo == NONE8) return NONE8;
 	uint8_t col = cx + ground_x;
 	for (uint8_t i = 0; i < CARGO_ITEMS; i++) {
-		uint8_t gx = gl_x[i], gy = gl_y[i], it = ST->cargo[cr->cargo].it[i].item;
-		if (gx == 0xFF || it == NONE8) continue;
+		uint8_t gx = gl_x[i], gy = gl_y[i];
+		uint16_t it = gtype[i];
+		if (gx == 0xFF || it == 0xFFFF || !gqty[i]) continue;
 		if (col < gx || col >= gx + (gl_wh[i] & 15) || cy < gy || cy >= gy + (gl_wh[i] >> 4)) continue;
 		if (slot_out) *slot_out = i;
 		return it;
 	}
-	return NONE8;
+	return NONE16;
 }
 
 static void ground_add(uint8_t item)
@@ -373,16 +475,31 @@ static void draw_item(uint16_t item, int16_t x, int16_t y)
 	gfx_sprite(RES_BIGOBS_PCK, sp, x, y);
 }
 
-static void draw_soldier(void)
+// Броня бойца (правило armors; #FFFF — нет) и его сила
+static uint16_t sol_armor(uint8_t *str)
 {
 	soldier_t so;
+	if (bm) {
+		unit_t u;
+		unit_get(&u);
+		*str = u.strength;
+		return u.armor_rule;
+	}
+	soldier_get(sel_sol, &so);
+	*str = so.cur.strength;
+	return so.armor == NONE8 ? 0xFFFF : so.armor;
+}
+
+static void draw_soldier(void)
+{
 	rtab_t t;
 	r_armors_t ar;
+	uint8_t str;
 	if (sel_sol == NONE8) return;           // экипажа нет: soldier_get(255) прочёл бы чужое
-	soldier_get(sel_sol, &so);
-	if (so.armor == NONE8) return;
+	uint16_t a = sol_armor(&str);
 	rtab_open(RES_RULE_ARMORS, &t);
-	rtab_get(&t, so.armor, &ar);
+	if (a >= t.n) return;
+	rtab_get(&t, a, &ar);
 	if (!ar.inv_image) return;
 	gfx_key = 1;                                 // кукла — картинка 320x200 с прозрачным фоном
 	gfx_blit(ar.inv_image, 0, 0, 0, 0, 320, 200);
@@ -404,13 +521,13 @@ static void draw_items(uint16_t m)
 		}
 		draw_item(s->v.item, x, y);
 	}
-	craft_t *cr = &ST->craft[ctx.craft];
-	if (!(m & P_SEC(INV_GROUND)) || cr->cargo == NONE8) return;
+	if (!(m & P_SEC(INV_GROUND))) return;
 	const r_invs_t *r = &secs[INV_GROUND];
 	for (uint8_t pass = 0; pass < 2; pass++)
 		for (uint8_t i = 0; i < CARGO_ITEMS; i++) {
-			uint8_t gx = gl_x[i], it = ST->cargo[cr->cargo].it[i].item, q = ST->cargo[cr->cargo].it[i].qty;
-			if (gx == 0xFF || it == NONE8 || gx < ground_x || gx - ground_x >= gl_sx) continue;
+			uint8_t gx = gl_x[i], q = gqty[i];
+			uint16_t it = gtype[i];
+			if (gx == 0xFF || it == 0xFFFF || !q || gx < ground_x || gx - ground_x >= gl_sx) continue;
 			int16_t x = (int16_t)r->x + (int16_t)(gx - ground_x) * SLOT_W, y = (int16_t)r->y + (int16_t)gl_y[i] * SLOT_H;
 			if (!pass) { draw_item(it, x, y); continue; }
 			if (q < 2) continue;
@@ -477,6 +594,60 @@ static void carry_set(uint16_t rec, uint16_t item)
 	carry_h = (uint8_t)h;
 }
 
+// --- время и предупреждения (бой)
+
+#define WARN_X 48
+#define WARN_Y 176
+#define WARN_W 224
+#define WARN_H 24
+
+// WarningMessage: плашка цветом battlescape.warning.color2, текст — color, ~1.5 с
+static void draw_warn(void)
+{
+	tbox_t b;
+	char s[48];
+	gfx_fill(WARN_X, WARN_Y, WARN_W, WARN_H, ui_color_in(UI_SCR_BATTLESCAPE, UI_EL_WARNING, 1));
+	str_copy(bm_warn, s, sizeof s);
+	b.x = WARN_X; b.y = WARN_Y + 8; b.w = WARN_W; b.h = 9; b.font = FNT_SMALL; b.flags = TX_CENTER;
+	b.color = b.color2 = ui_color_in(UI_SCR_BATTLESCAPE, UI_EL_WARNING, 0);
+	uint8_t old3 = pg_win3();
+	text_draw(&b, s);
+	pg_map3(old3);
+}
+
+static void warn(uint16_t str)
+{
+	bm_warn = str;
+	bm_wt = 75;
+	draw_warn();
+}
+
+// Цена перекладывания из секции from в секцию to (RuleInventory::getCost; нет в таблице — 0)
+static uint8_t move_cost(uint8_t from, uint8_t to)
+{
+	rtab_t t;
+	uint16_t p[2 * SEC_MAX];
+	if (from >= nsec) return 0;
+	uint8_t n = secs[from].costs.n > 2 * SEC_MAX ? 2 * SEC_MAX : secs[from].costs.n;
+	rtab_open(RES_RULE_INVS, &t);
+	if (n) rtab_tail(&t, secs[from].costs.off, p, (uint16_t)n * 2);
+	for (uint8_t i = 0; i + 1 < n; i += 2) if (p[i] == to) return (uint8_t)p[i + 1];
+	return 0;
+}
+
+// Списать время бойца (spendTimeUnits): 1 — хватило (вне боя всегда)
+static uint8_t tu_spend(uint8_t cost)
+{
+	unit_t u;
+	if (!bm || !cost) return 1;
+	unit_get(&u);
+	if (u.tu < cost) { warn(STR_NOT_ENOUGH_TIME_UNITS); return 0; }
+	u.tu -= cost;
+	far_write(UNITS_FAR + (uint16_t)bm_u * sizeof u, &u, sizeof u);
+	ui_dirty(1);
+	return 1;
+}
+
 // --- перекладывание: груз корабля («земля») <-> слоты бойца
 
 // Совместима ли обойма с оружием (items.compatibleAmmo)
@@ -506,10 +677,19 @@ static uint16_t clip_rounds(uint16_t item)
 // Взятый — назад в груз корабля (заряженное оружие — с обоймой); запись освобождается
 static void carry_to_ground(inv_t *v)
 {
-	ground_add((uint8_t)v->item);
-	if (v->ammo != NONE16) ground_add((uint8_t)v->ammo);
-	v->soldier = NONE8;
-	inv_put(carry, v);
+	if (bm) {                                    // в бою — предмет на клетку бойца (с обоймой)
+		unit_t u;
+		bitem_t b;
+		unit_get(&u);
+		far_read(bi_far(carry), &b, sizeof b);
+		b.owner = BI_GROUND; b.slot = INV_GROUND; b.x = u.x; b.y = u.y; b.z = u.z;
+		far_write(bi_far(carry), &b, sizeof b);
+	} else {
+		ground_add((uint8_t)v->item);
+		if (v->ammo != NONE16) ground_add((uint8_t)v->ammo);
+		v->soldier = NONE8;
+		inv_put(carry, v);
+	}
 	carry = INV_NONE;
 	ground_arrange();
 	part |= P_SEC(INV_GROUND);
@@ -520,7 +700,7 @@ static void carry_cancel(void)
 {
 	inv_t v;
 	if (carry == INV_NONE) return;
-	inv_get(carry, &v);
+	rec_get(carry, &v);
 	if (v.slot == INV_GROUND) carry_to_ground(&v);
 	else { part |= P_SEC(v.slot); carry = INV_NONE; }
 	sol_load();
@@ -532,19 +712,20 @@ static uint8_t unload_weapon(void)
 {
 	inv_t v;
 	if (carry == INV_NONE) return 0;
-	inv_get(carry, &v);
+	rec_get(carry, &v);
 	uint8_t rh = sec_named(STR_RIGHT_HAND), lh = sec_named(STR_LEFT_HAND);
 	if (v.ammo == NONE16 || rh == 0xFF || lh == 0xFF) return 0;
 	for (uint8_t k = 0; k < nsv; k++)
-		if (sv[k].rec != carry && secs[sv[k].v.slot].type == 1) return 0;
-	uint16_t rec = inv_alloc();
+		if (sv[k].rec != carry && secs[sv[k].v.slot].type == 1) { warn(STR_BOTH_HANDS_MUST_BE_EMPTY); return 0; }
+	if (!tu_spend(8)) return 0;
+	uint16_t rec = rec_alloc();
 	if (rec == INV_NONE) return 0;
 	inv_t a = { sel_sol, lh, 0, 0, v.ammo, NONE16, v.rounds };
-	inv_put(rec, &a);
+	rec_put(rec, &a);
 	v.slot = rh; v.x = v.y = 0;
 	v.ammo = NONE16;
 	v.rounds = 0;
-	inv_put(carry, &v);
+	rec_put(carry, &v);
 	carry = INV_NONE;
 	part |= P_SEC(rh) | P_SEC(lh);
 	sol_load();
@@ -561,14 +742,29 @@ static void click_at(int16_t px, int16_t py)
 		slot = hit_slot(px, py, &cx, &cy);
 		if (slot == 0xFF) return;
 		if (secs[slot].type == 2) {
-			uint8_t ci, it = ground_item(cx, cy, &ci);
-			if (it == NONE8) return;
-			uint16_t rec = inv_alloc();
-			if (rec == INV_NONE) return;
-			inv_t v = { sel_sol, slot, 0, 0, it, NONE16, 0 };
-			inv_put(rec, &v);
-			uint8_t cg = ST->craft[ctx.craft].cargo;
-			if (!--ST->cargo[cg].it[ci].qty) ST->cargo[cg].it[ci].item = NONE8;
+			uint8_t ci;
+			uint16_t it = ground_item(cx, cy, &ci), rec = INV_NONE;
+			if (it == NONE16) return;
+			if (bm) {                            // в бою — сам предмет с клетки: несёт боец
+				unit_t u;
+				bitem_t b;
+				unit_get(&u);
+				for (uint16_t i = 0; i < BI_MAX && rec == INV_NONE; i++) {
+					far_read(bi_far(i), &b, sizeof b);
+					if (on_tile(&b, &u) && b.item == it) rec = i;
+				}
+				if (rec == INV_NONE) return;
+				b.owner = sel_sol; b.slot = INV_GROUND; b.x = b.y = 0;
+				far_write(bi_far(rec), &b, sizeof b);
+			} else {
+				rec = inv_alloc();
+				if (rec == INV_NONE) return;
+				inv_t v = { sel_sol, slot, 0, 0, it, NONE16, 0 };
+				inv_put(rec, &v);
+				uint8_t cg = ST->craft[ctx.craft].cargo;
+				if (!--ST->cargo[cg].it[ci].qty) ST->cargo[cg].it[ci].item = NONE8;
+			}
+			gqty[ci]--;
 			carry_set(rec, it);
 		} else {
 			uint8_t k = item_at(slot, cx, cy);
@@ -586,8 +782,9 @@ static void click_at(int16_t px, int16_t py)
 		if (slot == 0xFF || secs[slot].type != 2) return;
 	}
 	inv_t v;
-	inv_get(carry, &v);
-	if (secs[slot].type == 2) {                  // на землю — в груз корабля
+	rec_get(carry, &v);
+	if (secs[slot].type == 2) {                  // на землю — в груз корабля (в бою — на клетку)
+		if (!tu_spend(move_cost(v.slot, slot))) return;
 		carry_to_ground(&v);
 		sol_load();
 		return;
@@ -595,16 +792,23 @@ static void click_at(int16_t px, int16_t py)
 	uint8_t k = item_at(slot, cx, cy);
 	if (k != 0xFF) {                             // занято: оружие — зарядить взятой обоймой
 		inv_t w = sv[k].v;
-		if (w.ammo != NONE16 || !ammo_fits(w.item, v.item)) return;
+		rtab_t t;
+		rtab_open(RES_RULE_ITEMS, &t);
+		far_t ca = t.base + 8 + (uint32_t)w.item * t.size + offsetof(r_items_t, compatible_ammo) + 2;
+		if (!far_byte(ca)) return;               // не оружие с обоймой — молча (Inventory.cpp:665)
+		if (!ammo_fits(w.item, v.item)) { warn(STR_WRONG_AMMUNITION_FOR_THIS_WEAPON); return; }
+		if (w.ammo != NONE16) { warn(STR_WEAPON_IS_ALREADY_LOADED); return; }
+		if (!tu_spend(15)) return;
 		w.ammo = v.item;
 		w.rounds = v.rounds ? v.rounds : clip_rounds(v.item);
-		inv_put(sv[k].rec, &w);
+		rec_put(sv[k].rec, &w);
 		v.soldier = NONE8;                       // обойма ушла в оружие
-		inv_put(carry, &v);
+		rec_put(carry, &v);
 	} else {
 		if (!fits(slot, cx, cy)) return;
+		if (!tu_spend(move_cost(v.slot, slot))) return;
 		v.slot = slot; v.x = cx; v.y = cy;
-		inv_put(carry, &v);
+		rec_put(carry, &v);
 	}
 	carry = INV_NONE;
 	part |= P_SEC(slot);
@@ -612,6 +816,15 @@ static void click_at(int16_t px, int16_t py)
 }
 
 // --- экран
+
+void inv_battle(uint8_t page, uint8_t unit, uint8_t nsold, uint8_t n) __banked
+{
+	bm = 1;
+	bm_page = page;
+	bm_u = unit;
+	bm_ns = nsold;
+	bm_n = n;
+}
 
 uint8_t inv_scr_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
 {
@@ -622,13 +835,10 @@ uint8_t inv_scr_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
 static uint16_t sol_weight(void)
 {
 	rtab_t t;
-	soldier_t so;
-	uint16_t wt = 0;
-	soldier_get(sel_sol, &so);
-	if (so.armor != NONE8) {
-		rtab_open(RES_RULE_ARMORS, &t);
-		wt = (uint8_t)rtab_word(&t, so.armor, offsetof(r_armors_t, weight));
-	}
+	uint8_t str;
+	uint16_t wt = 0, a = sol_armor(&str);
+	rtab_open(RES_RULE_ARMORS, &t);
+	if (a < t.n) wt = (uint8_t)rtab_word(&t, a, offsetof(r_armors_t, weight));
 	rtab_open(RES_RULE_ITEMS, &t);
 	for (uint8_t k = 0; k < nsv; k++) {
 		if (sv[k].rec == carry) continue;
@@ -642,11 +852,14 @@ static uint16_t sol_weight(void)
 // при перегрузе (вес больше силы) — color2. Цвета виджет берёт до текста — ставятся заранее
 static void weight_colors(void)
 {
-	soldier_t so;
-	uint8_t over = 0;
+	uint8_t over = 0, str;
+	if (bm) {                                    // в бою на месте веса — время (textTUs)
+		ui_raw[1][0] = ui_raw[1][1] = ui_color_in(UI_SCR_INVENTORY, UI_EL_TEXTTUS, 0);
+		return;
+	}
 	if (sel_sol != NONE8) {
-		soldier_get(sel_sol, &so);
-		over = sol_weight() > so.cur.strength;
+		sol_armor(&str);
+		over = sol_weight() > str;
 	}
 	ui_raw[1][0] = ui_color_in(UI_SCR_INVENTORY, UI_EL_TEXTWEIGHT, 0);
 	ui_raw[1][1] = ui_color_in(UI_SCR_INVENTORY, UI_EL_WEIGHT, over ? 1 : 0);
@@ -674,6 +887,16 @@ void inv_scr_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked
 	soldier_t so;
 	buf[0] = 0;
 	if (sel_sol == NONE8 && (slot <= 1 || (slot >= 3 && slot <= 6))) return;   // экипажа нет
+	if (bm && slot != 2 && slot != 7) {          // бой: имя солдата юнита, время; характеристик нет
+		unit_t u;
+		unit_get(&u);
+		if (slot == 0 && u.sol != 0xFF) { soldier_get(u.sol, &so); strcpy(buf, so.name); }
+		if (slot == 1) {                         // STR_TIME_UNITS_SHORT (_txtTus)
+			fmt_num(t1, u.tu, 0);
+			str_fmt(buf, str_get(STR_TIME_UNITS_SHORT), t1, "");
+		}
+		return;
+	}
 	switch (slot) {
 	case 0:
 		soldier_get(sel_sol, &so);
@@ -713,6 +936,16 @@ static uint8_t crew_nth(uint8_t n)
 {
 	soldier_t so;
 	uint8_t k = 0;
+	if (bm) {                                    // бой: живые бойцы отряда (номер юнита)
+		unit_t u;
+		for (uint8_t i = 0; i < bm_ns; i++) {
+			far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
+			if (!u.alive) continue;
+			if (k == n) return i;
+			k++;
+		}
+		return NONE8;
+	}
 	for (uint8_t i = 0; i < ST->nsoldiers; i++) {
 		soldier_get(i, &so);
 		if (so.base == NONE8 || so.craft != ctx.craft) continue;
@@ -724,12 +957,8 @@ static uint8_t crew_nth(uint8_t n)
 
 static uint8_t crew_count(void)
 {
-	soldier_t so;
 	uint8_t k = 0;
-	for (uint8_t i = 0; i < ST->nsoldiers; i++) {
-		soldier_get(i, &so);
-		if (so.base != NONE8 && so.craft == ctx.craft) k++;
-	}
+	while (crew_nth(k) != NONE8) k++;
 	return k;
 }
 
@@ -747,8 +976,14 @@ uint8_t inv_scr_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		carry_on = 0;
 		part = 0;
 		ground_x = 0;
+		bm_wt = 0;
 		hover_item = hover_ammo = NONE16;
+		if (bm) {                                // бой: начать с выбранного бойца
+			while (crew_nth(crew_i) != bm_u && crew_nth(crew_i) != NONE8) crew_i++;
+			if (crew_nth(crew_i) == NONE8) crew_i = 0;
+		}
 		sel_sol = crew_nth(crew_i);
+		if (bm && sel_sol != NONE8) bm_u = sel_sol;
 		sol_load();
 		ground_arrange();
 		weight_colors();
@@ -764,10 +999,24 @@ uint8_t inv_scr_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		draw_grid(m, full);
 		draw_items(m);
 		if (full) draw_ammo();
+		if (bm_wt) draw_warn();
 		carry_show();
 		break;
 	}
+	case EVT_CLOSE:                              // бой: руки на спрайтах, кадры пуль и пол — заново
+		if (bm) {
+			bi_hands(bm_page, bm_ns);
+			fx_build(bm_page, bm_n);
+			bv_sync(bm_n);
+			bm = 0;
+		}
+		break;
 	case EVT_TICK: {                             // подпись предмета под курсором и несомый за ним
+		if (bm_wt && !--bm_wt) {                 // предупреждение погасло — земля под ним заново
+			carry_hide();
+			part |= P_SEC(INV_GROUND) | P_CARRY;
+			ui_dirty(9);
+		}
 		uint16_t it = hover_item, am = hover_ammo;
 		uint8_t rn = hover_rounds;
 		if (carry == INV_NONE) {                 // с предметом в руке подпись не меняется (invMouseOver)
@@ -775,8 +1024,8 @@ uint8_t inv_scr_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			it = am = NONE16;
 			rn = 0;
 			if (slot != 0xFF && secs[slot].type == 2) {
-				uint8_t g = ground_item(cx, cy, 0);
-				if (g != NONE8) it = g;
+				uint16_t g = ground_item(cx, cy, 0);
+				if (g != NONE16) it = g;
 			} else if (slot != 0xFF) {
 				uint8_t k = item_at(slot, cx, cy);
 				if (k != 0xFF) { it = sv[k].v.item; am = sv[k].v.ammo; rn = (uint8_t)sv[k].v.rounds; }
@@ -823,6 +1072,7 @@ uint8_t inv_scr_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			else if (arg == 3) crew_i = crew_i + 1 < n ? crew_i + 1 : 0;
 			else break;
 			sel_sol = crew_nth(crew_i);
+			if (bm) { bm_u = sel_sol; ground_arrange(); ground_x = 0; }   // у другого бойца — своя клетка
 			sol_load();
 			weight_colors();
 			part = 0;
