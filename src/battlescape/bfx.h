@@ -23,4 +23,17 @@ void fx_shot(const fxshot_t *q) __banked;
 // на пол клеток (x, y, z) записями bitem_t (BI_DROP); виду — перечитать (bv_sync) и перерисовать
 void fl_corpse(uint8_t page, uint8_t unit, uint8_t x, uint8_t y, uint8_t z, uint8_t size, uint16_t armor) __banked;
 
+// Предмет — запись bitem_t i — на пол клетки (упал в бою: BI_DROP); виду — перечитать (bv_sync)
+void fl_drop(uint8_t page, uint16_t i, uint8_t x, uint8_t y, uint8_t z) __banked;
+
+// Брошенный предмет (на стеке вызывающего): точка вылета и дуга (bfire.h throw_t), что летит
+typedef struct {
+	uint8_t page;
+	int16_t ox, oy, oz, dx, dy, dz;
+	uint16_t r16, z16, n, item;
+} fxthrow_t;
+
+// Полёт брошенного по дуге; возвращается, когда долетел
+void fx_throw(const fxthrow_t *q) __banked;
+
 #endif

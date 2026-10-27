@@ -22,4 +22,13 @@ typedef struct {
 // вспышка, урон и мораль; выбывший — со сцены, труп на пол. Вернёт номер раненого (#FF — промах)
 uint8_t ba_shot(const bashot_t *q) __banked;
 
+// Действие игрока предметом в руке по клетке (BattlescapeGame::primaryAction ->
+// ProjectileFlyBState): выстрел (очередь — autoShots пуль) или бросок. Заполнить s (кроме weapon
+// и ammo), руку и цену. Вернёт 0 — сделано, иначе строку предупреждения; #FFFF — в руке пусто
+typedef struct {
+	bashot_t s;
+	uint8_t hand, tu;
+} bafire_t;
+uint16_t ba_fire(bafire_t *q) __banked;
+
 #endif

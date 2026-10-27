@@ -1,7 +1,9 @@
 # Гранаты: взвод (ActionMenuState BA_PRIME -> PrimeGrenadeState). Отладочный бой с гранатой в правой
 # руке (_bi_dbg = BT_GRENADE), клик по правой руке — меню действий, «Prime Grenade» — окно таймера,
 # кнопка «3»: таймер 3 (rounds = 4, запись предмета 0 во второй рабочей странице боя), время бойца
-# 60 -> 30 (50 % — units[0].tu #3886).
+# 60 -> 30 (50 % — units[0].tu #3886). Бросок: боец переставлен на песок (9, 6) (в корабле дуге
+# мешает потолок — «Unable to throw here»), меню, «Throw», клетка (9, 10): граната летит по дуге
+# и ложится на пол (запись — на земле, BI_GROUND / BI_DROP), время 30 -> 15 (25 %).
 # Снимки — tmp/shots/bat_gren/. Запуск: powershell -File tools\run.ps1 -Script tests\bat_gren.oxs -Headless
 waitmark 1 600
 poke _alien_off 1
@@ -31,4 +33,29 @@ wait 30
 shot tmp/shots/bat_gren/2_primed.png
 expect *scr_battle$pf_page:6D08 4
 expect 4E:3886 30
+pokew _cursor_x 296
+pokew _cursor_y 170
+click L
+waitmark 250 300
+wait 30
+shot tmp/shots/bat_gren/3_menu2.png
+poke 4E:3880 9
+poke 4E:3881 6
+pokew _cursor_x 150
+pokew _cursor_y 180
+click L
+waitmark 248 300
+wait 20
+pokew _cursor_x 127
+pokew _cursor_y 46
+wait 10
+shot tmp/shots/bat_gren/4_target.png
+click L
+wait 30
+shot tmp/shots/bat_gren/4b_flight.png
+wait 50
+shot tmp/shots/bat_gren/5_thrown.png
+expect *scr_battle$pf_page:6D00 254
+expect *scr_battle$pf_page:6D01 254
+expect 4E:3886 15
 exit 0

@@ -334,3 +334,45 @@ void fx_shot(const fxshot_t *q) __banked
 	cur.lo = 1; cur.hi = 0;
 	show(t3, 0, &cur, &prev);
 }
+
+void fl_drop(uint8_t page, uint16_t i, uint8_t x, uint8_t y, uint8_t z) __banked
+{
+	bitem_t b;
+	far_read(FAR(page + 1, TL_BITEMS) + i * sizeof b, &b, sizeof b);
+	drop(page, FAR(page + 2, 0), i, &b, x, y, z);
+}
+
+// Полёт брошенного (Projectile::move, Map::drawTerrain): кадр FLOOROB предмета в точке дуги со
+// сдвигом (-16, -26), за тик 1/60 с — 6 шагов (у нас кадр 1/50 с — 7.2); тени (castedShade —
+// тот же кадр тёмным) нет
+void fx_throw(const fxthrow_t *q) __banked
+{
+	far_t t3 = FAR(q->page + 2, 0);
+	rtab_t t;
+	if (!rtab_open(RES_RULE_ITEMS, &t) || q->item >= t.n || q->n < 2) return;
+	int16_t fs = (int16_t)rtab_word(&t, q->item, offsetof(r_items_t, floor_sprite));
+	uint8_t k = fs >= 0 ? fl_slot(t3, fs) : 0xFF, te[TE_SIZE];
+	if (k == 0xFF) return;
+	far_read(t3 + TV_FLTE + k * TE_SIZE, te, TE_SIZE);
+	rect_t prev, cur;
+	prev.lo = 1; prev.hi = 0;
+	uint16_t i5 = 0;
+	for (;;) {
+		i5 += 36;
+		uint16_t i = i5 / 5;
+		uint8_t done = i >= q->n - 1;
+		if (done) i = q->n - 1;
+		int32_t h = (int32_t)i * ((int32_t)q->r16 - 16 * (int32_t)i) * 64 / q->r16;
+		int16_t vx = q->ox + (int16_t)((int32_t)q->dx * i * 16 / q->r16);
+		int16_t vy = q->oy + (int16_t)((int32_t)q->dy * i * 16 / q->r16);
+		int16_t vz = q->oz + (int16_t)((int32_t)q->dz * i * 16 / q->r16) + (int16_t)((int32_t)q->z16 * h / (16 * (int32_t)q->r16));
+		int16_t sx = vx - vy + 16 - 16, sy = ((vx + vy + 40) >> 1) - vz - 26;
+		cur.lo = sx; cur.top = sy; cur.hi = sx + 31; cur.bot = sy + 39;
+		put(t3, 0, sx, sy, te);
+		show(t3, 1, &cur, &prev);
+		wait_frame();
+		if (done) break;
+	}
+	cur.lo = 1; cur.hi = 0;
+	show(t3, 0, &cur, &prev);
+}

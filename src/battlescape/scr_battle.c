@@ -742,11 +742,10 @@ static void uinfo_draw(void)
 	stats_draw(&s);
 }
 
-// ---------------------------------------------------------------- выстрел
-// ProjectileFlyBState::init: времени хватает, обойма есть и не пуста, цель в пределах maxRange;
-// боец поворачивается к цели, тратит время, очередь — autoShots выстрелов по патрону. Траектория
-// и урон — bfire.c (банк 35); выбывший (здоровье 0 или оглушение не меньше здоровья) — со
-// сцены (трупа и падения ещё нет). Полёт пули и вспышка попадания — дальше.
+// ---------------------------------------------------------------- выстрел и бросок
+// ProjectileFlyBState::init: проверки, поворот к цели, время, пули или бросок — bact.c (банк 36),
+// траектория и урон — bfire.c (банк 35), полёт на экране — bfx.c (банк 32). Здесь — плашка
+// с отказом, огонь в ответ и конец боя.
 static void aim_off(void)
 {
 	bt_aim = 0;
@@ -756,32 +755,13 @@ static void aim_off(void)
 static void shoot(uint8_t tx, uint8_t ty)
 {
 	uint8_t i = sel < nsold ? sel : 0;
-	unit_t *u = &units[i];
-	bitem_t b;
-	rtab_t t;
-	r_items_t w;
-	if (!bi_hand(pf_page, i, bt_hand, &b) || !rtab_open(RES_RULE_ITEMS, &t) || b.item >= t.n) { aim_off(); return; }
-	rtab_get(&t, b.item, &w);
-	if (u->tu < bt_action_tu) { hud_warn(STR_NOT_ENOUGH_TIME_UNITS); return; }
-	if (w.compatible_ammo.n && b.ammo == 0xFFFF) { hud_warn(STR_NO_AMMUNITION_LOADED); return; }
-	if (w.compatible_ammo.n && !b.rounds) { hud_warn(STR_NO_ROUNDS_LEFT); return; }
-	int16_t dx = (int16_t)tx - u->x, dy = (int16_t)ty - u->y;
-	if ((uint16_t)(dx * dx + dy * dy) > (uint16_t)w.max_range * w.max_range) { hud_warn(STR_OUT_OF_RANGE); return; }
-	u->dir = dir_to(dx, dy);             // lookAt
-	u->tu -= bt_action_tu;
-	uint8_t shots = bt_action == BA_AUTOSHOT ? w.auto_shots : 1;
-	bashot_t q;                              // пуля — bact.c (банк 36): траектория, полёт, урон
-	q.page = pf_page; q.cells = cells; q.sx = m_sx; q.sy = m_sy; q.sz = m_sz;
-	q.shooter = i; q.n = nunits; q.tx = tx; q.ty = ty; q.tz = bv_level();
-	q.action = bt_action; q.acc = bt_acc; q.weapon = b.item; q.ammo = b.ammo;
-	for (uint8_t k = 0; k < shots; k++) {
-		if (w.compatible_ammo.n) {           // BattleItem::spendBullet; кончились — очередь обрывается
-			bitem_t c;
-			if (!bi_hand(pf_page, i, bt_hand, &c) || !c.rounds) break;
-			bi_spend(pf_page, i, bt_hand);
-		}
-		ba_shot(&q);
-	}
+	bafire_t q;                              // проверки, поворот, время, пули и бросок — bact.c (банк 36)
+	q.s.page = pf_page; q.s.cells = cells; q.s.sx = m_sx; q.s.sy = m_sy; q.s.sz = m_sz;
+	q.s.shooter = i; q.s.n = nunits; q.s.tx = tx; q.s.ty = ty; q.s.tz = bv_level();
+	q.s.action = bt_action; q.s.acc = bt_acc; q.hand = bt_hand; q.tu = bt_action_tu;
+	uint16_t r = ba_fire(&q);
+	if (r == 0xFFFF) { aim_off(); return; }
+	if (r) { hud_warn(r); return; }
 	unit_changed(i);                     // повернулся
 	aim_off();
 	see_update();
@@ -856,9 +836,10 @@ static void amenu_event(uint8_t ev, uint8_t arg)
 			else { UI_GO(A_POP, 0); prime(0); }
 			break;
 		}
-		// выстрелы ждут цель: курсор — прицел (BattlescapeGame::setupCursor, CT_AIM)
-		bt_aim = bt_action == BA_AUTOSHOT || bt_action == BA_SNAPSHOT || bt_action == BA_AIMEDSHOT;
-		bv_aim(bt_aim);
+		// выстрелы и бросок ждут цель: курсор — прицел (BattlescapeGame::setupCursor: CT_AIM; у
+		// броска CT_THROW — рамка клетки, как обычный)
+		bt_aim = bt_action == BA_AUTOSHOT || bt_action == BA_SNAPSHOT || bt_action == BA_AIMEDSHOT || bt_action == BA_THROW;
+		bv_aim(bt_aim && bt_action != BA_THROW);
 		UI_GO(A_POP, 0);
 		break;
 	}

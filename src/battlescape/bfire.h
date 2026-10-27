@@ -44,6 +44,18 @@ typedef struct {
 // непустого вокселя. Вернёт res.
 int8_t fire_shot(shot_t *s, const fu_t *u) __banked;
 
+// Для броска (bgren.c): таблицы z, маски юнитов и точка вылета (TileEngine::getOriginVoxel; у
+// броска — на 3 ниже макушки, у выстрела — на 4) в s->ox..; 0 — нет масок LOFTEMPS. s и u
+// должны жить до последнего fire_line
+uint8_t fire_setup(shot_t *s, const fu_t *u) __banked;
+// Projectile::applyAccuracy без поправки на дальность: разброс точки (*x, *y, *z) по меткости acc %
+// и вектору (dx, dy, dz) от точки вылета
+void fire_spread(int16_t acc, int16_t dx, int16_t dy, int16_t dz, int16_t *x, int16_t *y, int16_t *z) __banked;
+// Отрезок дуги p[0..2] -> p[3..5]: линия с проверкой вокселей (calculateLine); first — первый
+// отрезок дуги. Вернёт V_*; точка, куда упадёт предмет (основная точка линии перед ударом,
+// Projectile::ItemDropVoxelOffset), — в land[0..2]
+int8_t fire_line(const int16_t *p, uint8_t first, int16_t *land) __banked;
+
 typedef struct {
 	uint16_t power;            // мощность (до разброса DAMAGE_RANGE)
 	uint8_t type;              // ItemDamageType

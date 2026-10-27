@@ -29,6 +29,13 @@ static const shot_t *S;
 static const fu_t *U;
 static far_t lofts;                      // LOFTEMPS
 static int16_t c_x = -1, c_y, c_z;       // кэш клетки voxelCheck
+// Две последние основные точки линии (траектория calculateLine; у дуги — через все отрезки):
+// предмет падает в точку перед ударом (Projectile::ItemDropVoxelOffset = -2). h_cont — первая
+// точка отрезка уже учтена (конец прошлого)
+static int16_t __at(0xB2A0) h_x[2];
+static int16_t __at(0xB2A4) h_y[2];
+static int16_t __at(0xB2A8) h_z[2];
+static uint8_t __at(0xB2AC) h_cont;
 static uint8_t c_part[4], c_unit;
 static int8_t c_tl;                      // T_Level клетки (Tile::getTerrainLevel)
 
@@ -126,6 +133,13 @@ static int8_t trace(shot_t *s, int16_t x0, int16_t y0, int16_t z0, int16_t x1, i
 			int16_t cx = x, cy = y, cz = z;
 			if (sxz) { t = cx; cx = cz; cz = t; }
 			if (sxy) { t = cx; cx = cy; cy = t; }
+			if (!k) {
+				if (!h_cont) {
+					h_x[0] = h_x[1]; h_y[0] = h_y[1]; h_z[0] = h_z[1];
+					h_x[1] = cx; h_y[1] = cy; h_z[1] = cz;
+				}
+				h_cont = 0;
+			}
 			int8_t r = vcheck(cx, cy, cz, s->shooter);
 			if (r != V_EMPTY) { s->vx = cx; s->vy = cy; s->vz = cz; return r; }
 		}
@@ -148,17 +162,15 @@ static uint16_t isqrt(uint32_t v)
 static const uint8_t dir_xs[8] = { 8, 14, 15, 15, 8, 1, 1, 1 };   // getOriginVoxel dirXshift
 static const uint8_t dir_ys[8] = { 1, 1, 8, 15, 15, 15, 8, 1 };
 
-int8_t fire_shot(shot_t *s, const fu_t *u) __banked
+uint8_t fire_setup(shot_t *s, const fu_t *u) __banked
 {
 	rtab_t t;
-	r_items_t w;
 	res_t lr;
 	S = s; U = u;
 	s->hit = 0xFF;
 	s->res = V_EMPTY;
-	if (!res_find(RES_LOFTEMPS, &lr) || !rtab_open(RES_RULE_ITEMS, &t) || s->weapon >= t.n) return V_EMPTY;
+	if (!res_find(RES_LOFTEMPS, &lr)) return 0;
 	lofts = lr.phys;
-	rtab_get(&t, s->weapon, &w);
 	for (uint16_t z = 0; z < 256; z++) { zlev[z] = (uint8_t)(z / 24); zlay[z] = (uint8_t)((z % 24) / 2); }
 	if (rtab_open(RES_RULE_ARMORS, &t))  // маски юнитов: loftempsSet брони (у крупного — по четверти)
 		for (uint8_t i = 0; i < s->n; i++) {
@@ -176,7 +188,8 @@ int8_t fire_shot(shot_t *s, const fu_t *u) __banked
 	uint8_t sz = (me->flags & FU_BIG) ? 2 : 1, c[4];
 	// TileEngine::getOriginVoxel
 	far_read(cell_at(me->x, me->y, me->z), c, 4);
-	int16_t ox = (int16_t)me->x * 16, oy = (int16_t)me->y * 16, oz = (int16_t)me->z * 24 - tlevel(c) + me->height - 4;
+	int16_t ox = (int16_t)me->x * 16, oy = (int16_t)me->y * 16;
+	int16_t oz = (int16_t)me->z * 24 - tlevel(c) + me->height - (s->action == BA_THROW ? 3 : 4);
 	if (oz >= ((int16_t)me->z + 1) * 24) {
 		uint8_t a[4] = { 0, 0, 0, 0 };
 		if (me->z + 1 < s->sz) far_read(cell_at(me->x, me->y, me->z + 1), a, 4);
@@ -185,8 +198,32 @@ int8_t fire_shot(shot_t *s, const fu_t *u) __banked
 			oz -= 4;
 		}
 	}
-	ox += dir_xs[s->dir & 7] * sz; oy += dir_ys[s->dir & 7] * sz;
-	s->ox = ox; s->oy = oy; s->oz = oz;
+	s->ox = ox + dir_xs[s->dir & 7] * sz; s->oy = oy + dir_ys[s->dir & 7] * sz; s->oz = oz;
+	return 1;
+}
+
+void fire_spread(int16_t acc, int16_t dx, int16_t dy, int16_t dz, int16_t *x, int16_t *y, int16_t *z) __banked
+{
+	int16_t xd = iabs(dx), yd = iabs(dy), zd = iabs(dz), xys, zs;
+	xys = xd / 2 <= yd ? xd / 4 + yd : (xd + yd) / 2;
+	zs = xys <= zd ? xys / 2 + zd : xys + zd / 2;
+	int16_t dev = (int16_t)rng_range(0, 100) - acc;
+	dev += dev >= 0 ? 50 : 10;
+	dev = (int16_t)((int32_t)zs * dev / 200);
+	if (dev < 1) dev = 1;
+	*x += (int16_t)rng_range(0, (uint16_t)dev) - dev / 2;
+	*y += (int16_t)rng_range(0, (uint16_t)dev) - dev / 2;
+	*z += (int16_t)rng_range(0, (uint16_t)(dev / 2)) / 2 - dev / 8;
+}
+
+int8_t fire_shot(shot_t *s, const fu_t *u) __banked
+{
+	rtab_t t;
+	r_items_t w;
+	uint8_t c[4];
+	if (!fire_setup(s, u) || !rtab_open(RES_RULE_ITEMS, &t) || s->weapon >= t.n) return V_EMPTY;
+	rtab_get(&t, s->weapon, &w);
+	int16_t ox = s->ox, oy = s->oy, oz = s->oz;
 	// цель: юнит — середина его роста, иначе объект, стены, пол (ProjectileFlyBState::init)
 	far_read(cell_at(s->tx, s->ty, s->tz), c, 4);
 	int16_t tx = (int16_t)s->tx * 16 + 8, ty = (int16_t)s->ty * 16 + 8, tz = (int16_t)s->tz * 24;
@@ -209,16 +246,7 @@ int8_t fire_shot(shot_t *s, const fu_t *u) __banked
 		acc -= mod;
 		if (acc < 0) acc = 0;
 	}
-	int16_t xd = iabs(dx), yd = iabs(dy), zd = iabs(dz), xys, zs;
-	xys = xd / 2 <= yd ? xd / 4 + yd : (xd + yd) / 2;
-	zs = xys <= zd ? xys / 2 + zd : xys + zd / 2;
-	int16_t dev = (int16_t)rng_range(0, 100) - acc;
-	dev += dev >= 0 ? 50 : 10;
-	dev = (int16_t)((int32_t)zs * dev / 200);
-	if (dev < 1) dev = 1;
-	tx += (int16_t)rng_range(0, (uint16_t)dev) - dev / 2;
-	ty += (int16_t)rng_range(0, (uint16_t)dev) - dev / 2;
-	tz += (int16_t)rng_range(0, (uint16_t)(dev / 2)) / 2 - dev / 8;
+	fire_spread(acc, dx, dy, dz, &tx, &ty, &tz);
 	// extendLine: тот же вектор, длинная ось — 2048 вокселей
 	dx = tx - ox; dy = ty - oy; dz = tz - oz;
 	int16_t m = iabs(dx) > iabs(dy) ? iabs(dx) : iabs(dy);
@@ -230,6 +258,16 @@ int8_t fire_shot(shot_t *s, const fu_t *u) __banked
 	s->res = trace(s, ox, oy, oz, tx, ty, tz);
 	if (s->res == V_UNIT) s->hit = c_unit;
 	return s->res;
+}
+
+// ---------------------------------------------------------------- отрезок дуги броска
+int8_t fire_line(const int16_t *p, uint8_t first, int16_t *land) __banked
+{
+	if (first) { h_x[0] = h_x[1] = p[0]; h_y[0] = h_y[1] = p[1]; h_z[0] = h_z[1] = p[2]; }
+	h_cont = 1;
+	int8_t r = trace((shot_t *)S, p[0], p[1], p[2], p[3], p[4], p[5]);
+	land[0] = h_x[0]; land[1] = h_y[0]; land[2] = h_z[0];
+	return r;
 }
 
 // ---------------------------------------------------------------- урон
