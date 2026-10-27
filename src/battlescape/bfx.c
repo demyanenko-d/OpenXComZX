@@ -376,3 +376,14 @@ void fx_throw(const fxthrow_t *q) __banked
 	cur.lo = 1; cur.hi = 0;
 	show(t3, 0, &cur, &prev);
 }
+
+void fl_rebuild(uint8_t page) __banked
+{
+	far_t t3 = FAR(page + 2, 0);
+	far_fill(t3 + TV_FLOOR, 0, 1);
+	for (uint16_t i = 0; i < BI_MAX; i++) {
+		bitem_t b;
+		far_read(FAR(page + 1, TL_BITEMS) + i * sizeof b, &b, sizeof b);
+		if (b.owner == BI_GROUND) fl_put(t3, b.x, b.y, b.z, b.item);
+	}
+}

@@ -36,6 +36,8 @@ extern uint8_t gfx_pal_hold;
 void gfx_pal_commit(void) __banked;
 // Сдвиг цветов lo..lo+n-1 текущей палитры на шаг (цикл палитры; следующая gfx_palette сбросит).
 void gfx_pal_cycle(uint8_t lo, uint8_t n) __banked;
+// Вспышка взрыва: 1 — каждый цвет показывает первый цвет своего блока из 16, 0 — палитра обратно
+void gfx_pal_flash(uint8_t on) __banked;
 // Фон под всплывающим окном уровня lvl стека: запомнить прямоугольник экрана (страницы пула; 0 — нет
 // страниц) и вернуть на экран (draw = 1) или только забыть (draw = 0). 1 — фон возвращён.
 uint8_t gfx_bgsave(uint8_t lvl, int16_t x, int16_t y, int16_t w, int16_t h) __banked;

@@ -25,6 +25,8 @@ void fl_corpse(uint8_t page, uint8_t unit, uint8_t x, uint8_t y, uint8_t z, uint
 
 // Предмет — запись bitem_t i — на пол клетки (упал в бою: BI_DROP); виду — перечитать (bv_sync)
 void fl_drop(uint8_t page, uint16_t i, uint8_t x, uint8_t y, uint8_t z) __banked;
+// Предметы на полу заново по записям (что-то с земли исчезло); виду — перечитать (bv_sync)
+void fl_rebuild(uint8_t page) __banked;
 
 // Брошенный предмет (на стеке вызывающего): точка вылета и дуга (bfire.h throw_t), что летит
 typedef struct {

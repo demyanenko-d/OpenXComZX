@@ -42,6 +42,7 @@
 #include "bdeb.h"
 #include "game.h"
 #include "bgren.h"
+#include "bexpl.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 
@@ -595,9 +596,20 @@ static void side_prepare(uint8_t side)
 
 static uint8_t battle_end(uint8_t aborted);   // конец боя (ниже)
 
+// BattlescapeGame::endTurn: горячие гранаты на земле взрываются, таймеры прочих — минус ход
+// (bexpl.c, банк 39). 1 — бой кончился
+static uint8_t fuses(void)
+{
+	exreq_t q;
+	q.page = pf_page; q.cells = cells; q.sx = m_sx; q.sy = m_sy; q.sz = m_sz; q.n = nunits;
+	if (!ex_turn(&q)) return 0;
+	see_update();
+	return battle_end(0);
+}
+
 static void end_turn(void)
 {
-	if (battle_end(0)) return;           // BattlescapeGame::endTurn: пришельцев или отряда нет — разбор
+	if (fuses() || battle_end(0)) return;   // пришельцев или отряда нет — разбор
 	bt_side = FACTION_HOSTILE;
 	side_prepare(FACTION_HOSTILE);
 	for (uint8_t i = nsold; i < nunits; i++) units[i].seen = 0;   // setVisible(false) не своим
@@ -688,6 +700,8 @@ static void ai_run(void)
 		if (want != on) hidden_show(want);
 		return;
 	}
+	if (hid_on) hidden_show(0);          // взрывы — на карте
+	if (fuses()) return;
 	bt_side = FACTION_PLAYER;
 	bt_turn++;
 	side_prepare(FACTION_PLAYER);

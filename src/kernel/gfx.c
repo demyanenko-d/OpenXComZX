@@ -271,6 +271,18 @@ void gfx_palette(uint16_t pal_id, int8_t backpal) __banked
 	pal_out();
 }
 
+// Вспышка взрыва (Map::draw, _flashScreen: каждый пиксель — первый цвет своего блока из 16, кадр):
+// у нас — палитрой: on — в CRAM цвет i показывает цвет i & #F0, off — палитра обратно
+static uint16_t __at(0xBC00) pal_keep[256];
+void gfx_pal_flash(uint8_t on) __banked
+{
+	if (on) {
+		memcpy(pal_keep, dma_palette, 512);
+		for (uint16_t i = 0; i < 256; i++) dma_palette[i] = pal_keep[i & 0xF0];
+	} else memcpy(dma_palette, pal_keep, 512);
+	pal_out();
+}
+
 // Сдвиг цветов lo..lo+n-1 на шаг (цвет i показывает бывший i+1, последний — первый):
 // радар перехвата (DogfightState::animate сдвигает пиксели окна — здесь палитра).
 void gfx_pal_cycle(uint8_t lo, uint8_t n) __banked

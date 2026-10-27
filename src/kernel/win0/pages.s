@@ -169,7 +169,7 @@ _pg_free_count::
 3$:	djnz	2$
 	dec	d
 	jr	nz, 1$
-	ld	a, #POOL_N
+	ld	a, #POOL_LAST - POOL_FIRST + 1	; страниц в пуле (биты карты за POOL_LAST не заняты никогда)
 	sub	e
 	ret
 

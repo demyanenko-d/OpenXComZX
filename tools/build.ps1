@@ -20,7 +20,7 @@ $ENTRY = '0x7FE0'; $STACK_TOP = '0x3EF0'   # впритык под вектор�
 # килобайта, до кольца остаётся меньше полутора, поэтому в прерывании стоит сторож
 # (crt0.s, STACK_GUARD). Вынести кольцо в свою страницу — 14 §todo.
 $MUSIC_LOC = '0x2000'; $MUSIC_END = '0x3010'
-$RES_PAGE = 0x50; $RES_LAST = 0x8D          # пакеты данных (map.h RES_PAGE..RES_LAST; #8E–#8F — банки кода 33–34, #90–#AF — холсты боя)
+$RES_PAGE = 0x50; $RES_LAST = 0x8C          # пакеты данных (map.h RES_PAGE..RES_LAST; #8D — банк 39, #8E–#8F — банки кода 33–34, #90–#AF — холсты боя)
 
 # Общий код (Win0): ассемблер ядра и C-модули без банка.
 $asm_common = @('kernel\win0\crt0', 'kernel\win0\bank', 'kernel\dmabuf', 'kernel\win0\glyph', 'kernel\win0\mul32', 'kernel\win0\div32', 'kernel\sd', 'kernel\win0\pages', 'kernel\win0\far', 'kernel\win0\res', 'kernel\win0\dbg', 'kernel\win0\input', 'kernel\win0\music_s', 'kernel\win0\scrutil', 'kernel\win0\text')   # crt0 — первым: порядок областей; kernel\win0 — код окна 0; dmabuf (буферы DMA в Win1) и sd (код в банке 12) — ассемблер ядра вне Win0
@@ -39,7 +39,7 @@ $banks = @(
     @{ n = 8; page = 0x37; files = @('geoscape\gtime', 'geoscape\base\lab') }
     @{ n = 9; page = 0x38; files = @('geoscape\base\scr_lab') }
     @{ n = 10; page = 0x39; files = @('geoscape\base\scr_craft') }
-    @{ n = 11; page = 0x3A; files = @('kernel\gfx', 'kernel\cursor', 'kernel\boot'); ram = 0xBF00 }   # графика, опрос ввода, запуск; с #BF00 — фон под всплывающими окнами (gfx.c)
+    @{ n = 11; page = 0x3A; files = @('kernel\gfx', 'kernel\cursor', 'kernel\boot'); ram = 0xBC00 }   # графика, опрос ввода, запуск; с #BC00 — палитра на время вспышки взрыва, с #BF00 — фон под всплывающими окнами (gfx.c)
     @{ n = 12; page = 0x3B; files = @('kernel\fat', 'kernel\sdres', 'kernel\music'); ram = 0xBB00 }   # музыка: состояние плеера с #BF00, каталог и кэш SD (sdres.c) — с #BB00
     @{ n = 13; page = 0x3C; files = @('common\scr_ufop') }
     @{ n = 14; page = 0x3E; files = @('test\bank_a', 'test\mathtest', 'kernel\sddiag'); ram = 0xB000 }   # служебный: самотест джампера, диагностика SD (с #B000 — её результаты)
@@ -65,6 +65,7 @@ $banks = @(
     @{ n = 34; page = 0x8F; files = @('battlescape\deploy'); ram = 0xA000 }   # бой: расстановка пришельцев (deploy.c); с #A000 — юниты, узлы появления, листы брони
     @{ n = 36; page = 0xED; files = @('battlescape\bact', 'battlescape\bai'); ram = 0xB000 }   # бой: действия юнитов — выстрел (bact.c), общее для бойца и ИИ; ход пришельцев (bai.c, с #B000 — его состояние); юниты — дальним доступом к памяти банка 31
     @{ n = 37; page = 0xEE; files = @('battlescape\bdeb'); ram = 0xB000 }   # бой: разбор (DebriefingState, bdeb.c; с #B000 — строки очков)
+    @{ n = 39; page = 0x8D; files = @('battlescape\bexpl'); ram = 0xB000 }   # бой: взрывы — гранаты в конце хода, анимация X1.PCK, урон по площади (bexpl.c, с #B000 — его рабочая память); страница — хвост области пакетов (RES_LAST #8C)
     @{ n = 38; page = 0x4A; files = @('battlescape\bstats', 'battlescape\bgren'); ram = 0xB000 }   # бой: характеристики (bstats.c, из банка 33); гранаты — таймер, бросок, взрыв (bgren.c, с #B000 — его рабочая память); страница освободилась от инвентаря (банк 27)
     @{ n = 35; page = 0xEC; files = @('battlescape\bfire'); ram = 0xB000 }   # бой: выстрел — траектория в вокселях, урон (bfire.c); с #B000 — таблицы z и маски юнитов; страница из бывшего пула (map.h BANK3_PAGE)
 )

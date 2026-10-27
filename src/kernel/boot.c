@@ -69,7 +69,7 @@ static void selftest(void)
 	pg_test[0] = a;
 	pg_test[1] = b;
 	pg_test[2] = c;
-	pg_test[3] = pg_free_count();      // 64 - 1 - 2 = 61
+	pg_test[3] = pg_free_count();      // 60 - 1 - 2 = 57
 	pg_free(b, 1);
 	pg_free(c, 2);
 	dbg_puts("selftest: banks ");

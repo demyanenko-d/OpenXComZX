@@ -11,7 +11,7 @@ expect _bank_a_page_after 0x3E  # трамплин вернул банк выз�
 expect _pg_test 0xB0            # pg_alloc(16, 16) — начало пула
 expect _pg_test+1 0xC0          # pg_alloc(1, 1)
 expect _pg_test+2 0xB0          # после pg_free — снова #B0 (выравнивание 8)
-expect _pg_test+3 61            # свободно 64 - 1 - 2
+expect _pg_test+3 57            # свободно 60 - 1 - 2 (в пуле #B0–#EB 60 страниц)
 
 shot tmp/shots/selftest.png
 echo selftest OK
