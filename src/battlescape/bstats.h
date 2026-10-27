@@ -1,4 +1,4 @@
-// Окно характеристик юнита (bstats.c, банк 33): UnitInfoState.
+// Окно характеристик юнита (bstats.c, банк 38): UnitInfoState.
 #ifndef BSTATS_H
 #define BSTATS_H
 

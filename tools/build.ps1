@@ -61,10 +61,11 @@ $banks = @(
     @{ n = 30; page = 0x4D; files = @('battlescape\pathfind', 'battlescape\units', 'battlescape\doors', 'battlescape\loader', 'battlescape\bload') }   # поиск пути (16 §5.4), бойцы миссии, клетки карты (двери, цена прохода), загрузка графики и миссии (bload.c — для экрана боя)
     @{ n = 31; page = 0x4E; files = @('battlescape\scr_battle'); ram = 0xB880 }   # наземный бой: экран, события и логика бойцов (вид — банк 28); с #B880 — юниты миссии
     @{ n = 32; page = 0x4F; files = @('battlescape\vision', 'battlescape\bfx', 'battlescape\bwalk') }   # бой: видимость — линия взгляда по клеткам, сектор обзора (vision.c); полёт пули и вспышка попадания (bfx.c); ходьба по фазам (bwalk.c, вынесена из вида)
-    @{ n = 33; page = 0x8E; files = @('battlescape\bitems', 'battlescape\bhud', 'battlescape\bspr', 'battlescape\bmenu', 'battlescape\bstats'); ram = 0xB000 }   # бой: предметы (bitems.c), панель ICONS и показатели (bhud.c), значки замеченных — спрайты TSU (bspr.c), меню действий (bmenu.c), характеристики (bstats.c); с #B000 — пункты меню
+    @{ n = 33; page = 0x8E; files = @('battlescape\bitems', 'battlescape\bhud', 'battlescape\bspr', 'battlescape\bmenu'); ram = 0xB000 }   # бой: предметы (bitems.c), панель ICONS и показатели (bhud.c), значки замеченных — спрайты TSU (bspr.c), меню действий (bmenu.c); с #B000 — пункты меню
     @{ n = 34; page = 0x8F; files = @('battlescape\deploy'); ram = 0xA000 }   # бой: расстановка пришельцев (deploy.c); с #A000 — юниты, узлы появления, листы брони
     @{ n = 36; page = 0xED; files = @('battlescape\bact', 'battlescape\bai'); ram = 0xB000 }   # бой: действия юнитов — выстрел (bact.c), общее для бойца и ИИ; ход пришельцев (bai.c, с #B000 — его состояние); юниты — дальним доступом к памяти банка 31
     @{ n = 37; page = 0xEE; files = @('battlescape\bdeb'); ram = 0xB000 }   # бой: разбор (DebriefingState, bdeb.c; с #B000 — строки очков)
+    @{ n = 38; page = 0x4A; files = @('battlescape\bstats', 'battlescape\bgren'); ram = 0xB000 }   # бой: характеристики (bstats.c, из банка 33); гранаты — таймер, бросок, взрыв (bgren.c, с #B000 — его рабочая память); страница освободилась от инвентаря (банк 27)
     @{ n = 35; page = 0xEC; files = @('battlescape\bfire'); ram = 0xB000 }   # бой: выстрел — траектория в вокселях, урон (bfire.c); с #B000 — таблицы z и маски юнитов; страница из бывшего пула (map.h BANK3_PAGE)
 )
 

@@ -1,0 +1,34 @@
+# Гранаты: взвод (ActionMenuState BA_PRIME -> PrimeGrenadeState). Отладочный бой с гранатой в правой
+# руке (_bi_dbg = BT_GRENADE), клик по правой руке — меню действий, «Prime Grenade» — окно таймера,
+# кнопка «3»: таймер 3 (rounds = 4, запись предмета 0 во второй рабочей странице боя), время бойца
+# 60 -> 30 (50 % — units[0].tu #3886).
+# Снимки — tmp/shots/bat_gren/. Запуск: powershell -File tools\run.ps1 -Script tests\bat_gren.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+poke _bi_dbg 4
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _ui_request 248
+waitmark 248 900
+wait 150
+pokew _cursor_x 296
+pokew _cursor_y 170
+click L
+waitmark 250 300
+wait 30
+shot tmp/shots/bat_gren/0_menu.png
+pokew _cursor_x 150
+pokew _cursor_y 140
+click L
+waitmark 255 300
+wait 30
+shot tmp/shots/bat_gren/1_timer.png
+pokew _cursor_x 149
+pokew _cursor_y 75
+click L
+waitmark 248 300
+wait 30
+shot tmp/shots/bat_gren/2_primed.png
+expect *scr_battle$pf_page:6D08 4
+expect 4E:3886 30
+exit 0

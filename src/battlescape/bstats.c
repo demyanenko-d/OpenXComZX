@@ -1,4 +1,4 @@
-// Окно характеристик юнита (банк 33): UnitInfoState (REF/OpenXcom/src/Battlescape/UnitInfoState.cpp).
+// Окно характеристик юнита (банк 38): UnitInfoState (REF/OpenXcom/src/Battlescape/UnitInfoState.cpp).
 // Фон UNIBORD.PCK; имя (у солдата — со званием) крупно по центру в (16, 4) 288x17; с y 38 через 9
 // строк — название (8, y) 140x9 цветом text.color, число (150, y) цветом text.color2, полоса Bar
 // 150x5 в (170, y + 1) цветом своего элемента категории stats. Меткость, бросок и рукопашная —

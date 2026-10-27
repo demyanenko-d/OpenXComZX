@@ -45,6 +45,8 @@ if (cdb && fs.existsSync(cdb)) {
 	const text = fs.readFileSync(cdb, 'latin1').split(/\r?\n/);
 	const funcs = new Set();
 	for (const l of text) { const m = /^F:F([^$]+)\$([^$]+)\$/.exec(l); if (m) funcs.add(m[1] + '$' + m[2]); }
+	// S:Fmodule$var$0_0$0(...) — статическая переменная файла (сценарии: «*scr_battle$pf_page:AAAA»)
+	for (const l of text) { const m = /^S:F([^$]+)\$([^$]+)\$0_0\$0\(/.exec(l); if (m) funcs.add(m[1] + '$' + m[2]); }
 	for (const l of text) {
 		const m = /^L:F([^$]+)\$([^$]+)\$[^:]*:([0-9A-Fa-f]+)$/.exec(l);
 		if (m && funcs.has(m[1] + '$' + m[2])) add(m[1] + '$' + m[2], parseInt(m[3], 16));

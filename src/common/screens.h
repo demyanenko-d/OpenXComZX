@@ -129,6 +129,7 @@
 #define SCR_BATTLE_PAUSE     253       // PauseState(OPT_BATTLESCAPE): меню паузы боя
 #define SCR_DEBRIEFING       254       // DebriefingState: разбор боя (bdeb.c, банк 37)
 
+#define SCR_PRIME            255       // PrimeGrenadeState: таймер гранаты (bgren.c, банк 38)
 #define SCR_LAST             255
 
 uint8_t menu_get(uint8_t id, sdef_t *s, wdef_t *w) __banked;

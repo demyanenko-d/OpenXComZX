@@ -86,10 +86,10 @@ uint8_t am_build(const amreq_t *r) __banked
 	rq = r;
 	if (!bi_hand(r->page, r->unit, r->right, &b) || !rtab_open(RES_RULE_ITEMS, &t) || b.item >= t.n) return 0;
 	rtab_get(&t, b.item, &wr);
-	both = bi_hand(r->page, r->unit, !r->right, &o);
+	both = bi_hand(r->page, r->unit, !r->right, &o) != 0;
 	if (!(wr.flags & ITEMS_F_FIXED_WEAPON)) add(BA_THROW, STR_THROW);
-	if (wr.battle_type == BT_GRENADE || wr.battle_type == BT_PROXIMITYGRENADE)
-		add(BA_PRIME, STR_PRIME_GRENADE);          // подготовленных гранат пока нет (fuseTimer)
+	if ((wr.battle_type == BT_GRENADE || wr.battle_type == BT_PROXIMITYGRENADE) && !b.rounds)
+		add(BA_PRIME, STR_PRIME_GRENADE);          // ещё не взведена (у гранаты rounds — таймер + 1, bitems.h)
 	if (wr.battle_type == BT_FIREARM) {
 		uint8_t wp = wr.waypoints;
 		if (!wp && b.ammo != 0xFFFF) {             // у ракетницы путевые точки — у снаряда

@@ -39,7 +39,10 @@ static uint8_t sec_named(uint16_t name)
 	return 0xFF;
 }
 
+uint8_t bi_dbg;                          // сценарии: тип предмета (BT_*) отладочному бою вместо оружия
+
 // Отладочное оружие: первое ручное огнестрельное без исследований, что продаётся, и его обойма
+
 static uint8_t debug_gun(uint16_t *gun, uint16_t *clip, uint8_t *rounds)
 {
 	rtab_t t;
@@ -47,6 +50,11 @@ static uint8_t debug_gun(uint16_t *gun, uint16_t *clip, uint8_t *rounds)
 	if (!rtab_open(RES_RULE_ITEMS, &t)) return 0;
 	for (uint16_t i = 0; i < t.n; i++) {
 		rtab_get(&t, i, &it);
+		if (bi_dbg) {
+			if (it.battle_type != bi_dbg || it.requires.n || !it.cost_buy) continue;
+			*gun = i; *clip = 0xFFFF; *rounds = 0;
+			return 1;
+		}
 		if (it.battle_type != BT_FIREARM || it.requires.n || !it.cost_buy || !it.compatible_ammo.n
 		    || (it.flags & ITEMS_F_FIXED_WEAPON)) continue;   // не оружие танка
 		uint16_t a;
@@ -194,13 +202,13 @@ uint8_t bi_spend(uint8_t page, uint8_t unit, uint8_t right) __banked
 	return 0;
 }
 
-uint8_t bi_hand(uint8_t page, uint8_t unit, uint8_t right, bitem_t *out) __banked
+uint16_t bi_hand(uint8_t page, uint8_t unit, uint8_t right, bitem_t *out) __banked
 {
 	uint8_t h = sec_named(right ? STR_RIGHT_HAND : STR_LEFT_HAND);
 	if (h == 0xFF) return 0;
 	for (uint8_t i = 0; i < bi_n; i++) {
 		far_read(bi_at(page, i), out, sizeof *out);
-		if (out->owner == unit && out->slot == h) return 1;
+		if (out->owner == unit && out->slot == h) return (uint16_t)i + 1;
 	}
 	return 0;
 }

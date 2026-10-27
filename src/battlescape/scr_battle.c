@@ -41,6 +41,7 @@
 #include "bai.h"
 #include "bdeb.h"
 #include "game.h"
+#include "bgren.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 
@@ -159,6 +160,7 @@ static const scr_t tab[] = {
 	SCR(SCR_BATTLE, UI_SCR_SAVEMENUS, RES_PAL_BATTLESCAPE, 0, SF_RAWPAL, w_battle),
 	SCR(SCR_NEXT_TURN, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_RAWPAL, w_next),
 	SCR(SCR_ACTION_MENU, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, 0, SF_POPUP | SF_RAWPAL, w_amenu),
+	SCR(SCR_PRIME, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, 0, SF_POPUP | SF_RAWPAL, w_amenu),   // окно рисует bgren.c
 	SCR(SCR_ABORT, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_POPUP | SF_RAWPAL, w_abort),
 	SCR(SCR_UNIT_INFO, UI_SCR_STATS, RES_PAL_BATTLESCAPE, 0, SF_RAWPAL, w_uinfo),
 	SCR(SCR_BATTLE_PAUSE, UI_SCR_MAINMENU, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_POPUP | SF_RAWPAL, w_bpause),
@@ -811,6 +813,29 @@ static void amenu_open(uint8_t right)
 	UI_GO(A_PUSH, SCR_ACTION_MENU);
 }
 
+// BattlescapeGame::handleNonTargetAction, BA_PRIME: время есть — взвести, «граната активирована»
+static void prime(uint8_t fuse)
+{
+	uint8_t i = sel < nsold ? sel : 0;
+	if (units[i].tu < bt_action_tu) { hud_warn(STR_NOT_ENOUGH_TIME_UNITS); return; }
+	units[i].tu -= bt_action_tu;
+	gr_prime(pf_page, i, bt_hand, fuse);
+	hud_warn(STR_GRENADE_IS_ACTIVATED);
+}
+
+// PrimeGrenadeState: кнопка таймера — взвести и закрыть оба окна, правая кнопка — назад в меню
+static void prime_event(uint8_t ev, uint8_t arg)
+{
+	if (ev == EVT_DRAW) gr_draw();
+	else if (ev == EVT_BUTTON) {
+		if (ui_arrow_max) { UI_GO(A_POP, 0); return; }
+		uint8_t h = gr_hit(cursor_x, cursor_y);
+		if (h == 0xFF) return;
+		UI_GO(A_POP2, 0);
+		prime(h);
+	} else if (ev == EVT_KEY && arg == KEY_ESC) UI_GO(A_POP, 0);
+}
+
 static void amenu_event(uint8_t ev, uint8_t arg)
 {
 	(void)arg;
@@ -826,6 +851,11 @@ static void amenu_event(uint8_t ev, uint8_t arg)
 		uint8_t h = am_hit(cursor_x, cursor_y);
 		if (h == 0xFF) break;
 		bt_action = am_action(h, &bt_action_tu, &bt_acc);
+		if (bt_action == BA_PRIME) {         // таймер — окном поверх меню (бесконтактная — сразу 0)
+			if (gr_window(pf_page, sel < nsold ? sel : 0, bt_hand)) UI_GO(A_PUSH, SCR_PRIME);
+			else { UI_GO(A_POP, 0); prime(0); }
+			break;
+		}
 		// выстрелы ждут цель: курсор — прицел (BattlescapeGame::setupCursor, CT_AIM)
 		bt_aim = bt_action == BA_AUTOSHOT || bt_action == BA_SNAPSHOT || bt_action == BA_AIMEDSHOT;
 		bv_aim(bt_aim);
@@ -898,6 +928,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		return 0;
 	}
 	if (id == SCR_ACTION_MENU) { amenu_event(ev, arg); return 0; }
+	if (id == SCR_PRIME) { prime_event(ev, arg); return 0; }
 	if (id == SCR_BATTLE_PAUSE) return 0;   // кнопки ведут в окна меню сами
 	if (id == SCR_UNIT_INFO) {
 		if (ev == EVT_DRAW) uinfo_draw();

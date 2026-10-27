@@ -12,7 +12,8 @@
 typedef struct {
 	uint8_t owner, slot, x, y; // юнит (или BI_GROUND / BI_NONE); секция invs и клетка в ней
 	uint16_t item, ammo;       // правило items; вставленная обойма (#FFFF — нет)
-	uint8_t rounds, z;         // патронов (в оружии — в его обойме); этаж — для лежащего на земле
+	uint8_t rounds, z;         // патронов (в оружии — в его обойме; у гранаты — таймер + 1, 0 — не
+                               // взведена: BattleItem::_fuseTimer); этаж — для лежащего на земле
 } bitem_t;
 
 // BattleType (RuleItem.h)
@@ -28,8 +29,8 @@ typedef struct {
 // копия их раскладки inv_t (placeItemByLayout); бойцу без раскладки в отладочном бою — винтовка
 // с обоймой в правую руку. page — рабочая страница боя. Вернёт число предметов.
 uint8_t bi_crew(uint8_t page, const uint8_t *sol, uint8_t n) __banked;
-// Предмет в руке юнита (right — правая): 1 — есть, копия в *out
-uint8_t bi_hand(uint8_t page, uint8_t unit, uint8_t right, bitem_t *out) __banked;
+// Предмет в руке юнита (right — правая): номер записи + 1 (0 — пусто), копия в *out
+uint16_t bi_hand(uint8_t page, uint8_t unit, uint8_t right, bitem_t *out) __banked;
 // Выстрел: патрон из обоймы оружия в руке (BattleItem::spendBullet); вернёт, сколько осталось
 uint8_t bi_spend(uint8_t page, uint8_t unit, uint8_t right) __banked;
 void bi_used(uint8_t n) __banked;               // записей занято не меньше n
