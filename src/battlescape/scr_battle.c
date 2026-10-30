@@ -1015,6 +1015,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		aliens_free();                   // листы брони пришельцев
 		vis_free();
 		bat_unload();                    // наборы частей, листы бойца и курсора, генератор (bload.c)
+		if (bpg_release()) sd_geo_reload();   // их страницы были GEO.PAK — пакет обратно с карты
 		gen_mode = 0;
 		loaded = 0;
 		nunits = 0;

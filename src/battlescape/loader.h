@@ -86,6 +86,10 @@ typedef struct {
 uint16_t tiles_load(const tiles_req_t *q, uint8_t *pages, uint8_t *nps,
 		    uint8_t *npages, uint8_t *ndoors) __banked;
 
+// Конец боя: страницы GEO.PAK, отданные наборам тайлов и листам, — снова его (1 — были взяты:
+// пакет перечитать с карты, res.h sd_geo_reload)
+uint8_t bpg_release(void) __banked;
+
 // Лист спрайтов (SPRSET) в свою страницу пула, таблица кадров — по адресу dst.
 // want == 0 — кадры 0..n-1 подряд, иначе n номеров из want (буфер вызывающего: он
 // должен лежать в стеке, страница банка вызывающего при вызове отключена).

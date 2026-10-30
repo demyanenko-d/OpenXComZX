@@ -32,7 +32,7 @@
 const int8_t pf_dx[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
 const int8_t pf_dy[8] = { -1, -1, 0, 1, 1, 1, 0, -1 };
 
-// Стены между клетками (Pathfinding::isBlocked, направления 0..7, без «больших стен»):
+// Стены между клетками (Pathfinding::isBlocked, направления 0..7):
 // для каждого направления — свои проверки (dx, dy, слот), слот 1 — западная стена клетки,
 // 2 — северная. Смещения от клетки, из которой шагаем.
 static const int8_t blk[] = {
@@ -59,12 +59,35 @@ static void cell_at(uint8_t x, uint8_t y, uint8_t z, uint8_t *c)
 	far_read(pf_cells + ((uint32_t)idx << 2), c, 4);
 }
 
+// Большие стены (MCD.Big_Wall у объекта; Pathfinding::isBlocked с O_WESTWALL / O_NORTHWALL /
+// O_BIGWALL): стенка с запада или севера (4, 5, 9) — стена этой клетки, с востока или юга (6, 7,
+// 8) — стена соседа (её ставит слепок, bw_next). Блок и диагональные стены (1–3) не пускают
+// наискосок мимо себя; у нас — стенами со всех четырёх сторон клетки: в оригинале вдоль
+// диагональной стены наискосок пройти можно (исключение BIGWALLNESW / NWSE), у нас — в обход
+static uint8_t bw_own(const uint8_t *pf, const uint8_t *c)
+{
+	uint8_t w = c[3] ? pf[PF_BIGW + c[3]] : 0;
+	if (!w || w > 9) return 0;
+	if (w <= 3 || w == 9) return PC_WEST | PC_NORTH;
+	return w == 4 ? PC_WEST : w == 5 ? PC_NORTH : 0;
+}
+
+// Стены, которые объект клетки ставит соседям: бит 0 — восточному (его западная), 1 — южному
+static uint8_t bw_next(const uint8_t *pf, const uint8_t *c)
+{
+	uint8_t w = c[3] ? pf[PF_BIGW + c[3]] : 0;
+	if (!w || w > 9) return 0;
+	if (w <= 3 || w == 8) return 3;
+	return w == 6 ? 1 : w == 7 ? 2 : 0;
+}
+
 // Четыре части клетки -> байт слепка: цена входа в старшей тетраде, флаги — в младшей
 static uint8_t cell_pack(const uint8_t *pf, const uint8_t *c)
 {
 	uint8_t b = 0;
 	if (c[1] && pf[PF_TU + c[1]] == 255) b |= PC_WEST;
 	if (c[2] && pf[PF_TU + c[2]] == 255) b |= PC_NORTH;
+	b |= bw_own(pf, c);
 	int8_t lv = c[0] ? (int8_t)pf[PF_TLEVEL + c[0]] : 0;
 	if (c[3]) {
 		int8_t o = (int8_t)pf[PF_TLEVEL + c[3]];
@@ -136,15 +159,23 @@ uint8_t pf_find(const pf_req_t *q, uint8_t *path, uint8_t maxlen) __banked
 			bx1 = (uint8_t)(q->sx - 1); by1 = (uint8_t)(q->sy - 1);
 		}
 		{                            // слепок клеток окна: карта читается рядами
-			uint8_t rowbuf[PF_W * 4];
+			uint8_t rowbuf[PF_W * 4], smark[PF_W];
 			uint16_t rb = (uint16_t)(bx1 - bx0 + 1) * 4;
+			memset(smark, 0, sizeof smark);
 			far_t ra = pf_cells + ((uint32_t)(((uint16_t)q->z * q->sy + by0) * q->sx + bx0) << 2);
 			uint16_t step = (uint16_t)q->sx * 4;
 			for (uint8_t y = by0; y <= by1; y++, ra += step) {
 				far_read(ra, rowbuf, rb);
 				const uint8_t *c = rowbuf;
-				for (uint8_t x = bx0; x <= bx1; x++, c += 4)
-					PF_CELL(x, y) = cell_pack(pf, c);
+				uint8_t em = 0;                  // западная стена от соседа слева (большая стена)
+				for (uint8_t x = bx0; x <= bx1; x++, c += 4) {
+					uint8_t v = cell_pack(pf, c), nx = bw_next(pf, c);
+					if (em) v |= PC_WEST;
+					if (smark[x & (PF_W - 1)]) v |= PC_NORTH;
+					em = nx & 1;
+					smark[x & (PF_W - 1)] = nx & 2;
+					PF_CELL(x, y) = v;
+				}
 			}
 		}
 		memset(pf, 0xFF, 4096);

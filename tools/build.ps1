@@ -58,7 +58,7 @@ $banks = @(
     @{ n = 27; page = 0xEF; files = @('geoscape\base\scr_inv'); ram = 0xB700 }   # инвентарь бойца (экипировка перед вылетом и в бою); страница #EF (банк вырос: прежняя #4A свободна); с #B700 — секции, предметы, точки под несомым
     @{ n = 28; page = 0x4B; files = @('battlescape\bview', 'battlescape\scr_battle_s'); ram = 0xB190 }   # наземный бой: вид (bview.c — карта, юниты, камера); scr_battle_s.s — команды списка DMA; с #B190 — юниты вида, с #B300 — рабочие таблицы
     @{ n = 29; page = 0x4C; files = @('battlescape\mapgen'); ram = 0xB000 }   # генератор миссии: карта из блоков по mapScript (16 §3)
-    @{ n = 30; page = 0x4D; files = @('battlescape\pathfind', 'battlescape\units', 'battlescape\doors', 'battlescape\loader', 'battlescape\bload') }   # поиск пути (16 §5.4), бойцы миссии, клетки карты (двери, цена прохода), загрузка графики и миссии (bload.c — для экрана боя)
+    @{ n = 30; page = 0x4D; files = @('battlescape\pathfind', 'battlescape\units', 'battlescape\doors', 'battlescape\loader') }   # поиск пути (16 §5.4), бойцы миссии, клетки карты (двери, цена прохода), загрузка графики и миссии (bload.c — для экрана боя)
     @{ n = 31; page = 0x4E; files = @('battlescape\scr_battle'); ram = 0xB880 }   # наземный бой: экран, события и логика бойцов (вид — банк 28); с #B880 — юниты миссии
     @{ n = 32; page = 0x4F; files = @('battlescape\vision', 'battlescape\bfx', 'battlescape\bwalk') }   # бой: видимость — линия взгляда по клеткам, сектор обзора (vision.c); полёт пули и вспышка попадания (bfx.c); ходьба по фазам (bwalk.c, вынесена из вида)
     @{ n = 33; page = 0x8E; files = @('battlescape\bitems', 'battlescape\bhud', 'battlescape\bspr', 'battlescape\bmenu'); ram = 0xB000 }   # бой: предметы (bitems.c), панель ICONS и показатели (bhud.c), значки замеченных — спрайты TSU (bspr.c), меню действий (bmenu.c); с #B000 — пункты меню
@@ -66,13 +66,13 @@ $banks = @(
     @{ n = 36; page = 0xED; files = @('battlescape\bact', 'battlescape\bai'); ram = 0xB000 }   # бой: действия юнитов — выстрел (bact.c), общее для бойца и ИИ; ход пришельцев (bai.c, с #B000 — его состояние); юниты — дальним доступом к памяти банка 31
     @{ n = 37; page = 0xEE; files = @('battlescape\bdeb'); ram = 0xB000 }   # бой: разбор (DebriefingState, bdeb.c; с #B000 — строки очков)
     @{ n = 39; page = 0x8D; files = @('battlescape\bexpl'); ram = 0xB000 }   # бой: взрывы — гранаты в конце хода, анимация X1.PCK, урон по площади (bexpl.c, с #B000 — его рабочая память); страница — хвост области пакетов (RES_LAST #8C)
-    @{ n = 38; page = 0x4A; files = @('battlescape\bstats', 'battlescape\bgren'); ram = 0xB000 }   # бой: характеристики (bstats.c, из банка 33); гранаты — таймер, бросок, взрыв (bgren.c, с #B000 — его рабочая память); страница освободилась от инвентаря (банк 27)
+    @{ n = 38; page = 0x4A; files = @('battlescape\bstats', 'battlescape\bgren', 'battlescape\bload'); ram = 0xB000 }   # бой: характеристики (bstats.c, из банка 33); загрузка миссии для экрана боя (bload.c, из банка 30); гранаты — таймер, бросок, взрыв (bgren.c, с #B000 — его рабочая память); страница освободилась от инвентаря (банк 27)
     @{ n = 35; page = 0xEC; files = @('battlescape\bfire'); ram = 0xB000 }   # бой: выстрел — траектория в вокселях, урон (bfire.c); с #B000 — таблицы z и маски юнитов; страница из бывшего пула (map.h BANK3_PAGE)
 )
 
 # Пакеты данных игры: выход конвертера OxzConv (tmp\sd\OXZ\<игра>), вшиваются в SPG.
 # MCD — наборы частей карт, террейны и mapScripts для генератора миссий (16 §3)
-$packs = @('PAL', 'LANG', 'RULES', 'GEO', 'MCD')
+$packs = @('PAL', 'LANG', 'RULES', 'MCD', 'GEO')   # GEO — последним: в бою его страницы отданы бою, поиск ресурсов его пропускает (res.h GEO_PACK)
 
 function Invoke-Tool([string]$exe, [string[]]$argv) {
     # Вывод перехватывается ради предупреждения SDCC 112 (неявное объявление функции): в банке
@@ -148,7 +148,7 @@ foreach ($p in $packs) {
     $ptbl += ("`t.db 0x{0:X2}`t; {1}.PAK, {2} pages" -f $page, $p, $pages)
     $page += $pages
 }
-$ptbl += '_pack_count::', ("`t.db {0}" -f $packs.Count)
+$ptbl += '_pack_total::', ("`t.db {0}" -f $packs.Count), "`t.area _DATA", '_pack_count::', "`t.ds 1`t; = _pack_total (crt0.s); в бою без GEO.PAK (res.h GEO_PACK)"
 $packsAsm = Join-Path $out 'packs.s'
 [System.IO.File]::WriteAllText($packsAsm, ($ptbl -join "`r`n") + "`r`n", $utf8)
 

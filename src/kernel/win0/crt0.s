@@ -15,6 +15,8 @@
 	.globl	_boot
 	.globl	b_boot
 	.globl	___sdcc_bcall_ehl
+	.globl	_pack_total
+	.globl	_pack_count
 	.globl	input_isr
 	.globl	mus_isr
 	.globl	_mus_state
@@ -130,6 +132,8 @@ stk_fill:
 	ld	hl, #s__INITIALIZER
 	ldir
 init_done:
+	ld	a, (_pack_total)	; вшитых пакетов — все (бой убирает GEO.PAK, res.h GEO_PACK)
+	ld	(_pack_count), a
 	call	gsinit
 
 	ld	a, #IM2_I

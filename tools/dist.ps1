@@ -28,7 +28,7 @@ $wc = Join-Path $root 'unreal\soft\WC\exe'
 $robimg = Join-Path $root 'unreal\tools\robimg\robimg.exe'
 # Пакеты, которые игра читает с карты (sdres.c pack_name + music.c + globe_view.s)
 $packs = @('BACK', 'UFOP', 'ITEMS', 'CUTS', 'BATUI', 'BATTLE', 'MAPS', 'TILES', 'UNITS',
-           'MUSIC', 'MUSICAY', 'MUSICFM', 'GVIEW')
+           'MUSIC', 'MUSICAY', 'MUSICFM', 'GVIEW', 'GEO')   # GEO.PAK вшит в SPG, на карте — копия: бой занимает его страницы, после боя он перечитывается (sdres.c sd_geo_reload)
 
 function Build-Game($game, $out) {
     Write-Host "build $game ..."

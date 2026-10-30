@@ -210,3 +210,19 @@ uint8_t sdres_find(uint16_t id, res_t *r) __banked
 		}
 	return 0;
 }
+
+// GEO.PAK вшит в SPG (страницы pack_page[GEO_PACK]..), но в бою не нужен: бой берёт его страницы под
+// наборы тайлов и листы спрайтов (loader.c bpg_alloc), а после боя пакет перечитывается с карты
+// (OXZ/<игра>/GEO.PAK, тот же файл) на те же страницы как есть. 1 — прочитан
+extern const uint8_t pack_page[];
+uint8_t sd_geo_reload(void) __banked
+{
+	fat_file_t f;
+	if (!sd_state) sd_state = packs_open() ? 1 : 2;
+	if (!fat_ok || fat_open(res_game() == 2 ? "OXZ/TFTD/GEO.PAK" : "OXZ/UFO/GEO.PAK", &f)) return 0;
+	mus_fill();
+	uint8_t r = !fat_read(&f, 0, FAR(pack_page[GEO_PACK], 0), f.size);
+	mus_fill();
+	if (r) pack_count = GEO_PACK + 1;
+	return r;
+}

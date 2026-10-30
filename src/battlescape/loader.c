@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "pages.h"
+#include "memmap.h"
 #include "far.h"
 #include "res.h"
 #include "pathfind.h"
@@ -25,6 +26,29 @@ typedef struct { uint8_t part, e[TE_SIZE], yofs, tlevel, flags, slot, tu; } udoo
 // Строка таблицы частей: кадр тайлсета в виде, готовом для блита DMA
 //   [0] страница источника, [1..2] смещение, [3] DMALEN (w/2-1), [4] высота,
 //   [5] dx, [6] dy (угол кадра в клетке), [7] ширина
+// Страницы под наборы тайлов и листы спрайтов: сперва — страницы GEO.PAK (в бою не нужен, после
+// боя перечитывается с карты: res.h sd_geo_reload), подряд до конца пакета; не хватило — пул.
+// Освобождаются все разом в конце боя (bpg_release); pg_free на них ничего не делает
+extern const uint8_t pack_page[];
+static uint8_t bpg_next;                 // следующая свободная (0 — GEO.PAK цел)
+
+static uint8_t bpg_alloc(uint8_t n)
+{
+	uint8_t first = pack_page[GEO_PACK], end = BANK39_PAGE;   // GEO.PAK — последний пакет
+	if (!bpg_next) { bpg_next = first; pack_count = GEO_PACK; }   // его каталог больше не читать
+	if (bpg_next + n > end) return pg_alloc(n, 1);
+	uint8_t p = bpg_next;
+	bpg_next += n;
+	return p;
+}
+
+uint8_t bpg_release(void) __banked
+{
+	uint8_t r = bpg_next != 0;
+	bpg_next = 0;
+	return r;
+}
+
 static void tile_entry(uint8_t *p, far_t tphys, far_t fdata, uint16_t fr)
 {
 	uint8_t e[6];
@@ -47,7 +71,7 @@ uint8_t sheet_load(uint16_t res, uint8_t *page, uint8_t *np, uint8_t n,
 		uint32_t sz = sdres_size(res);
 		if (!sz) return 0;
 		*np = (uint8_t)((sz + 16383) >> 14);
-		*page = pg_alloc(*np, 1);
+		*page = bpg_alloc(*np);
 		if (*page == PG_NONE) return 0;
 	}
 	if (!sdres_load(res, *page, &rt)) return 0;
@@ -128,7 +152,7 @@ uint16_t tiles_load(const tiles_req_t *q, uint8_t *pages, uint8_t *nps,
 		if (!need) { part += rm.a; continue; }
 		uint32_t tsz = sdres_size(q->tset[s]);
 		uint8_t np = (uint8_t)((tsz + 16383) >> 14);
-		uint8_t pg = np ? pg_alloc(np, 1) : PG_NONE;
+		uint8_t pg = np ? bpg_alloc(np) : PG_NONE;
 		if (pg == PG_NONE) break;
 		if (!sdres_load(q->tset[s], pg, &rt)) { pg_free(pg, np); break; }
 		pages[npg] = pg; nps[npg] = np; npg++;
@@ -149,6 +173,7 @@ uint16_t tiles_load(const tiles_req_t *q, uint8_t *pages, uint8_t *nps,
 			far_write(FAR(q->page, PF_TLEVEL) + part, &mc[6], 1);
 			far_write(FAR(q->page, PF_FLAGS) + part, &mc[3], 1);
 			far_write(FAR(q->page + 1, TL_BIGW) + part, &mc[4], 1);   // MCD.Big_Wall (обзор, vision.c)
+			far_write(FAR(q->page, PF_BIGW) + part, &mc[4], 1);       //   и поиск пути
 			far_write(FAR(q->page + 2, TV_LOFT) + (uint16_t)part * 12, &mc[16], 12);
 			if (mc[30]) mc[30] = base + mc[30] < 256 ? (uint8_t)(base + mc[30]) : 0;   // Die_MCD -> часть миссии
 			far_write(FAR(q->page + 2, TV_PROPS) + (uint16_t)part * TV_PSIZE, &mc[28], TV_PSIZE);

@@ -31,6 +31,12 @@ uint8_t res_game(void);                    // 1 — UFO, 2 — TFTD (загол�
 void sdres_flush(void) __banked;           // отдать страницы кэша слотов в пул
 uint32_t sdres_size(uint16_t id) __banked;
 uint8_t sdres_load(uint16_t id, uint8_t page, res_t *r) __banked;
+// Вшитые пакеты по порядку build.ps1 $packs (PAL, LANG, RULES, MCD, GEO): GEO.PAK бой берёт себе
+// (loader.c bpg_alloc) — на это время pack_count = GEO_PACK, и res_find его каталог не читает; после
+// боя он перечитывается с карты (1 — прочитан, pack_count обратно)
+#define GEO_PACK 4
+extern uint8_t pack_count;
+uint8_t sd_geo_reload(void) __banked;
 
 // Таблицы правил (rules.h: rtable_t + записи): открыть, прочитать запись целиком
 // в ближнюю память (dst не меньше size) или слово по смещению в записи.
