@@ -129,6 +129,10 @@ static uint8_t dl_ok;                // список отвечает текущ
 #define PAD_X   80                   // запас по X: 320 + 2*80 = 480 < 512, кольцо не перекрывается
 #define PAD_Y   ((BUF_H - VIEW_H) / 2)       // 56
 #define BIAS    1024                 // мировая X лежит в ±640; сдвиг делает её положительной
+// Запасная полоса холста под перерисовку клетки: строки 456..511 в бою ничьи (задний буфер
+// глобуса 280..479 бой забрал под карту, рабочая область ui.c 480..511 — только у воздушного боя).
+#define SCRATCH_Y 456
+#define SCRATCH_H 56
 extern uint8_t split_gx, split_gy, split_on, split_phase, split_mark;
 extern uint16_t map_gx, map_gy, split_line, vblank_line;
 
@@ -228,10 +232,29 @@ static uint8_t *dl_put(void)
 	return dl + (dl_n++ & (DL_PAGE_N - 1)) * DL_SIZE;
 }
 
+// Окно строк буфера [win_y0, win_y1), в которое пишут блиты, и куда они пишут: в буфер карты
+// или (to_scr) в запасную полосу, где строка win_y0 буфера — строка SCRATCH_Y холста.
+static int16_t win_y0, win_y1 = BUF_H;
+static uint8_t to_scr;
+static uint16_t r_ofs;
+static uint8_t r_page;
+
+static void row_at(int16_t by)
+{
+	if (to_scr) {
+		uint16_t c = SCRATCH_Y + (uint16_t)(by - win_y0);
+		r_ofs = (c & 31) << 9;
+		r_page = SCREEN_PAGE + (uint8_t)(c >> 5);
+	} else {
+		r_ofs = row_ofs[by];
+		r_page = row_page[by];
+	}
+}
+
 // Кадр (запись вида tile_tab/unit_tab) -> команды дисплей-листа: источник лежит подряд
 // (строка = w байт), приёмник
 // шагает на 512 (BLT1 | D_ALGN | ASZ, 02 §6). Кадр — всегда одна команда; по краям окна он не
-// обрезается (см. ниже), сверху и снизу обрезается строками.
+// обрезается (см. ниже), сверху и снизу обрезается строками окна.
 static void dl_blit(const uint8_t *e, int16_t x, int16_t y)
 {
 	int16_t h = e[4];
@@ -242,40 +265,44 @@ static void dl_blit(const uint8_t *e, int16_t x, int16_t y)
 	uint8_t len = e[3];
 	int16_t w = e[7];
 	if (bx & 1) return;                  // DMA адресует словами; cam_x и dx кадра всегда чётные
-	if (by <= -TILE_H || by >= BUF_H) return;
-	// Быстрый путь: кадр целиком внутри буфера — обрезать нечего, одна команда на кадр
-	if (by >= 0 && by + h <= BUF_H && bx >= 0 && bx + w <= BUF_W) {
+	if (by + h <= win_y0 || by >= win_y1) return;
+	if (by < win_y0) {                   // верх кадра выше окна — пропустить строки
+		so += (uint16_t)(win_y0 - by) * (uint16_t)w;
+		h -= win_y0 - by;
+		by = win_y0;
+	}
+	if (by + h > win_y1) h = win_y1 - by;
+	while (so >= 0x4000) { so -= 0x4000; sp++; }
+	// Кадр не на стыке кольца — одна команда на кадр, обрезан он по строкам или нет.
+	// (До 2026-11-13 обрезанный по строкам кадр шёл веткой стыка ниже, и та считала его
+	// строку длиной до конца строки буфера: мазня на всю ширину. На краях буфера её не было
+	// видно, в окне перерисовки клетки — стало.)
+	if (bx + w <= BUF_W) {
 		uint8_t *q = dl_put();
 		if (!q) return;
-		uint16_t o = row_ofs[by] + (uint16_t)bx;
+		row_at(by);
+		uint16_t o = r_ofs + (uint16_t)bx;
 		q[0] = (uint8_t)so; q[1] = (uint8_t)(so >> 8); q[2] = sp;
-		q[3] = (uint8_t)o; q[4] = (uint8_t)(o >> 8); q[5] = row_page[by];
+		q[3] = (uint8_t)o; q[4] = (uint8_t)(o >> 8); q[5] = r_page;
 		q[6] = len;
 		q[7] = (uint8_t)(h - 1);
 		return;
 	}
-	if (by < 0) {                        // верх кадра выше буфера — пропустить строки
-		so += (uint16_t)(-by) * (uint16_t)w;
-		h += by;
-		by = 0;
-	}
-	if (by + h > BUF_H) h = BUF_H - by;
-	if (h <= 0) return;
 	// Кадр лёг на стык кольца: левая часть идёт в конец строки буфера, правая — в начало.
 	// Строки при этом короче шага источника, поэтому команда на строку (таких кадров мало —
 	// только те, что попали на стык).
 	uint16_t step = e[7];
 	uint16_t w1 = (uint16_t)(BUF_W - bx) & ~1;       // сколько влезает до конца строки
 	uint16_t w2 = ((uint16_t)w - w1) & ~1;           // остаток — в начало строки
-	while (so >= 0x4000) { so -= 0x4000; sp++; }
 	while (h > 0) {
 		uint8_t *d;
+		row_at(by);
 		if (w1) {
 			d = dl_put();
 			if (!d) return;
-			uint16_t offs = row_ofs[by] + (uint16_t)bx;
+			uint16_t offs = r_ofs + (uint16_t)bx;
 			d[0] = (uint8_t)so; d[1] = (uint8_t)(so >> 8); d[2] = sp;
-			d[3] = (uint8_t)offs; d[4] = (uint8_t)(offs >> 8); d[5] = row_page[by];
+			d[3] = (uint8_t)offs; d[4] = (uint8_t)(offs >> 8); d[5] = r_page;
 			d[6] = (uint8_t)(w1 / 2 - 1);
 			d[7] = 0;
 		}
@@ -285,9 +312,9 @@ static void dl_blit(const uint8_t *e, int16_t x, int16_t y)
 			if (so2 >= 0x4000) { so2 -= 0x4000; sp2++; }
 			d = dl_put();
 			if (!d) return;
-			uint16_t offs = row_ofs[by];
+			uint16_t offs = r_ofs;
 			d[0] = (uint8_t)so2; d[1] = (uint8_t)(so2 >> 8); d[2] = sp2;
-			d[3] = (uint8_t)offs; d[4] = (uint8_t)(offs >> 8); d[5] = row_page[by];
+			d[3] = (uint8_t)offs; d[4] = (uint8_t)(offs >> 8); d[5] = r_page;
 			d[6] = (uint8_t)(w2 / 2 - 1);
 			d[7] = 0;
 		}
@@ -482,9 +509,10 @@ static void show_cam(void)
 	map_gy = (uint16_t)(BUF_Y + PAD_Y - (cam_y - base_y) - SPLIT_LEAD) & 511;
 }
 
-// Очистить в кольце прямоугольник: мировой диапазон [lo, hi] по X, строки буфера
-// [y0, y1] по Y. На завороте кольца получается два куска.
-static void fill_cols(int16_t lo, int16_t hi, int16_t y0, int16_t y1)
+// DMA по столбцам кольца — мировой диапазон [lo, hi] по X, rows строк: src и dst — адреса
+// столбца 0 первой строки (шаг строки 512). FILL повторяет слово по адресу src. На завороте
+// кольца получается два куска.
+static void dma_cols(uint8_t ctrl, int16_t lo, int16_t hi, far_t src, far_t dst, uint16_t rows)
 {
 	uint16_t c0 = (uint16_t)(lo + BIAS) & (BUF_W - 1);
 	uint16_t n = (uint16_t)(hi - lo + 1);
@@ -493,17 +521,19 @@ static void fill_cols(int16_t lo, int16_t hi, int16_t y0, int16_t y1)
 		uint16_t part = BUF_W - c0;      // до конца строки буфера
 		if (part > n) part = n;
 		uint16_t w = (part + 1) & ~1;
-		far_t base = FAR(row_page[y0], row_ofs[y0] + c0);
-		uint16_t zero = 0;
-		far_write(base, &zero, 2);
+		far_t s = src + c0, d = dst + c0;
+		if (ctrl & DMA_FILL) {
+			uint16_t zero = 0;
+			far_write(s, &zero, 2);
+		}
 		dma_wait();
-		TS_DMASAL = (uint8_t)FAR_OFFS(base); TS_DMASAH = (uint8_t)(FAR_OFFS(base) >> 8);
-		TS_DMASAX = FAR_PAGE(base);
-		TS_DMADAL = (uint8_t)FAR_OFFS(base); TS_DMADAH = (uint8_t)(FAR_OFFS(base) >> 8);
-		TS_DMADAX = FAR_PAGE(base);
+		TS_DMASAL = (uint8_t)FAR_OFFS(s); TS_DMASAH = (uint8_t)(FAR_OFFS(s) >> 8);
+		TS_DMASAX = FAR_PAGE(s);
+		TS_DMADAL = (uint8_t)FAR_OFFS(d); TS_DMADAH = (uint8_t)(FAR_OFFS(d) >> 8);
+		TS_DMADAX = FAR_PAGE(d);
 		TS_DMALEN = (uint8_t)(w / 2 - 1);
-		TS_DMANUM = (uint8_t)(y1 - y0);
-		TS_DMACTRL = DMA_FILL | DMA_D_ALGN | DMA_ASZ;
+		TS_DMANUM = (uint8_t)(rows - 1);
+		TS_DMACTRL = ctrl;
 		dma_wait();
 		n -= part;
 		c0 = 0;
@@ -792,23 +822,41 @@ static uint8_t load_gen(uint16_t terrain)
 // Перерисовать кусок вида: гасим прямоугольник кольца и собираем в него заново все клетки,
 // которые его задевают. Гасить приходится потому, что тайлы кладутся прозрачным блитом
 // (BLT1 пропускает цвет 0) — без гашения под новой картинкой остаётся старая.
-// Полоса на всю высоту (скролл камеры) — это тот же прямоугольник с y0 = 0.
+// Невысокий прямоугольник (клетка: курсор, шаг бойца, дверь) собирается в запасной полосе
+// холста с обрезкой блитов по его строкам, а на экран уходят только его столбцы — одним DMA.
+// Иначе погашенный прямоугольник был виден все кадры сборки списка (чёрная дыра под мышью),
+// а соседние клетки, нарисованные целиком, затирали то, что стоит перед ними вне прямоугольника.
+// Полоса на всю высоту (скролл камеры) рисуется прямо в буфер: она за краем окна.
 static void draw_rect(int16_t lo, int16_t hi, int16_t y0, int16_t y1)
 {
 	if (y0 < 0) y0 = 0;
 	if (y1 > BUF_H - 1) y1 = BUF_H - 1;
 	if (y0 > y1) return;
-	fill_cols(lo, hi, y0, y1);
+	uint16_t rows = (uint16_t)(y1 - y0 + 1);
+	uint8_t scr = rows <= SCRATCH_H;
+	far_t vis = FAR(row_page[y0], row_ofs[y0]);
+	far_t dst = scr ? FAR(SCREEN_PAGE + (SCRATCH_Y >> 5), (SCRATCH_Y & 31) << 9) : vis;
 	// Сборка берёт клетки чуть шире прямоугольника: соседи заезжают в него своими спрайтами,
 	// а части с P_Level подняты вверх (до 24 точек), поэтому клетки ниже прямоугольника тоже
-	// могут в него нарисовать — их и добираем снизу.
+	// могут в него нарисовать — их и добираем снизу. Список собирается до гашения: пока он
+	// собирается, на экране остаётся прежняя картинка.
 	clip_y0 = y0;
 	clip_y1 = y1 + 24;
+	if (scr) {
+		win_y0 = y0;
+		win_y1 = y1 + 1;
+		to_scr = 1;
+	}
 	build_range(lo - TILE_W, hi + TILE_W);
 	clip_y0 = 0;
 	clip_y1 = BUF_H - 1;
+	win_y0 = 0;
+	win_y1 = BUF_H;
+	to_scr = 0;
+	dma_cols(DMA_FILL | DMA_D_ALGN | DMA_ASZ, lo, hi, dst, dst, rows);
 	dl_run();
 	dma_wait();
+	if (scr) dma_cols(DMA_RAM_RAM | DMA_S_ALGN | DMA_D_ALGN | DMA_ASZ, lo, hi, dst, vis, rows);
 }
 
 static void draw_strip(int16_t lo, int16_t hi)
