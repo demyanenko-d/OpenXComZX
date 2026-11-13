@@ -262,6 +262,29 @@ static const wdef_t w_sdinfo[] = {
 	BTN(164, 176, 92, 16, UI_EL_BUTTON, STR_OK, A_POP, 0, ESC),
 };
 
+// ---------------------------------------------------------------- прошивка без BLT2
+
+// Своё окно (в OpenXcom такого нет). Глобус геоскейпа рисуется DMA BLT2 (globe_s.s), а в
+// прошивке без него DMA не завершается — игра повисла бы на первом же глобусе. Поэтому boot.c
+// открывает это окно вместо игры, и выхода из него нет: что не так и какая прошивка нужна.
+static const wdef_t w_hwinfo[] = {
+	WIN(32, 20, 256, 160, UI_EL_GENERICWINDOW),
+	TXT(37, 30, 246, 17, UI_EL_GENERICTEXT, DYN(0), BIG | TC),
+	TXT(44, 52, 232, 120, UI_EL_GENERICTEXT, DYN(1), TW),
+};
+
+static void hwinfo_text(uint8_t slot, char *buf)
+{
+	if (slot == 0) { strcpy(buf, "FIRMWARE NOT SUPPORTED"); return; }
+	strcpy(buf, "This TS-Config firmware has no DMA blitter BLT2 (STATUS VDAC_VER = \x01");
+	fmt_num(buf + strlen(buf), TS_STATUS & STATUS_VDAC_VER, 0);
+	strcat(buf, "\x01, the stock build with IDE). The Geoscape globe is drawn with BLT2, "
+	            "the game cannot run.\n\n"
+	            "Required: TS-Config firmware with \x01VDAC\x01 or \x01VDAC2\x01 (VDAC_VER 3, 6 or 7).\n"
+	            "Emulator: \x01TS_VDAC=5BIT\x01 in the TS-Conf config.\n\n"
+	            "Switch the machine off.");
+}
+
 // ---------------------------------------------------------------- ComboBox
 
 // Список ComboBox (ComboBox.cpp): окно с тонкой рамкой под кнопкой, до 10 строк
@@ -295,6 +318,7 @@ static const scr_t tab[] = {
 	SCR(SCR_COMBO, 0, NOUI, 0, SF_POPUP, w_combo),
 	SCR(SCR_DELETE_SAVE, UI_SCR_SAVEMENUS, UI_SCR_GEOSCAPE, RES_BACK01_SCR, SF_POPUP | SF_ALTPAL, w_delete),
 	SCR(SCR_SDINFO, UI_SCR_SAVEMENUS, UI_SCR_GEOSCAPE, 0, SF_POPUP | SF_ALTPAL, w_sdinfo),
+	SCR(SCR_HWINFO, UI_SCR_GEOSCAPE, NOUI, 0, 0, w_hwinfo),
 };
 
 uint8_t menu_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
@@ -358,6 +382,9 @@ void menu_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked
 		break;
 	case SCR_ERROR:
 		strcpy(buf, ui_msg);
+		break;
+	case SCR_HWINFO:
+		hwinfo_text(slot, buf);
 		break;
 	case SCR_COMBO:
 		if (row != LIST_COLS && row < combo.n) str_copy(combo.item[row], buf, 128);

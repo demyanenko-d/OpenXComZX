@@ -163,6 +163,12 @@ __sfr __banked __at(0xFDAF) OXZ_DBG_SCRIPT;
 #define DMA_RAM_SFILE    0x85
 #define DMASTATUS_ACT    0x80
 
+// STATUS: биты 2:0 — VDAC_VER сборки прошивки (zx-evo-tsconf fpga/current/z80/zports.v, XSTAT):
+// 0 — обычная сборка с IDE, 3 — VDAC, 6/7 — VDAC2. DMA BLT2 есть только в сборках с XTR_FEAT —
+// это сборки без IDE, с VDAC/VDAC2 (common/dma.v, quartus*/tune.v); в обычной код устройства
+// BLT2 (0110) ждёт строб внешнего устройства, которого нет, — DMA не завершается никогда.
+#define STATUS_VDAC_VER  0x07
+
 // --- прочие порты ---
 __sfr __at(0x57) ZC_DATA;     // SPI SD: обмен байтом (чтение — байт предыдущего обмена)
 __sfr __at(0x77) ZC_CFG;      // бит 1 — CS# SD1 (активный 0)
