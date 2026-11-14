@@ -103,6 +103,8 @@ void boot(void) __banked
 	TS_SYSCONFIG = SYSCONF_ZCLK_14M;
 	TS_CACHECONFIG = CACHE_WIN0 | CACHE_WIN1 | CACHE_WIN2;   // после SysConfig
 
+	// Прошивка без DMA BLT2 (STATUS VDAC_VER = 0): глобус повис бы — дальше не идём (SCR_HWINFO)
+	if ((TS_STATUS & STATUS_VDAC_VER) == 0) ui_run(SCR_HWINFO);
 	// StartState -> CutsceneState(intro) -> главное меню (под сценарием эмулятора — сразу меню)
 	ui_run(OXZ_DBG_SCRIPT == OXZ_SCRIPT_SIG ? SCR_MAIN_MENU : cut_start(CUT_INTRO, SCR_MAIN_MENU));
 }
