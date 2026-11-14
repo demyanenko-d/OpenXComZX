@@ -100,7 +100,7 @@ MLX	= 0xBE00		; vision.c ml_x / ml_y / ml_z
 MLY	= 0xBE18
 MLZ	= 0xBE30
 YTAB	= 0xBC00		; vision.c ytab: y * sx (слова)
-ZTAB	= 0xBC80		; vision.c ztab: z * sx * sy
+ZTAB	= 0xBCA0		; vision.c ztab: z * sx * sy (в той же странице #BC, что ytab — aidx)
 VMCUR	= 0xBCD5		; vision.c vm_cur: что сейчас в Win3
 
 ;; void fu_run(void): сектор бойца F.ux..uz — линии таблицы по порядку (vision.c fov_unit). Записи:

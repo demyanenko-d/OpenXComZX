@@ -40,11 +40,14 @@ static uint8_t vm_sx, vm_sy, vm_sz;
 static uint8_t *const vm = (uint8_t *)0xC000;   // подключённая страница маски (или тумана)
 
 // Память банка (build.ps1 ram = #BC00): номер клетки без умножений — строка и этаж таблицами
-static uint16_t __at(0xBC00) ytab[64];          // y * sx
-static uint16_t __at(0xBC80) ztab[8];           // z * sx * sy
+// (поле до 80 клеток — MAX_MOD 8 модулей: суда TFTD 3x7 модулей, поле квадратное — 70x70;
+// ytab и ztab — в одной странице #BC, vision_s.s aidx на это рассчитан)
+#define VM_MAXW 80
+static uint16_t __at(0xBC00) ytab[VM_MAXW];     // y * sx (до #BC9F)
+static uint16_t __at(0xBCA0) ztab[8];           // z * sx * sy
 // Туман войны: где каждый боец смотрел в прошлый раз (x, y, z, dir) — сектор пересчитывается
 // только у сдвинувшегося или повернувшегося (UnitWalkBState / UnitTurnBState оригинала)
-static uint8_t __at(0xBC90) fl_last[MAX_UNITS * 4];
+static uint8_t __at(0xBD00) fl_last[MAX_UNITS * 4];
 // Прямоугольник вновь открытого (в осях вида: x - y, x + y, этаж) — его надо перерисовать
 static int16_t __at(0xBCC0) bb_d0;
 static int16_t __at(0xBCC2) bb_d1;
@@ -551,7 +554,7 @@ void vis_free(void) __banked
 
 uint8_t vis_build(far_t cells, uint8_t sx, uint8_t sy, uint8_t sz, uint8_t page) __banked
 {
-	uint8_t fl[256], bw[256], row[64 * 4], out[64];
+	uint8_t fl[256], bw[256], row[VM_MAXW * 4], out[VM_MAXW];   // строка поля — до 80 клеток
 	vis_free();
 	uint16_t total = (uint16_t)sx * sy * sz;
 	vm_np = (uint8_t)((total + 16383) >> 14);
@@ -561,7 +564,7 @@ uint8_t vis_build(far_t cells, uint8_t sx, uint8_t sy, uint8_t sz, uint8_t page)
 	H.vmp = vm_page; H.msx = sx; H.msy = sy; H.msz = sz;   // для hb_fast
 	H.wsx = sx; H.nsx = -(int16_t)sx;
 	vm_cells = cells; vm_wpg = page;      // для глаз юнита (eye_bits)
-	for (uint8_t y = 0; y < sy && y < 64; y++) ytab[y] = (uint16_t)y * sx;
+	for (uint8_t y = 0; y < sy && y < VM_MAXW; y++) ytab[y] = (uint16_t)y * sx;
 	for (uint8_t z = 0; z < sz && z < 8; z++) ztab[z] = (uint16_t)z * sx * sy;
 	// Туман войны: всё закрыто; страниц не нашлось — видно всё (вид проверяет fog_pg)
 	fog_np = vm_np;
