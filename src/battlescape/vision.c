@@ -62,17 +62,12 @@ static uint16_t __at(0xBCD0) fog_frames;   // 0A:3CD0
 static uint8_t __at(0xBCD2) fog_units;     // 0A:3CD2
 extern volatile uint16_t frames;           // crt0.s
 #define FT_E 5                                  // байт на запись таблицы линий (gen_fog_tab.js)
-static uint8_t __at(0xB800) tb[64 * FT_E];      // кусок таблицы линий
+// #B800..#B93F — кусок таблицы линий (vision_s.s fu_run, TB)
 static uint8_t __at(0xBCD3) fd_x;               // дверь, сменившая обзор (fog_all = 2)
 static uint8_t __at(0xBCD4) fd_y;
-// Клетки линии, открытые за этот проход, и путь текущей линии (смещения от бойца) — по оси в
-// своём массиве: индекс без умножения (SDCC звал __mul16 на каждый шаг)
-static uint8_t __at(0xBE00) ml_x[24];
-static uint8_t __at(0xBE18) ml_y[24];
-static uint8_t __at(0xBE30) ml_z[24];
-static int8_t __at(0xBE48) pp_x[24];
-static int8_t __at(0xBE60) pp_y[24];
-static int8_t __at(0xBE78) pp_z[24];
+// Клетки линии, открытые за этот проход (ml_x / ml_y / ml_z по #BE00, #BE18, #BE30 — по оси в своём
+// массиве) — их пишет и читает только vision_s.s; #BE48..#BE56 — заготовки линии (vision_s.s FX).
+// Пути прошлой линии хранить не нужно: позицию перед стартом даёт прогон Брезенхема (fl_line)
 // Состояние линии для цикла на ассемблере (vision_s.s, поля — те же смещения)
 typedef struct {
 	uint8_t ux, uy, uz;        // клетка бойца
@@ -83,27 +78,36 @@ typedef struct {
 	uint8_t sxy, sxz;
 	int16_t dxy, dxz;
 	uint8_t nm, b, pad;        // открытых клеток в ml_*, позиция упора
-	uint8_t bx, by, bz, ax, ay, az, skip;   // шаг для fog_slow: откуда, куда, пропуск объекта
+	uint8_t bx, by, bz, ax, ay, az, skip;   // шаг: откуда, куда, пропуск объекта
 	int8_t cx, cy, cz;
 	int8_t x1, y1, z1;         // fl_line: цель (смещение от бойца)
+	uint8_t sv;                // H.i и H.s — номер и маска прошлой клетки линии верны
+	uint16_t ai;               // номер текущей клетки
+	uint8_t k, bbx, bby, bbz;  // fm_run: номер в ml_*, клетка для fog_bbn
+	uint16_t fi;               // fm_run: номер клетки
+	uint8_t tv;                // fl_zstep: vblk держит
 } fls_t;
-static fls_t __at(0xBE90) F;
+static fls_t __at(0xBE90) F;           // до #BEBF
 void fl_line(void);                     // vision_s.s: линия к F.x1..z1 с позиции F.i
+void fm_run(void);                      // vision_s.s: клетки ml_* — в туман (fog_mark)
 // hblk на ассемблере (vision_s.s hb_fast): 0 — свободно, 1 — упор, #FF — большая стена (-1)
 typedef struct {
 	int8_t sx, sy, z, ex, ey;
 	uint8_t skip;
 	uint8_t vmp, msx, msy, msz;            // копии vm_page и размеров поля (vis_build)
-	uint8_t work[18];                      // рабочие поля и маски 3x3 (vision_s.s)
+	uint8_t dir, s, e, t, org, b;          // рабочие (vision_s.s)
+	uint16_t i;                            // номер клетки s
+	int16_t nsx, wsx;                      // -sx и sx: соседи по y смещением номера (vis_build)
+	uint8_t work[6];
 } hb_t;
 static hb_t __at(0xBEC0) H;
-uint8_t hb_fast(void);
-
-static uint8_t hbf(int8_t sx, int8_t sy, int8_t z, int8_t ex, int8_t ey, uint8_t skip)
-{
-	H.sx = sx; H.sy = sy; H.z = z; H.ex = ex; H.ey = ey; H.skip = skip;
-	return hb_fast();
-}
+// Обход таблицы линий сектора (vision_s.s fu_run): вход, за ним — рабочие поля
+typedef struct {
+	uint16_t n, off;           // записей, начало таблицы (байт от начала FOGTAB_PAGE)
+	uint8_t sw, nx, ny;        // оси сектора обменены, x и y — со знаком минус
+} fu_t;
+static fu_t __at(0xBEE0) U;
+void fu_run(void);
 
 // Направление шага по (dx + 1) * 3 + (dy + 1): как vd_x / vd_y оригинала (0 — север, по часовой)
 static const uint8_t dir_of[9] = { 7, 6, 5, 0, 8, 4, 1, 2, 3 };
@@ -310,89 +314,32 @@ static void fset(uint16_t i, uint8_t bits, uint8_t x, uint8_t y, uint8_t z)
 }
 
 // Клетка на линии взгляда: она сама (пол, содержимое, обе свои стены), у восточного соседа —
-// западная стена, у южного — северная (TileEngine.cpp:328-333)
-static void fog_mark(uint8_t x, uint8_t y, uint8_t z)
+// западная стена, у южного — северная (TileEngine.cpp:328-333) — vision_s.s fm_run (бит FOG_L —
+// уже отмечена линией, и соседи тоже). Новое видимое — сюда, в прямоугольник перерисовки
+void fog_bbn(void)
 {
-	uint16_t i = ztab[z] + ytab[y] + x;
-	uint8_t p = (uint8_t)(fog_pg + (i >> 14)), c = vm_cur;
-	if (p != c) { pg_map3(p); vm_cur = p; }
-	if (vm[i & 0x3FFF] & FOG_L) return;  // уже отмечена линией — и соседи тоже
-	fset(i, FOG_W | FOG_N | FOG_C | FOG_L, x, y, z);
-	if ((uint8_t)(x + 1) < vm_sx) fset(i + 1, FOG_W, (uint8_t)(x + 1), y, z);
-	if ((uint8_t)(y + 1) < vm_sy) fset(i + vm_sx, FOG_N, x, (uint8_t)(y + 1), z);
+	fog_bb(F.bbx, F.bby, F.bbz);
 }
 
-// Шаг линии со сменой этажа (vision_s.s решает только шаги по этажу): точно как в C-цикле — vblk
-// и hblk. 0 — свободно, 1 — упор (клетка не открывается), 2 — большая стена (открыта, дальше нет).
-uint8_t fog_slow(void)
-{
-	int8_t bx = (int8_t)F.bx, by = (int8_t)F.by, bz = (int8_t)F.bz;
-	int8_t ax = (int8_t)F.ax, ay = (int8_t)F.ay, az = (int8_t)F.az;
-	uint8_t sk = F.skip;
-	int16_t tv = az != bz ? vblk(bx, by, bz, ax, ay, az) : 0;
-	// слагаемые блокировки — 0 или >= 255: «r + tv > 127» — это «r или tv держит»
-	uint8_t r = hbf(bx, by, bz, ax, ay, sk);
-	if (r == 0xFF) {
-		if (tv <= 127) return 2;
-		r = 0;
-	}
-	return r || tv > 127 ? 1 : 0;
-}
+// Линия calculateLine от бойца F.ux..uz к смещению F.x1..z1 с позиции F.i — vision_s.s fl_line:
+// позиции до F.i общие с прошлой линией и лежат в pp. Открытые клетки — в ml, потом разом в туман
+// (fm_run — чтобы Win3 не металось между маской и туманом на каждом шаге); F.b — позиция упора
+// (255 — дошла). Шаги со сменой этажа — vision_s.s fl_zstep (vblk и hblk, как los).
 
-// Линия calculateLine от бойца (ux, uy, uz) к смещению (x1, y1, z1) с позиции st: позиции до st
-// общие с прошлой линией и лежат в pp. Открытые клетки — в ml, потом разом в туман (чтобы Win3 не
-// металось между маской и туманом на каждом шаге). Вернёт номер позиции упора (255 — дошла).
-// Боец — в F.ux..uz (fov_unit). Оси, знаки и наклоны линии, шаги — на ассемблере (vision_s.s fl_line;
-// шаги со сменой этажа он отдаёт fog_slow).
-static uint8_t fov_line(int8_t x1, int8_t y1, int8_t z1, uint8_t st)
-{
-	F.x1 = x1; F.y1 = y1; F.z1 = z1;
-	F.i = st;
-	fl_line();
-	uint8_t nm = F.nm, b = F.b;
-	for (uint8_t k = 0; k < nm; k++) fog_mark(ml_x[k], ml_y[k], ml_z[k]);
-	return b;
-}
-
-// Сектор бойца (calculateFOV для тумана): линии таблицы FOGTAB_PAGE по порядку. Общее начало с
-// последней посчитанной линией — минимум L с неё (цели вне карты пропускаются, но в минимум идут);
-// если оно уже упёрлось, вся ветка до J (записи с L не меньше этой) упирается там же — прыжок
+// Сектор бойца (calculateFOV для тумана): линии таблицы FOGTAB_PAGE по порядку — vision_s.s fu_run.
+// Общее начало с последней посчитанной линией — минимум L с неё (цели вне карты пропускаются, но в
+// минимум идут); если оно уже упёрлось, вся ветка до J (записи с L не меньше этой) упирается там же —
+// прыжок. Здесь — какая из двух таблиц (прямо / наискось) и знаки осей направления
 static void fov_unit(uint8_t ux, uint8_t uy, uint8_t uz, uint8_t dir)
 {
-	uint8_t swap = (dir & 3) == 0;                 // направления 0 и 4: оси сектора меняются местами
 	F.ux = ux; F.uy = uy; F.uz = uz;               // боец для fl_line
-	int8_t gx = sg_x[dir], gy = sg_y[dir];
 	uint16_t n0 = far_word(FAR(FOGTAB_PAGE, 0));
-	uint16_t n = (dir & 1) ? far_word(FAR(FOGTAB_PAGE, 2)) : n0;
-	uint16_t off = 4 + ((dir & 1) ? n0 * FT_E : 0);
-	uint16_t tbk = 0xFF00, k = 0;                  // tbk — первая запись в tb (0xFF00 — пусто)
-	uint8_t have = 0, pb = 0, leff = 0;
-	while (k < n) {
-		uint16_t r = k - tbk;
-		if (r >= 64) {
-			uint16_t m = n - k;
-			if (m > 64) m = 64;
-			far_read(FAR(FOGTAB_PAGE, 0) + (uint16_t)(off + k * FT_E), tb, m * FT_E);
-			tbk = k;
-			r = 0;
-		}
-		const uint8_t *e = tb + (((uint16_t)r << 2) + r);   // r * FT_E без умножения
-		uint8_t l = e[2];
-		if (l < leff) leff = l;
-		if (have) {
-			uint8_t le = leff, p = pb;
-			if (p < le) { k = e[3] | ((uint16_t)e[4] << 8); continue; }   // упор внутри общего начала
-		}
-		k++;
-		int8_t lx = (int8_t)(e[0] & 31), ly = (int8_t)e[1], dz = (int8_t)((e[0] >> 5) - 3);
-		int8_t wx = swap ? ly : lx, wy = swap ? lx : ly;
-		if (gx < 0) wx = -wx;
-		if (gy < 0) wy = -wy;
-		if (!in_map((int8_t)(ux + wx), (int8_t)(uy + wy), (int8_t)(uz + dz))) continue;
-		pb = fov_line(wx, wy, dz, have ? leff : 0);
-		have = 1;
-		leff = 255;
-	}
+	U.n = (dir & 1) ? far_word(FAR(FOGTAB_PAGE, 2)) : n0;
+	U.off = 4 + ((dir & 1) ? n0 * FT_E : 0);
+	U.sw = (dir & 3) == 0;                         // направления 0 и 4: оси сектора меняются местами
+	U.nx = sg_x[dir] < 0;
+	U.ny = sg_y[dir] < 0;
+	fu_run();
 }
 
 // Туман: сектора бойцов, сдвинувшихся или повернувшихся с прошлого раза (у крупного — с каждой
@@ -536,6 +483,7 @@ uint8_t vis_build(far_t cells, uint8_t sx, uint8_t sy, uint8_t sz, uint8_t page)
 	if (vm_page == PG_NONE) return 0;
 	vm_sx = sx; vm_sy = sy; vm_sz = sz;
 	H.vmp = vm_page; H.msx = sx; H.msy = sy; H.msz = sz;   // для hb_fast
+	H.wsx = sx; H.nsx = -(int16_t)sx;
 	for (uint8_t y = 0; y < sy && y < 64; y++) ytab[y] = (uint16_t)y * sx;
 	for (uint8_t z = 0; z < sz && z < 8; z++) ztab[z] = (uint16_t)z * sx * sy;
 	// Туман войны: всё закрыто; страниц не нашлось — видно всё (вид проверяет fog_pg)
