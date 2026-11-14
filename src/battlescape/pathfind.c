@@ -17,6 +17,10 @@
 //   - волна идёт в окне вокруг начала и цели (PF_MARGIN); не дошли — второй заход без
 //     границ. Почти все щелчки рядом с бойцом, а полная волна на Z80 стоит больше секунды.
 // Клетки других этажей (ступени, падение) читаются по месту — это редкость.
+//
+// Карты шире 64 (суда TFTD — 70x70): таблицы волны — 64x64, волна идёт в окне 64x64 вокруг
+// начала и цели (pf_ox, pf_oy — его угол на карте). Бюджет времени — байт, шаг стоит от 4:
+// дальше 63 клеток путь всё равно не дотянется.
 #include <stdint.h>
 #include <string.h>
 #include "pages.h"
@@ -48,14 +52,22 @@ static const int8_t blk[] = {
 static const uint8_t blk_ofs[8] = { 0, 1, 5, 6, 10, 11, 15, 16 };   // в тройках
 static const uint8_t blk_n[8] = { 1, 4, 1, 4, 1, 4, 1, 4 };
 
-static far_t pf_cells;
-static uint8_t pf_sx, pf_sy, pf_z, pf_step;
+// Память банка (tools/build.ps1 ram = #BF00): Win1 полон
+static far_t __at(0xBF00) pf_cells;
+static uint8_t __at(0xBF04) pf_sx;           // окно волны (не больше PF_W)
+static uint8_t __at(0xBF05) pf_sy;
+static uint8_t __at(0xBF06) pf_z;
+static uint8_t __at(0xBF07) pf_step;
+static uint8_t __at(0xBF08) pf_mx;           // размер карты
+static uint8_t __at(0xBF09) pf_my;
+static uint8_t __at(0xBF0A) pf_ox;           // угол окна на ней
+static uint8_t __at(0xBF0B) pf_oy;
 
-// Клетка карты: номер считается в 16 битах и умножается на 4 сдвигом — 32-битное
-// умножение здесь обходилось дороже самого чтения.
+// Клетка карты (координаты окна): номер считается в 16 битах и умножается на 4 сдвигом —
+// 32-битное умножение здесь обходилось дороже самого чтения.
 static void cell_at(uint8_t x, uint8_t y, uint8_t z, uint8_t *c)
 {
-	uint16_t idx = (uint16_t)(((uint16_t)z * pf_sy + y) * pf_sx + x);
+	uint16_t idx = (uint16_t)(((uint16_t)z * pf_my + (uint8_t)(y + pf_oy)) * pf_mx + (uint8_t)(x + pf_ox));
 	far_read(pf_cells + ((uint32_t)idx << 2), c, 4);
 }
 
@@ -137,33 +149,50 @@ static uint8_t wall_blocked(const uint8_t *pf, uint8_t cx, uint8_t cy, uint8_t c
 
 uint8_t pf_find(const pf_req_t *q, uint8_t *path, uint8_t maxlen) __banked
 {
-	if (q->page == PG_NONE || q->sx > PF_W || q->sy > PF_W) return 0;
-	if (q->tx >= q->sx || q->ty >= q->sy) return 0;
-	pf_cells = q->cells; pf_sx = q->sx; pf_sy = q->sy; pf_z = q->z;
+	if (q->page == PG_NONE || q->tx >= q->sx || q->ty >= q->sy) return 0;
+	// Окно волны на карте: вся карта, если влезает, иначе 64 клетки вокруг середины пути
+	pf_mx = q->sx; pf_my = q->sy;
+	pf_ox = pf_oy = 0;
+	if (q->sx > PF_W) {
+		uint8_t m = (uint8_t)(((uint16_t)q->fx + q->tx) >> 1);
+		pf_ox = m > 31 ? (uint8_t)(m - 31) : 0;
+		if (pf_ox > q->sx - PF_W) pf_ox = (uint8_t)(q->sx - PF_W);
+	}
+	if (q->sy > PF_W) {
+		uint8_t m = (uint8_t)(((uint16_t)q->fy + q->ty) >> 1);
+		pf_oy = m > 31 ? (uint8_t)(m - 31) : 0;
+		if (pf_oy > q->sy - PF_W) pf_oy = (uint8_t)(q->sy - PF_W);
+	}
+	uint8_t fx = (uint8_t)(q->fx - pf_ox), fy = (uint8_t)(q->fy - pf_oy);   // в окне
+	uint8_t tx = (uint8_t)(q->tx - pf_ox), ty = (uint8_t)(q->ty - pf_oy);
+	if (fx >= PF_W || fy >= PF_W || tx >= PF_W || ty >= PF_W) return 0;   // дальше 63 — не дойти
+	pf_cells = q->cells; pf_z = q->z;
+	pf_sx = q->sx > PF_W ? PF_W : q->sx; pf_sy = q->sy > PF_W ? PF_W : q->sy;
 	pf_step = q->step;
 	uint8_t old = pg_map3(q->page);
 	uint8_t *pf = (uint8_t *)0xC000;
 	uint16_t *queue = (uint16_t *)(pf + PF_QUEUE);
 	// Окно поиска: вокруг начала и цели с запасом. Не дошли — второй заход по всей карте.
-	uint8_t bx0 = q->fx < q->tx ? q->fx : q->tx, bx1 = q->fx > q->tx ? q->fx : q->tx;
-	uint8_t by0 = q->fy < q->ty ? q->fy : q->ty, by1 = q->fy > q->ty ? q->fy : q->ty;
+	uint8_t bx0 = fx < tx ? fx : tx, bx1 = fx > tx ? fx : tx;
+	uint8_t by0 = fy < ty ? fy : ty, by1 = fy > ty ? fy : ty;
 	bx0 = bx0 > PF_MARGIN ? (uint8_t)(bx0 - PF_MARGIN) : 0;
 	by0 = by0 > PF_MARGIN ? (uint8_t)(by0 - PF_MARGIN) : 0;
 	bx1 = (uint8_t)(bx1 + PF_MARGIN);
 	by1 = (uint8_t)(by1 + PF_MARGIN);
-	if (bx1 >= q->sx) bx1 = (uint8_t)(q->sx - 1);
-	if (by1 >= q->sy) by1 = (uint8_t)(q->sy - 1);
+	if (bx1 >= pf_sx) bx1 = (uint8_t)(pf_sx - 1);
+	if (by1 >= pf_sy) by1 = (uint8_t)(pf_sy - 1);
 	for (uint8_t pass = 0; pass < 2; pass++) {
-		if (pass) {                  // второй заход — вся карта
+		if (pass) {                  // второй заход — всё окно
 			bx0 = 0; by0 = 0;
-			bx1 = (uint8_t)(q->sx - 1); by1 = (uint8_t)(q->sy - 1);
+			bx1 = (uint8_t)(pf_sx - 1); by1 = (uint8_t)(pf_sy - 1);
 		}
 		{                            // слепок клеток окна: карта читается рядами
 			uint8_t rowbuf[PF_W * 4], smark[PF_W];
 			uint16_t rb = (uint16_t)(bx1 - bx0 + 1) * 4;
 			memset(smark, 0, sizeof smark);
-			far_t ra = pf_cells + ((uint32_t)(((uint16_t)q->z * q->sy + by0) * q->sx + bx0) << 2);
-			uint16_t step = (uint16_t)q->sx * 4;
+			far_t ra = pf_cells + ((uint32_t)(((uint16_t)q->z * pf_my + (uint8_t)(by0 + pf_oy)) * pf_mx
+				+ (uint8_t)(bx0 + pf_ox)) << 2);
+			uint16_t step = (uint16_t)pf_mx * 4;
 			for (uint8_t y = by0; y <= by1; y++, ra += step) {
 				far_read(ra, rowbuf, rb);
 				const uint8_t *c = rowbuf;
@@ -180,9 +209,9 @@ uint8_t pf_find(const pf_req_t *q, uint8_t *path, uint8_t maxlen) __banked
 		}
 		memset(pf, 0xFF, 4096);
 		uint16_t head = 0, tail = 0;
-		PF_COST(q->fx, q->fy) = 0;
-		PF_FROM(q->fx, q->fy) = (uint8_t)(q->z << 3);   // в старших битах — этаж клетки
-		queue[tail++] = (uint16_t)q->fy * PF_W + q->fx;
+		PF_COST(fx, fy) = 0;
+		PF_FROM(fx, fy) = (uint8_t)(q->z << 3);   // в старших битах — этаж клетки
+		queue[tail++] = (uint16_t)fy * PF_W + fx;
 		while (head != tail) {
 			uint16_t cur = queue[head++];
 			if (head >= PF_QMAX) head = 0;
@@ -216,20 +245,20 @@ uint8_t pf_find(const pf_req_t *q, uint8_t *path, uint8_t maxlen) __banked
 				if (tail == head) { head = tail; break; }   // очередь кончилась
 			}
 		}
-		if (PF_COST(q->tx, q->ty) != 0xFF) break;           // дошли
-		if (!bx0 && !by0 && bx1 == q->sx - 1 && by1 == q->sy - 1) break;   // и так вся карта
+		if (PF_COST(tx, ty) != 0xFF) break;           // дошли
+		if (!bx0 && !by0 && bx1 == pf_sx - 1 && by1 == pf_sy - 1) break;   // и так всё окно
 	}
 	uint8_t n = 0;
-	if (PF_COST(q->tx, q->ty) != 0xFF) {
-		uint8_t x = q->tx, y = q->ty;
+	if (PF_COST(tx, ty) != 0xFF) {
+		uint8_t x = tx, y = ty;
 		uint8_t buf[32];
-		while ((x != q->fx || y != q->fy) && n < 32 && n < maxlen) {
+		while ((x != fx || y != fy) && n < 32 && n < maxlen) {
 			uint8_t d = PF_FROM(x, y) & 7;
 			buf[n++] = d;
 			x = (uint8_t)((int16_t)x - pf_dx[d]);
 			y = (uint8_t)((int16_t)y - pf_dy[d]);
 		}
-		if (x == q->fx && y == q->fy)
+		if (x == fx && y == fy)
 			for (uint8_t i = 0; i < n; i++) path[i] = buf[n - 1 - i];
 		else n = 0;
 	}

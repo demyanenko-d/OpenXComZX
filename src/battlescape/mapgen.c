@@ -9,9 +9,9 @@
 //   MAPBLK_*   — блок карты (как MAP оригинала), на SD;
 //   TILESET_*  — кадры набора, на SD.
 //
-// Что уже есть: addBlock, addLine, fillArea, checkBlock, removeBlock, resize и сами укладка
-// и трансляция номеров частей. Корабль, НЛО и тоннели (addCraft/addUFO/digTunnel) — следующий
-// шаг, пока такие команды пропускаются (14 §todo).
+// Что есть: addBlock, addLine, addCraft, addUFO, digTunnel, fillArea, checkBlock, removeBlock,
+// resize, укладка и трансляция номеров частей. Блоки кладутся в клетки в конце скрипта, корабль и
+// НЛО — сразу; тоннели сверлятся после укладки (tun_run), как если бы клетки были уже на месте.
 #include <stdint.h>
 #include <string.h>
 #include "pages.h"
@@ -55,6 +55,22 @@ typedef struct {
 } blk_t;
 #define BLK_REC 8                      // запись блока в TERRAINS: u16 res, u8 w, l, sz, u16 groups, u8 rev
 
+// Карта сверления (MapDirection): MD_VERTICAL — сверлить на юг, MD_HORIZONTAL — на восток
+#define MD_NONE     0
+#define MD_VERTICAL 1
+#define MD_HORIZONTAL 2
+#define MD_BOTH     3
+// Тоннель (digTunnel, drillModules :2769-2889): оригинал сверлит клетки сразу, блоки у него уже
+// уложены (addBlock -> loadMAP). У нас блоки кладутся в конце скрипта — команда запоминается
+// вместе с тем, какие модули были заняты в этот момент, и сверлится после укладки
+#define TUN_MAX     4
+typedef struct {
+	uint8_t level, dir;
+	uint8_t rx, ry, rw, rh;            // ширина тоннеля в модуле (rects, по умолчанию 3,3,3,3)
+	uint8_t rep[4];                    // MCDReplacements: пол, западная, северная, угол (0 — нет)
+	uint8_t occ[MAX_MOD];              // занятые модули: бит x в байте y
+} tun_t;
+
 // Состояние генерации — в памяти банка (Win1 занят), см. ram= в build.ps1
 typedef struct {
 	uint8_t mx, my;                    // размер поля в модулях
@@ -79,9 +95,13 @@ typedef struct {
 	uint8_t npage;                     // страница узлов маршрутов (bnode_t, mapgen.h)
 	uint16_t nnodes;
 	uint8_t nseg;                      // блоков с узлами (сегмент узла — как в loadRMP)
+	uint8_t drill[MAX_MOD * MAX_MOD];  // карта сверления (_drillMap): MD_* — какие края модуля сверлить
+	uint8_t ntun;
+	tun_t tun[TUN_MAX];                // digTunnel скрипта — сверлятся после укладки блоков
 } gen_t;
 
-static gen_t __at(0xB000) G;
+static gen_t __at(0xBC00) G;           // до конца страницы: код банка — до #BBFF
+_Static_assert(sizeof(gen_t) <= 0x400, "gen_t");
 // Память банка при старте не обнуляется, поэтому «есть ли что освобождать» держим
 // отдельным признаком в Win1 (_DATA обнуляется): иначе первый же mapgen_free отдавал
 // в пул мусорные номера страниц и рушил его (ревизия 2026-09-29).
@@ -179,6 +199,10 @@ static void put_block(uint8_t x, uint8_t y, uint8_t b)
 		}
 	G.head[y * MAX_MOD + x] = 1;
 	G.uses[b]++;
+	// карта сверления (addBlock :2740-2752): южный край — на юг, восточный — на восток, угол — оба
+	for (uint8_t i = 0; i < sw; i++) G.drill[(y + sl - 1) * MAX_MOD + x + i] = MD_VERTICAL;
+	for (uint8_t j = 0; j < sl; j++) G.drill[(y + j) * MAX_MOD + x + sw - 1] = MD_HORIZONTAL;
+	G.drill[(y + sl - 1) * MAX_MOD + x + sw - 1] = MD_BOTH;
 }
 
 // Поставить выбранный блок: место ищется под его настоящий размер. Оригинал так и делает
@@ -363,6 +387,7 @@ static uint8_t place_extra(uint16_t terr, const int16_t *rects, uint8_t nrects, 
 				int16_t lz = pick_block(G_LANDING, 0, 0, 0, 1);
 				if (lz < 0) lz = pick_block(G_DEFAULT, 0, 0, 0, 1);
 				if (lz >= 0) { put_block(mx, my, (uint8_t)lz); lay_block(mx, my, (uint8_t)lz); }
+				G.drill[my * MAX_MOD + mx] = MD_NONE;      // площадку addCraft кладёт мимо addBlock
 			}
 			G.grid[my * MAX_MOD + mx] = 0xFF;        // место занято, дальше кладём сами
 			G.head[my * MAX_MOD + mx] = 0;
@@ -377,42 +402,124 @@ static uint8_t place_extra(uint16_t terr, const int16_t *rects, uint8_t nrects, 
 	return 1;
 }
 
-// Проходы между модулями на уровне level: оригинал заменяет стены по краям модулей на
-// «дверные» части (MCDReplacements), у нас таких замен в данных почти нет — тогда стена
-// просто убирается и проход появляется (drillModules, :2769-2889).
-static void dig_tunnel(uint8_t level, uint8_t dir)
-{
-	uint8_t zero = 0;
-	if (level >= G.sz) return;
-	uint8_t vertical = dir == 1 || dir == 3, horizontal = dir == 2 || dir == 3;
-	for (uint8_t my = 0; my < G.my; my++)
-		for (uint8_t mx = 0; mx < G.mx; mx++) {
-			uint16_t cx = (uint16_t)mx * MOD_W + MOD_W / 2;
-			uint16_t cy = (uint16_t)my * MOD_W + MOD_W / 2;
-			if (vertical && my + 1 < G.my)
-				for (uint8_t k = 0; k < 2; k++) {
-					uint16_t wy = (uint16_t)(my + 1) * MOD_W;
-					far_t c = G.cells + ((uint32_t)(level * G.sy + wy) * G.sx + cx + k) * 4;
-					far_write(c + 2, &zero, 1);              // северная стена
-				}
-			if (horizontal && mx + 1 < G.mx)
-				for (uint8_t k = 0; k < 2; k++) {
-					uint16_t wx = (uint16_t)(mx + 1) * MOD_W;
-					far_t c = G.cells + ((uint32_t)(level * G.sy + cy + k) * G.sx + wx) * 4;
-					far_write(c + 1, &zero, 1);              // западная стена
-				}
-		}
-}
+// ------------------------------------------------------------------ тоннели (drillModules)
 
-// ------------------------------------------------------------------ скрипт
-
+// Команда скрипта (MAPSCRIPTS, read_cmd)
 typedef struct {
 	int16_t type, size, direction, chances, executions, label, ufo, tunnel;
 	uint8_t nrects, ngroups, nblocks, nfreqs, nmaxuses, ncond, nrepl;
 	int16_t rects[4 * 6];
 	uint8_t groups[8], blocks[24], freqs[24], maxuses[24];
 	int16_t cond[8];
+	int16_t repl[4 * 3];
 } cmd_t;
+
+// MCD.TU_Walk части миссии p (сквозной номер по наборам): MCDSET — 40 байт на часть, tu — байт 7
+static uint8_t part_tu(uint8_t p)
+{
+	for (uint8_t s = 0; s < G.nsets; s++) {
+		if (p < G.setn[s]) {
+			res_t r;
+			return res_find(G.set[s], &r) ? far_byte(r.phys + (uint32_t)p * 40 + 7) : 255;
+		}
+		p -= G.setn[s];
+	}
+	return 255;
+}
+
+// Клетка: along — поперёк сверления (x при сверлении на восток), across — вдоль края модуля
+static far_t tcell(uint8_t east, uint16_t along, uint16_t across, uint8_t z)
+{
+	uint16_t x = east ? along : across, y = east ? across : along;
+	return G.cells + ((uint32_t)((uint16_t)z * G.sy + y) * G.sx + x) * 4;
+}
+
+static uint8_t tun_occ(const tun_t *t, uint8_t x, uint8_t y) { return (t->occ[y] >> x) & 1; }
+
+// Проход из модуля (i, j) в соседний на восток (east) или юг: в последнем ряду модуля — без стены
+// поперёк и без объекта (пол — заменой), в первом ряду соседа — без стены и без объектов с ценой
+// прохода 0; по бокам тоннеля — стены замены, угол — у соседа, если там стены нет (:2794-2885)
+static void tun_drill(const tun_t *t, uint8_t i, uint8_t j, uint8_t east)
+{
+	uint8_t ws = east ? 1 : 2, ss = east ? 2 : 1;     // слот прорубаемой стены и стен вдоль тоннеля
+	uint8_t r0 = east ? t->ry : t->rx, rn = east ? t->rh : t->rw, z = t->level;
+	uint16_t a = (uint16_t)(east ? i : j) * MOD_W + MOD_W - 1;
+	uint16_t b = (uint16_t)(east ? j : i) * MOD_W, lim = east ? G.sy : G.sx;
+	uint8_t c[4];
+	for (uint8_t k = r0; k < r0 + rn && b + k < lim; k++) {
+		far_t p = tcell(east, a, b + k, z);
+		far_read(p, c, 4);
+		c[ws] = 0; c[3] = 0;
+		if (t->rep[0]) c[0] = t->rep[0];
+		far_write(p, c, 4);
+		p = tcell(east, a + 1, b + k, z);
+		far_read(p, c, 4);
+		c[ws] = 0;
+		if (c[3] && !part_tu(c[3])) c[3] = 0;
+		far_write(p, c, 4);
+	}
+	if (t->rep[ss]) {
+		if (b + r0 < lim) far_write(tcell(east, a, b + r0, z) + ss, &t->rep[ss], 1);
+		if (b + r0 + rn < lim) far_write(tcell(east, a, b + r0 + rn, z) + ss, &t->rep[ss], 1);
+	}
+	if (t->rep[3] && b + r0 < lim) {
+		far_t p = tcell(east, a + 1, b + r0, z) + ss;
+		if (!far_byte(p)) far_write(p, &t->rep[3], 1);
+	}
+}
+
+// Запомнить digTunnel: геометрия, замены (номера частей миссии) и занятые сейчас модули
+static void tun_add(const cmd_t *c)
+{
+	if (G.ntun >= TUN_MAX || c->tunnel < 0) return;
+	tun_t *t = &G.tun[G.ntun++];
+	t->level = (uint8_t)c->tunnel;
+	t->dir = (uint8_t)c->direction;
+	t->rx = t->ry = t->rw = t->rh = 3;
+	if (c->nrects) {
+		t->rx = (uint8_t)c->rects[0]; t->ry = (uint8_t)c->rects[1];
+		t->rw = (uint8_t)c->rects[2]; t->rh = (uint8_t)c->rects[3];
+	}
+	memset(t->rep, 0, sizeof t->rep);
+	for (uint8_t i = 0; i < c->nrepl; i++) {
+		int16_t ty = c->repl[i * 3], s = c->repl[i * 3 + 1], e = c->repl[i * 3 + 2];
+		if (ty == 3 || ty < 0 || ty > 4 || s < 0 || e < 0 || s >= G.nsets) continue;   // object — не нужен
+		uint16_t p = (uint16_t)e;
+		for (uint8_t k = 0; k < (uint8_t)s; k++) p += G.setn[k];
+		if (p && p < 256) t->rep[ty == 4 ? 3 : ty] = (uint8_t)p;
+	}
+	for (uint8_t y = 0; y < MAX_MOD; y++) {
+		uint8_t m = 0;
+		for (uint8_t x = 0; x < MAX_MOD; x++) {
+			// корабль и НЛО (#FF) оригинал кладёт после сверления поверх — их корпус не сверлим
+			uint8_t g = G.grid[y * MAX_MOD + x];
+			if (g && g != 0xFF) m |= (uint8_t)(1 << x);
+		}
+		t->occ[y] = m;
+	}
+}
+
+// Сверлить запомненные тоннели по уложенной карте: между модулями, занятыми на момент команды,
+// по краям, которые отметила карта сверления
+static void tun_run(void)
+{
+	for (uint8_t n = 0; n < G.ntun; n++) {
+		const tun_t *t = &G.tun[n];
+		if (t->level >= G.sz) continue;
+		for (uint8_t j = 0; j < G.my; j++)
+			for (uint8_t i = 0; i < G.mx; i++) {
+				if (!tun_occ(t, i, j)) continue;
+				uint8_t d = G.drill[j * MAX_MOD + i];
+				if (t->dir != MD_VERTICAL && i + 1 < G.mx && (d & MD_HORIZONTAL) && tun_occ(t, i + 1, j))
+					tun_drill(t, i, j, 1);
+				if (t->dir != MD_HORIZONTAL && j + 1 < G.my && (d & MD_VERTICAL) && tun_occ(t, i, j + 1))
+					tun_drill(t, i, j, 0);
+			}
+	}
+}
+
+// ------------------------------------------------------------------ скрипт
+
 
 static uint8_t read_cmd(far_t p, cmd_t *c, uint16_t *len)
 {
@@ -444,7 +551,10 @@ static uint8_t read_cmd(far_t p, cmd_t *c, uint16_t *len)
 	q += (uint32_t)c->nmaxuses * 2; c->nmaxuses = n;
 	n = c->ncond > 8 ? 8 : c->ncond;
 	for (uint8_t i = 0; i < n; i++) c->cond[i] = (int16_t)far_word(q + (uint32_t)i * 2);
-	c->ncond = n;
+	q += (uint32_t)c->ncond * 2; c->ncond = n;
+	n = c->nrepl > 4 ? 4 : c->nrepl;                  // тройки: тип (0 пол, 1, 2 стены, 4 угол), набор, часть
+	for (uint8_t i = 0; i < n * 3; i++) c->repl[i] = (int16_t)far_word(q + (uint32_t)i * 2);
+	c->nrepl = n;
 	return 1;
 }
 
@@ -474,6 +584,7 @@ static uint8_t add_line(const cmd_t *c)
 			uint8_t cross = G.grid[y * MAX_MOD + x] != 0;
 			int16_t b = pick_block(cross ? G_CROSS : G_NS, 0, 0, 0, 0);
 			if (b < 0) continue;
+			if (!cross) G.drill[y * MAX_MOD + x] = MD_BOTH;   // addBlock; перекрёсток — замена блока
 			G.grid[y * MAX_MOD + x] = (uint8_t)b + 1;
 			G.head[y * MAX_MOD + x] = 1;
 			G.uses[b]++;
@@ -486,6 +597,7 @@ static uint8_t add_line(const cmd_t *c)
 			uint8_t cross = G.grid[y * MAX_MOD + x] != 0;
 			int16_t b = pick_block(cross ? G_CROSS : G_EW, 0, 0, 0, 0);
 			if (b < 0) continue;
+			if (!cross) G.drill[y * MAX_MOD + x] = MD_BOTH;
 			G.grid[y * MAX_MOD + x] = (uint8_t)b + 1;
 			G.head[y * MAX_MOD + x] = 1;
 			G.uses[b]++;
@@ -658,7 +770,8 @@ uint8_t mapgen_run(uint16_t terrain, uint8_t mods, uint8_t levels) __banked
 						else if (gen_ufo != 0xFFFF) ok |= place_extra(gen_ufo, c.rects, c.nrects, 0);
 						break;
 					case C_DIG_TUNNEL:
-						if (c.tunnel >= 0) { dig_tunnel((uint8_t)c.tunnel, (uint8_t)c.direction); ok = 1; }
+						tun_add(&c);
+						ok = 1;                              // «this command is fail-proof»
 						break;
 					default:
 						break;
@@ -689,10 +802,10 @@ uint8_t mapgen_run(uint16_t terrain, uint8_t mods, uint8_t levels) __banked
 			if (!G.head[y * MAX_MOD + x]) continue;
 			lay_block(x, y, (uint8_t)(G.grid[y * MAX_MOD + x] - 1));
 		}
+	tun_run();
 	return 1;
 }
 
-// Сколько клеток непусто (пол есть) — грубая проверка, что укладка сработала
 // Отдать память карты: после боя она никому не нужна, а геоскейпу страницы нужны
 // (иначе ему нечем грузить фоны окон и он читает их с карты каждый кадр).
 void mapgen_free(void) __banked
@@ -732,21 +845,6 @@ void mapgen_used(uint8_t *mask) __banked
 			for (uint16_t x = 0; x < len; x++)
 				if (row[x]) mask[row[x] >> 3] |= (uint8_t)(1 << (row[x] & 7));
 		}
-}
-
-uint16_t mapgen_filled(void) __banked
-{
-	uint16_t n = 0;
-	for (uint8_t z = 0; z < G.sz; z++)
-		for (uint16_t y = 0; y < G.sy; y++) {
-			uint8_t row[80 * 4];
-			uint16_t len = G.sx * 4;
-			if (len > sizeof row) len = sizeof row;
-			far_read(G.cells + ((uint32_t)(z * G.sy + y) * G.sx) * 4, row, len);
-			for (uint16_t x = 0; x < len; x += 4)
-				if (row[x] | row[x + 1] | row[x + 2] | row[x + 3]) n++;
-		}
-	return n;
 }
 
 uint16_t mapgen_sx(void) __banked { return G.sx; }

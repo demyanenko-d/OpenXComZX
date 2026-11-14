@@ -197,9 +197,10 @@ namespace OxzConv
 			};
 			var dirName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
 			{ { "vertical", 1 }, { "horizontal", 2 }, { "both", 3 } };
-			// тип замены в тоннеле: 0 пол, 1 западная стена, 2 северная стена, 3 объект
+			// тип замены в тоннеле: 0 пол, 1 западная стена, 2 северная стена, 3 объект, 4 угол
+			// (drillModules: «corner» — стена у соседа на краю тоннеля, если её там нет; mapgen.c tun_drill)
 			var replName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
-			{ { "floor", 0 }, { "westWall", 1 }, { "northWall", 2 }, { "object", 3 } };
+			{ { "floor", 0 }, { "westWall", 1 }, { "northWall", 2 }, { "object", 3 }, { "corner", 4 } };
 
 			foreach (var o in Y.List(Y.Get(Y.Load(ox.ReadText($"standard/{ruleFolder}/mapScripts.rul")), "mapScripts")) ?? new List<object>())
 			{

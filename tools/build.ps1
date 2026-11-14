@@ -57,8 +57,8 @@ $banks = @(
     @{ n = 26; page = 0x49; files = @('geoscape\earth\globe_det', 'geoscape\earth\globe_det_s'); ram = 0xA800 }   # детали глобуса: линии, подписи, города (globe_det.c; точки и отрезки — globe_det_s.s); с #A800 — рабочая память
     @{ n = 27; page = 0xEF; files = @('geoscape\base\scr_inv'); ram = 0xB700 }   # инвентарь бойца (экипировка перед вылетом и в бою); страница #EF (банк вырос: прежняя #4A свободна); с #B700 — секции, предметы, точки под несомым
     @{ n = 28; page = 0x4B; files = @('battlescape\bview', 'battlescape\scr_battle_s'); ram = 0xB190 }   # наземный бой: вид (bview.c — карта, юниты, камера); scr_battle_s.s — команды списка DMA; с #B190 — юниты вида, с #B300 — рабочие таблицы
-    @{ n = 29; page = 0x4C; files = @('battlescape\mapgen'); ram = 0xB000 }   # генератор миссии: карта из блоков по mapScript (16 §3)
-    @{ n = 30; page = 0x4D; files = @('battlescape\pathfind', 'battlescape\units', 'battlescape\doors', 'battlescape\loader') }   # поиск пути (16 §5.4), бойцы миссии, клетки карты (двери, цена прохода), загрузка графики и миссии (bload.c — для экрана боя)
+    @{ n = 29; page = 0x4C; files = @('battlescape\mapgen'); ram = 0xBC00 }   # генератор миссии: карта из блоков по mapScript (16 §3); с #BC00 — его состояние (gen_t)
+    @{ n = 30; page = 0x4D; files = @('battlescape\pathfind', 'battlescape\units', 'battlescape\doors', 'battlescape\loader'); ram = 0xBF00 }   # поиск пути (16 §5.4; с #BF00 — его переменные), бойцы миссии, клетки карты (двери, цена прохода), загрузка графики и миссии (bload.c — для экрана боя)
     @{ n = 31; page = 0x4E; files = @('battlescape\scr_battle'); ram = 0xB880 }   # наземный бой: экран, события и логика бойцов (вид — банк 28); с #B880 — юниты миссии
     @{ n = 32; page = 0x4F; files = @('battlescape\bfx', 'battlescape\bwalk') }   # бой: полёт пули и вспышка попадания (bfx.c); ходьба по фазам (bwalk.c, вынесена из вида)
     @{ n = 40; page = 0x0A; files = @('battlescape\vision', 'battlescape\vision_s'); ram = 0xB800 }   # бой: видимость — линия взгляда по клеткам, сектор обзора, туман войны (vision.c; таблица линий — страницы #0B–#0C, gen_fog_tab.js); с #B800 — его таблицы

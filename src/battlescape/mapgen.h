@@ -32,7 +32,6 @@ typedef struct {
 } bnode_t;
 #define NODE_MAX   800         // в странице по 20 байт
 uint16_t mapgen_nodes(far_t *where) __banked;
-uint16_t mapgen_filled(void) __banked;   // непустых клеток (проверка укладки)
 uint16_t mapgen_sy(void) __banked;
 uint8_t mapgen_sz(void) __banked;
 far_t mapgen_cells(void) __banked;

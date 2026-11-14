@@ -1,7 +1,7 @@
 # Наземный бой: ходьба бойца фазами (BattleUnit::keepWalking, Map::calculateWalkingOffset,
 # UnitSprite::drawRoutine0 — кадры 40+24d рук и ног, качание торса; Map::drawUnit — боец между
 # клетками рисуется кусками в колонках задетых клеток, после пола и после содержимого). Боец идёт
-# из корабля на запад: в начале его закрывает корпус, потом он выходит на песок. Курсор скрыт.
+# в корабле на клетку наискось (в конце — проверка клетки units[0]). Курсор скрыт.
 # Снимки — tmp/shots/bat_walk/ (каждые 4 кадра). Точность перерисовки при ходьбе — bat_exact.oxs.
 # Запуск: powershell -File tools\run.ps1 -Script tests\bat_walk.oxs -Headless
 
@@ -15,8 +15,12 @@ poke _ui_request 248
 waitmark 248 900
 wait 150
 shot tmp/shots/bat_walk/00.png
-pokew _cursor_x 64
-pokew _cursor_y 40
+# шаг наискось в (15,13) — 16 фаз (боец в (14,12), экран центрован на нём: клетка (x,y) —
+# точка 176 + (dx - dy)·16, 96 + (dx + dy)·8). Прежняя цель (64,40) после правки генератора
+# (DEPLOYS, 44e95e4) оказалась дальше 60 TU — боец стоял, а тест этого не видел; к выходу из
+# корабля путь закрыт остальным отрядом
+pokew _cursor_x 176
+pokew _cursor_y 112
 click L
 wait 2
 shot tmp/shots/bat_walk/01.png
@@ -42,5 +46,9 @@ wait 2
 shot tmp/shots/bat_walk/11.png
 wait 2
 shot tmp/shots/bat_walk/12.png
+wait 250
+shot tmp/shots/bat_walk/13_out.png
+expect 4E:3880 15
+expect 4E:3881 13
 echo battle walk OK
 exit 0
