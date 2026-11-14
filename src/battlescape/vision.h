@@ -1,5 +1,5 @@
-// Видимость в бою (vision.c, банк 32): экран боя (банк 31) передаёт юнитов копией vu_t на стеке —
-// его память банка отсюда не видна.
+// Видимость в бою (vision.c, банк 40): экран боя (банк 31) передаёт юнитов копией vu_t на стеке —
+// его память банка отсюда не видна. Туман войны — там же (16 §5.2).
 #ifndef VISION_H
 #define VISION_H
 
@@ -22,5 +22,18 @@ void vis_free(void) __banked;
 uint8_t vis_seen(vu_t *u, uint8_t n, uint8_t nsold, uint8_t *list, uint8_t max) __banked;
 // Кого из пришельцев видит юнит sel сейчас (getVisibleUnits): номера в list, вернёт их число
 uint8_t vis_list(vu_t *u, uint8_t n, uint8_t nsold, uint8_t sel, uint8_t *list, uint8_t max) __banked;
+
+// Туман войны (Tile::_discovered): байт на клетку в страницах vis_fog_page() подряд, номер клетки —
+// (z * sy + y) * sx + x; PG_NONE — страниц не нашлось, видно всё. Сектора бойцов пересчитывает
+// vis_seen (только сдвинувшихся и повернувшихся; после двери — всех).
+#define FOG_W 1                // западная стена
+#define FOG_N 2                // северная стена
+#define FOG_C 4                // пол и содержимое (с ним — и обе стены)
+uint8_t vis_fog_page(void) __banked;
+// Открытое с прошлого вызова: прямоугольник вида (мировые lo, hi, top, bot) — 1, ничего — 0
+uint8_t vis_fog_rect(int16_t *r) __banked;
+// Открыть клетки прямоугольника на всех этажах (корабль отряда при высадке, BattlescapeGenerator)
+void vis_reveal(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1) __banked;
+// Число открытых клеток для сценариев — слово в памяти банка 40: 0A:BCCE (vision.c vis_fog_n)
 
 #endif

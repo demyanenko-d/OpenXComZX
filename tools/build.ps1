@@ -60,7 +60,8 @@ $banks = @(
     @{ n = 29; page = 0x4C; files = @('battlescape\mapgen'); ram = 0xB000 }   # генератор миссии: карта из блоков по mapScript (16 §3)
     @{ n = 30; page = 0x4D; files = @('battlescape\pathfind', 'battlescape\units', 'battlescape\doors', 'battlescape\loader') }   # поиск пути (16 §5.4), бойцы миссии, клетки карты (двери, цена прохода), загрузка графики и миссии (bload.c — для экрана боя)
     @{ n = 31; page = 0x4E; files = @('battlescape\scr_battle'); ram = 0xB880 }   # наземный бой: экран, события и логика бойцов (вид — банк 28); с #B880 — юниты миссии
-    @{ n = 32; page = 0x4F; files = @('battlescape\vision', 'battlescape\bfx', 'battlescape\bwalk') }   # бой: видимость — линия взгляда по клеткам, сектор обзора (vision.c); полёт пули и вспышка попадания (bfx.c); ходьба по фазам (bwalk.c, вынесена из вида)
+    @{ n = 32; page = 0x4F; files = @('battlescape\bfx', 'battlescape\bwalk') }   # бой: полёт пули и вспышка попадания (bfx.c); ходьба по фазам (bwalk.c, вынесена из вида)
+    @{ n = 40; page = 0x0A; files = @('battlescape\vision'); ram = 0xB800 }   # бой: видимость — линия взгляда по клеткам, сектор обзора, туман войны (vision.c; таблица линий — страницы #0B–#0C, gen_fog_tab.js); с #B800 — его таблицы
     @{ n = 33; page = 0x8E; files = @('battlescape\bitems', 'battlescape\bhud', 'battlescape\bspr', 'battlescape\bmenu'); ram = 0xB000 }   # бой: предметы (bitems.c), панель ICONS и показатели (bhud.c), значки замеченных — спрайты TSU (bspr.c), меню действий (bmenu.c); с #B000 — пункты меню
     @{ n = 34; page = 0x8F; files = @('battlescape\deploy'); ram = 0xA000 }   # бой: расстановка пришельцев (deploy.c); с #A000 — юниты, узлы появления, листы брони
     @{ n = 36; page = 0xED; files = @('battlescape\bact', 'battlescape\bai'); ram = 0xB000 }   # бой: действия юнитов — выстрел (bact.c), общее для бойца и ИИ; ход пришельцев (bai.c, с #B000 — его состояние); юниты — дальним доступом к памяти банка 31
@@ -149,6 +150,10 @@ foreach ($p in $packs) {
     $page += $pages
 }
 $ptbl += '_pack_total::', ("`t.db {0}" -f $packs.Count), "`t.area _DATA", '_pack_count::', "`t.ds 1`t; = _pack_total (crt0.s); в бою без GEO.PAK (res.h GEO_PACK)"
+# Таблица линий тумана войны (vision.c, map.h FOGTAB_PAGE) — своя страница в SPG
+$fogtab = Join-Path $out 'fogtab.bin'
+Invoke-Tool node @((Join-Path $root 'tools\gen_fog_tab.js'), $fogtab)
+$dataArgs += @('--data', ('0x0B:{0}' -f $fogtab))
 $packsAsm = Join-Path $out 'packs.s'
 [System.IO.File]::WriteAllText($packsAsm, ($ptbl -join "`r`n") + "`r`n", $utf8)
 

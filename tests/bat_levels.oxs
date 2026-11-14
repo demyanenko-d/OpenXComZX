@@ -21,7 +21,9 @@ wait 20
 pokew _cursor_x 64
 pokew _cursor_y 40
 click L
-wait 200
+# с этажа 1 над кораблём боец видит всё поле — туман войны (vision.c, пока на C) считает его
+# сектор на каждом шаге долго; запас времени — до перевода на ассемблер (14_todo)
+wait 900
 expect 4E:3882 0
 shot tmp/shots/levels/01_fell.png
 echo battle levels OK

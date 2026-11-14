@@ -40,8 +40,12 @@
                                    // #07 soldier_t[MAX_SOLDIERS] (SOLDIER_PAGE, state.h)
 #define STATE_PAGES      4         // #06–#09: #08–#09 — резерв кампании
 
-// #0A–#0E — резерв; следующие банки кода — сюда (14_todo, 2026-11-14: прочие страницы банков заняты).
-#define PG_FREE_FIRST    0x0A
+// #0A — банк кода 40 (видимость и туман войны, vision.c); #0B–#0C — таблица линий тумана войны
+// (tools/gen_fog_tab.js, вшивается в SPG); #0D–#0E — резерв, следующие банки кода — сюда
+// (2026-11-14: прочие страницы банков заняты).
+#define BANK40_PAGE      0x0A
+#define FOGTAB_PAGE      0x0B
+#define PG_FREE_FIRST    0x0D
 #define PG_FREE_LAST     0x0E
 
 // Под окном FMAddr: страница, которая стоит в Win3, пока курсор пишет регистры (cursor.c).

@@ -207,6 +207,10 @@ static void see_update(void)
 		v[i].flags = (u->alive ? VU_ALIVE : 0) | (u->size > 1 ? VU_BIG : 0) | (u->seen ? VU_SEEN : 0);
 	}
 	uint8_t n = vis_seen(v, nunits, nsold, list, sizeof list);
+	{                                    // туман войны: открылось новое — перерисовать его
+		int16_t r[4];
+		if (vis_fog_rect(r)) bv_repaint(r[0], r[1], r[2], r[3]);
+	}
 	// значки над панелью — кого видит выбранный боец (updateSoldierInfo: getVisibleUnits)
 	for (uint8_t i = 0; i < nunits; i++) if (units[i].seen) v[i].flags |= VU_SEEN;
 	nmarks = sel < nsold ? vis_list(v, nunits, nsold, sel, marks_u, sizeof marks_u) : 0;
@@ -497,9 +501,11 @@ static uint8_t load_gen(uint16_t terrain)
 	ndoors = q.ndoors;
 	m_sx = q.sx; m_sy = q.sy; m_sz = q.sz;
 	m_cx = q.cx; m_cy = q.cy; m_cw = q.cw; m_cl = q.cl; m_cbase = q.cbase;
+	// корабль с рамкой в клетку открыт сразу (BattlescapeGenerator.cpp:2308)
+	if (m_cw) vis_reveal(m_cx ? m_cx - 1 : 0, m_cy ? m_cy - 1 : 0, m_cx + m_cw, m_cy + m_cl);
 	cells = q.cells;
 	bmap.cells = cells; bmap.sx = m_sx; bmap.sy = m_sy; bmap.sz = m_sz; bmap.page = pf_page;
-	v.cells = cells; v.sx = m_sx; v.sy = m_sy; v.sz = m_sz; v.page = pf_page;
+	v.cells = cells; v.sx = m_sx; v.sy = m_sy; v.sz = m_sz; v.page = pf_page; v.fog = vis_fog_page();
 	bv_load(&v);
 	for (uint8_t i = 0; i < nunits; i++) ru_put(i);
 	bv_sync(nunits);

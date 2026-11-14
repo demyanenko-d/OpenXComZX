@@ -22,6 +22,7 @@ typedef struct {
 	far_t cells;
 	uint8_t sx, sy, sz;
 	uint8_t page;              // рабочая страница боя (таблицы — во второй, loader.h)
+	uint8_t fog;               // туман войны (vision.h vis_fog_page): PG_NONE — видно всё
 } bvload_t;
 
 void bv_open(void) __banked;                 // холсты, сплит, курсор боя

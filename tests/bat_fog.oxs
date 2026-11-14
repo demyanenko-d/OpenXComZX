@@ -1,0 +1,49 @@
+# Туман войны (16 §5.2, vision.c): отладочный бой — при высадке открыт корабль с рамкой в клетку и
+# то, что бойцы видят из него; неразведанное не рисуется. Боец с этажа над кораблём идёт на запад —
+# его сектор с каждой новой клетки открывает новое, вид перерисовывает открывшееся частично. Проверки: число открытых клеток (слово 0A:3CCE — память банка 40) до и после; частичная
+# перерисовка открывшегося совпадает с полной пересборкой вида той же камерой («1/2» дважды).
+# Курсор мыши скрыт (только спрайт), клетка курсора в конце — вне карты.
+# Снимки — tmp/shots/bat_fog/. Запуск: powershell -File tools\run.ps1 -Script tests\bat_fog.oxs -Headless
+
+waitmark 1 600
+poke _alien_off 1
+poke _cursor_off 1
+poke _bat_still 1
+# курсор — в середину экрана: у края окна камера боя едет (прокрутка мышью, как в оригинале)
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _ui_request 248
+waitmark 248 900
+wait 150
+peek 0A:3CCE 5
+# открыт корабль с рамкой: 12 x 22 клетки на четырёх этажах
+expectw 0A:3CCE 1056
+shot tmp/shots/bat_fog/00_start.png
+# выбранного бойца — на этаж 1 над кораблём (как bat_levels: units[] банка 31, этаж — 4E:3882)
+# и шагом на запад: он падает на землю, а с каждой клетки его сектор открывает поле за кораблём
+poke 4E:3882 1
+wait 20
+pokew _cursor_x 64
+pokew _cursor_y 40
+click L
+# сектор с этажа над полем на C считается ~100 кадров на шаг — запас до ассемблера (14_todo)
+wait 2500
+peek 0A:3CCE 5
+expectw 0A:3CCE 2424
+pokew _cursor_x 160
+pokew _cursor_y 150
+wait 30
+shot tmp/shots/bat_fog/01_walked.png
+shotmark
+# полная пересборка той же камерой
+pokew _cursor_x 220
+click L
+wait 60
+click L
+wait 60
+pokew _cursor_x 160
+wait 30
+shot tmp/shots/bat_fog/02_full.png
+shotsame
+echo battle fog OK
+exit 0

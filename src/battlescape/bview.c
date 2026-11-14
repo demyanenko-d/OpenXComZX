@@ -18,6 +18,8 @@
 #include "pages.h"
 #include "units.h"
 #include "loader.h"
+#include "pathfind.h"
+#include "vision.h"
 #include "bview.h"
 #include "bwalk.h"
 
@@ -38,6 +40,11 @@ static uint8_t __at(0xBC00) tile_y[256];   // вертикальное смещ�
 static far_t cells;                  // начало клеток карты
 static uint8_t loaded;
 static uint8_t __at(0xBD00) row[MAP_MAXX * 4];   // ряд клеток карты (Win1 занято, стек в Win0 мал)
+// Туман войны ряда (vision.h FOG_*): неразведанное не рисуется. В оригинале оно — силуэт цвета 15
+// (blitNShade с тенью 16, Map.cpp:659), а цвет 15 в палитре боя чёрный, как и фон; разница — только
+// там, где ближняя неразведанная клетка закрыла бы дальнюю разведанную (16 §5.2, §8.3c)
+static uint8_t __at(0xBE00) fogrow[MAP_MAXX];
+static uint8_t __at(0xBEA0) fog_pg;      // страница тумана (bv_load; Win1 полон)
 // Кадры тайлсета в готовом для блита виде (17_battle_render.md §2): при загрузке карты записи
 // SPRSET (x, y, w, h, смещение/2) разворачиваются так, чтобы в кадре не осталось ни 32-битной
 // арифметики far_t, ни делений — только сложения.
@@ -407,6 +414,10 @@ static void build_range(int16_t lo, int16_t hi, int16_t top, int16_t bot)
 			if (x1 >= m_sx) x1 = m_sx - 1;
 			if (x0 > x1) continue;
 			far_read(rbase + (uint16_t)x0 * 4, row, (uint16_t)(x1 - x0 + 1) * 4);
+			if (fog_pg != PG_NONE)
+				far_read(FAR(fog_pg, 0) + (uint16_t)(((uint16_t)z * m_sy + (uint16_t)y) * m_sx + (uint16_t)x0), fogrow, (uint16_t)(x1 - x0 + 1));
+			else memset(fogrow, FOG_C, (uint16_t)(x1 - x0 + 1));
+			const uint8_t *fp = fogrow;
 			// дальше пишем команды в страницу списка — ту, в которой сейчас его конец
 			uint8_t old = pg_map3(dl_n >= DL_PAGE_N ? dl_page + 1 : dl_page);
 			const uint8_t *p = row;
@@ -427,9 +438,12 @@ static void build_range(int16_t lo, int16_t hi, int16_t top, int16_t bot)
 				uint8_t un = here && unit_no(z, (uint8_t)y, (uint8_t)x), cb = 0, cf = 2;
 				if (cur_aim) cb = cf = un ? (uint8_t)(5 + (cur_anim >> 1)) : 4;
 				else if (un) { cb = cur_anim & 1; cf = (uint8_t)(2 + (cur_anim & 1)); }
+				uint8_t fd = *fp++;
 				for (uint8_t k = 0; k < 4; k++) {
 					uint8_t t = p[k];
-					if (t) dl_tile((uint8_t)(t - 1), px, py - (int16_t)tile_y[t - 1]);   // px — мировая X
+					// неразведанная клетка — только дверь, открытая своим битом стены (Map.cpp:730, 744)
+					if (t && ((fd & FOG_C) || ((k == 1 || k == 2) && (fd & k) && (far_byte(FAR(pf_page, PF_FLAGS) + t) & 12))))
+						dl_tile((uint8_t)(t - 1), px, py - (int16_t)tile_y[t - 1]);   // px — мировая X
 					if (k) continue;
 					// после пола (Map.cpp:668-721): задняя половина рамки курсора и идущий юнит
 					// из клеток «за» этой — до её стен, чтобы стены его закрывали
@@ -437,7 +451,7 @@ static void build_range(int16_t lo, int16_t hi, int16_t top, int16_t bot)
 					if (ru && wu != 0xFF) draw_units_cell((uint8_t)y, (uint8_t)x, px, py, 1);
 				}
 				// предмет на полу — после объекта клетки, до юнита (Map.cpp:764-770)
-				for (uint8_t i = 0; i < fl_n; i++) {
+				if (fd & FOG_C) for (uint8_t i = 0; i < fl_n; i++) {
 					uint8_t fx = fl[i][0], fy = fl[i][1], fz = fl[i][2];
 					if (fx == (uint8_t)x && fy == (uint8_t)y && fz == z) dl_blit(fl_te + fl[i][3] * TE_SIZE, px, py);
 				}
@@ -742,6 +756,7 @@ uint8_t bv_load(const bvload_t *q) __banked
 	far_read(t + TL_ARROWE, arrow_e, TE_SIZE);
 	m_sx = q->sx; m_sy = q->sy; m_sz = q->sz;
 	cells = q->cells;
+	fog_pg = q->fog;
 	u_tftd = res_game() == 2;
 	level = 0;                           // камера начинается на земле, как в оригинале
 	wk_u = 0xFF;
