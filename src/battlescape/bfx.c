@@ -304,7 +304,9 @@ void fx_shot(const fxshot_t *q) __banked
 				int16_t vx = q->ox + (int16_t)((int32_t)dx * ps / len);
 				int16_t vy = q->oy + (int16_t)((int32_t)dy * ps / len);
 				int16_t vz = q->oz + (int16_t)((int32_t)dz * ps / len);
-				int16_t sx = vx - vy + 16 - 1, sxy = (vx + vy + 40) >> 1;
+				// x чётный: DMA адресует словами — dl_blit кадр с нечётным x пропускает, а
+				// ring_fill с нечётного края заливает узором (P, 0) — пунктир над неразведанным
+				int16_t sx = (vx - vy + 16 - 1) & ~1, sxy = (vx + vy + 40) >> 1;
 				int16_t fz = vz < 0 ? 0 : vz / 24 * 24;   // тень — на пол этажа (castedShade)
 				far_read(frm + (PART_N + i) * TE_SIZE, te, TE_SIZE);
 				if (te[7]) { put(t3, n++, sx, sxy - fz - 1, te); rect_add(&cur, sx, sxy - fz - 1, 4, 3); }
@@ -320,7 +322,7 @@ void fx_shot(const fxshot_t *q) __banked
 	}
 	uint8_t hk = p.anim >= 0 ? slot_of(t3 + TV_FXH, FXH_SIZE, FXH_MAX, p.anim) : 0xFF;
 	if (hk == 0xFF) return;
-	int16_t sx = q->ex - q->ey + 16 - 15, sy = ((q->ex + q->ey + 40) >> 1) - q->ez - 15;
+	int16_t sx = (q->ex - q->ey + 16 - 15) & ~1, sy = ((q->ex + q->ey + 40) >> 1) - q->ez - 15;
 	int16_t ms = 50 - 10 * (int16_t)p.es;
 	uint8_t wait = ms <= 20 ? 1 : (uint8_t)((ms + 19) / 20);
 	for (uint8_t f = 0; f < HIT_N; f++) {
@@ -366,7 +368,7 @@ void fx_throw(const fxthrow_t *q) __banked
 		int16_t vx = q->ox + (int16_t)((int32_t)q->dx * i * 16 / q->r16);
 		int16_t vy = q->oy + (int16_t)((int32_t)q->dy * i * 16 / q->r16);
 		int16_t vz = q->oz + (int16_t)((int32_t)q->dz * i * 16 / q->r16) + (int16_t)((int32_t)q->z16 * h / (16 * (int32_t)q->r16));
-		int16_t sx = vx - vy + 16 - 16, sy = ((vx + vy + 40) >> 1) - vz - 26;
+		int16_t sx = (vx - vy + 16 - 16) & ~1, sy = ((vx + vy + 40) >> 1) - vz - 26;
 		cur.lo = sx; cur.top = sy; cur.hi = sx + 31; cur.bot = sy + 39;
 		put(t3, 0, sx, sy, te);
 		show(t3, 1, &cur, &prev);
