@@ -72,6 +72,7 @@ static void next_turn_close(void);       // окно хода (ниже)
 static void unit_armor(unit_t *u, uint16_t arm);   // броня бойца (ниже)
 static uint8_t reserve_ok(uint8_t i, uint8_t cost);   // резерв времени (ниже)
 static void do_kneel(void);
+static void ai_ctx(aictx_t *c);           // миссия для ИИ (ниже)
 static uint16_t ufo_deploy(uint8_t utype);   // развёртывание по типу НЛО (ниже)
 static uint8_t sel;                      // выбранный боец (панель показывает его состояние)
 #define KNEEL_TU_DOWN  4                 // цена приседания и вставания (BattlescapeGame::kneel)
@@ -212,6 +213,11 @@ static void see_update(void)
 	vis_view(dl_ok ? r : 0);
 	uint8_t n = vis_seen(v, nunits, nsold, list, sizeof list);
 	if (vis_fog_rect(r)) bv_repaint(r[0], r[1], r[2], r[3]);
+	if (bt_side == FACTION_PLAYER && sel < nsold) {   // выбранный сдвинулся — видят ли его пришельцы
+		aictx_t c;
+		ai_ctx(&c);
+		ai_spot(&c, sel);
+	}
 	// значки над панелью — кого видит выбранный боец (updateSoldierInfo: getVisibleUnits)
 	for (uint8_t i = 0; i < nunits; i++) if (units[i].seen) v[i].flags |= VU_SEEN;
 	nmarks = sel < nsold ? vis_list(v, nunits, nsold, sel, marks_u, sizeof marks_u) : 0;
@@ -531,6 +537,7 @@ static uint8_t load_gen(uint16_t terrain)
 	an_on = 0;
 	bt_turn = 1;
 	bt_side = FACTION_PLAYER;
+	ai_tss_init();                       // пришельцы ещё никого не видели
 	gen_mode = 1;
 	sel = 0;
 	for (uint8_t i = 0; i < nsold; i++) {   // боевые показатели: солдат кампании или отладочные
@@ -648,7 +655,11 @@ static void end_turn(void)
 
 static void next_turn_close(void)
 {
-	if (bt_side == FACTION_HOSTILE) ai_start();   // ход пришельцев — ИИ по тактам (bai.c)
+	if (bt_side == FACTION_HOSTILE) {    // ход пришельцев — ИИ по тактам (bai.c)
+		aictx_t c;
+		ai_ctx(&c);
+		ai_start(&c);
+	}
 	UI_GO(A_POP, 0);                     // назад в бой: вид соберётся заново (bv_draw)
 }
 
@@ -729,6 +740,7 @@ static void ai_run(void)
 	bt_side = FACTION_PLAYER;
 	bt_turn++;
 	side_prepare(FACTION_PLAYER);
+	ai_round(&c, bt_turn);               // что пришельцы знают об отряде (turnsSinceSpotted)
 	if (sel < nsold && !units[sel].alive) sel_step(0);   // выбранного убили — следующий живой
 	hide_aliens();                       // ушедшие из вида за свой ход — невидимы (endTurn)
 	if (hid_on) hidden_show(0);
@@ -1021,7 +1033,8 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		if (an_on && (uint8_t)((uint8_t)frames - an_tm) >= 5) door_anim_step();   // 100 мс (Tile::animate)
 		if ((uint8_t)((uint8_t)frames - bl_tm) >= 5) { bl_tm = (uint8_t)frames; marks_blink(); }   // _animTimer
 		if (hud_warn_tick()) ui_dirty(0);    // плашка исчезла — панель заново
-		bv_tick(sel);                        // прокрутка, курсор клетки, стрелка над выбранным
+		// прокрутка, курсор клетки, стрелка над выбранным — только в ход игрока (Map.cpp:1180)
+		bv_tick(bt_side == FACTION_PLAYER ? sel : 0xFF);
 		break;
 	}
 	case EVT_DRAW:

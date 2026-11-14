@@ -1,0 +1,44 @@
+# Камера за видимым пришельцем (UnitWalkBState.cpp:169-172, Camera::isOnScreen): как bat_aliens —
+# боец (6,34) в трёх клетках от пришельца (3,34) и видит его; пришелец смотрит на юго-запад и
+# бойца не видит — в свой ход патрулирует. Камеру уводим прокруткой (cam_x = -420), конец хода:
+# на первом шаге пришелец за краем экрана — камера на него (bview cam_x = 656, cam_y = -208).
+# Стрелки над выбранным бойцом в ход пришельцев нет (Map.cpp:1180).
+# Снимки — tmp/shots/bat_follow/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_follow.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _bat_still 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+key j
+wait 60
+key x
+wait 10
+key CS+J
+wait 60
+expect 4E:39C2 1
+pokew _cursor_x 319
+pokew _cursor_y 70
+wait 150
+pokew _cursor_x 160
+pokew _cursor_y 100
+wait 10
+expectw bview$cam_x 65116
+shot tmp/shots/bat_follow/00_away.png
+pokew _cursor_x 250
+pokew _cursor_y 150
+click L
+wait 60
+click L
+wait 25
+shot tmp/shots/bat_follow/01_follow.png
+expectw bview$cam_x 656
+expectw bview$cam_y 65328
+expect 4E:39C2 1
+# новый вид ~40 кадров собирается в скрытом холсте; до переключения виден прежний (пустота за картой)
+wait 50
+shot tmp/shots/bat_follow/02_map.png
+exit 0

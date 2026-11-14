@@ -19,6 +19,7 @@
 #include "str_ids.h"
 #include "bgren.h"
 #include "bact.h"
+#include "bai.h"
 
 static void u_get(uint8_t i, unit_t *u)
 {
@@ -101,6 +102,7 @@ uint8_t ba_shot(const bashot_t *q) __banked
 	v.mor = loss >= v.mor ? 0 : (uint8_t)(v.mor - loss);
 	uint8_t dead = !v.hp || v.stun >= v.hp;
 	if (dead) v.alive = 0;
+	if (v.faction == FACTION_HOSTILE) ai_tss[q->shooter] = 0;   // попал в пришельца — его заметили (ProjectileFlyBState:794)
 	u_set(s.hit, &v);
 	if (dead) ba_kill(q->page, s.hit, n);
 	return s.hit;

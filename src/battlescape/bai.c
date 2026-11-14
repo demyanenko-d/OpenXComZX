@@ -13,6 +13,7 @@
 // Чего нет: гранат, засад и отступлений, оценки укрытий, реакции отряда, дверей по пути,
 // надписи «Hidden Movement».
 #include <stdint.h>
+#include <stddef.h>
 #include <string.h>
 #include "far.h"
 #include "res.h"
@@ -46,6 +47,8 @@ static uint8_t __at(0xB035) ai_walk;     // идёт шаг с анимацие�
 static uint8_t __at(0xB036) ai_wx;       // куда шаг
 static uint8_t __at(0xB037) ai_wy;
 static uint8_t __at(0xB038) ai_aim;      // повернулся к цели — выстрел в следующем такте (карта видна)
+// #B040..#B067 — ai_tss[MAX_BUNITS], turnsSinceSpotted (bai.h)
+#define CHEAT_TURN 20                     // AlienDeployment::_cheatTurn по умолчанию
 
 static const int8_t dir_dx[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
 static const int8_t dir_dy[8] = { -1, -1, 0, 1, 1, 1, 0, -1 };
@@ -66,6 +69,15 @@ static void show(const aictx_t *c, uint8_t i, const unit_t *u)
 	bv_sync(c->n);
 }
 
+// Видимый пришелец перешёл в клетку: камера на него, если он за краем экрана, и на его этаж
+// (UnitWalkBState.cpp:169-172)
+static void follow(const unit_t *u)
+{
+	if (!u->seen) return;
+	if (!bv_on_screen(u->x, u->y, u->z, u->size > 1)) bv_center(u->x, u->y);
+	if (u->z != bv_level()) bv_set_level(u->z, 0);
+}
+
 static uint16_t isqrt(uint16_t v)
 {
 	uint16_t r = 0;
@@ -73,8 +85,67 @@ static uint16_t isqrt(uint16_t v)
 	return r;
 }
 
-void ai_start(void) __banked
+static void fill_vu(const aictx_t *c, vu_t *v);
+
+// Юнит i — пришелец (живость — в vu_t)
+static uint8_t hostile(uint8_t i)
 {
+	return far_byte(UNITS_FAR + (uint16_t)i * sizeof(unit_t) + offsetof(unit_t, faction)) == FACTION_HOSTILE;
+}
+
+// Обзор пришельца a (calculateFOV): всех не-пришельцев в его секторе — «видели только что»
+static void spot_by(const aictx_t *c, vu_t *v, uint8_t a)
+{
+	if (!(v[a].flags & VU_ALIVE) || !hostile(a)) return;
+	for (uint8_t i = 0; i < c->n; i++)
+		if ((v[i].flags & VU_ALIVE) && ai_tss[i] && !hostile(i) && vis_pair(v, a, i, 1)) ai_tss[i] = 0;
+}
+
+static void spot_all(const aictx_t *c)
+{
+	vu_t v[MAX_BUNITS];
+	fill_vu(c, v);
+	for (uint8_t a = c->nsold; a < c->n; a++) spot_by(c, v, a);
+}
+
+// Пришелец сменил клетку (UnitWalkBState.cpp:201 — calculateFOV): кого он теперь видит
+static void moved(const aictx_t *c)
+{
+	vu_t v[MAX_BUNITS];
+	fill_vu(c, v);
+	spot_by(c, v, ai_a);
+}
+
+void ai_tss_init(void) __banked
+{
+	memset(ai_tss, 255, MAX_BUNITS);
+}
+
+void ai_round(const aictx_t *c, uint8_t turn) __banked
+{
+	uint8_t live = 0;
+	unit_t x;
+	for (uint8_t i = c->nsold; i < c->n; i++) { u_get(i, &x); if (x.alive && x.faction == FACTION_HOSTILE) live++; }
+	uint8_t cheat = turn > CHEAT_TURN || (turn > CHEAT_TURN / 2 && live <= 2);
+	for (uint8_t i = 0; i < c->n; i++) {
+		if (ai_tss[i] < 255) ai_tss[i]++;
+		if (cheat && i < c->nsold) { u_get(i, &x); if (x.alive) ai_tss[i] = 0; }
+	}
+	spot_all(c);
+}
+
+void ai_spot(const aictx_t *c, uint8_t m) __banked
+{
+	vu_t v[MAX_BUNITS];
+	if (!ai_tss[m]) return;
+	fill_vu(c, v);
+	for (uint8_t a = c->nsold; a < c->n && ai_tss[m]; a++)
+		if ((v[a].flags & VU_ALIVE) && hostile(a) && vis_pair(v, a, m, 1)) ai_tss[m] = 0;
+}
+
+void ai_start(const aictx_t *c) __banked
+{
+	spot_all(c);                                     // recalculateFOV в endTurn
 	ai_a = 0;
 	ai_pn = ai_pi = ai_moved = ai_atk = ai_walk = ai_aim = 0;
 }
@@ -154,14 +225,19 @@ static uint8_t attack(const aictx_t *c, unit_t *u)
 	uint8_t right;
 	r_items_t w;
 	if (!gun(c, ai_a, &b, &right, &w)) return 0;
-	vu_t v[MAX_BUNITS];                               // кого видит (тот же обзор, что у отряда)
+	// цель (selectNearestTarget, validTarget): ближайший не-пришелец, о котором знают (счёт
+	// turnsSinceSpotted не больше intelligence) и которого видно без сектора (TileEngine::visible)
+	vu_t v[MAX_BUNITS];
 	fill_vu(c, v);
-	uint8_t list[8], nl = vis_list(v, c->nsold, 0, ai_a, list, sizeof list), tg = 0xFF;
+	rtab_t tr;
+	uint8_t intel = rtab_open(RES_RULE_UNITS, &tr) && u->type < tr.n
+		? (uint8_t)rtab_word(&tr, u->type, offsetof(r_units_t, intelligence)) : 0, tg = 0xFF;
 	uint16_t best = 0xFFFF;
-	for (uint8_t k = 0; k < nl; k++) {               // ближайший
-		int16_t dx = (int16_t)v[list[k]].x - u->x, dy = (int16_t)v[list[k]].y - u->y;
+	for (uint8_t i = 0; i < c->n; i++) {
+		if (!(v[i].flags & VU_ALIVE) || ai_tss[i] > intel || hostile(i)) continue;
+		int16_t dx = (int16_t)v[i].x - u->x, dy = (int16_t)v[i].y - u->y;
 		uint16_t d2 = (uint16_t)(dx * dx + dy * dy);
-		if (d2 < best) { best = d2; tg = list[k]; }
+		if (d2 < best && vis_pair(v, ai_a, i, 0)) { best = d2; tg = i; }
 	}
 	if (tg == 0xFF || best > (uint16_t)w.max_range * w.max_range) return 0;
 	uint16_t dist = isqrt(best);
@@ -306,7 +382,8 @@ static uint8_t step(const aictx_t *c, unit_t *u)
 	u->x = (uint8_t)nx; u->y = (uint8_t)ny; u->z = nz;
 	u_set(ai_a, u);
 	show(c, ai_a, u);
-	if (u->seen) { bv_cell(ox, oy, oz); bv_cell(u->x, u->y, u->z); }
+	if (u->seen) { bv_cell(ox, oy, oz); bv_cell(u->x, u->y, u->z); follow(u); }
+	moved(c);
 	return 1;
 }
 
@@ -359,6 +436,8 @@ static uint8_t ai_step(const aictx_t *c)
 			u.x = ai_wx; u.y = ai_wy;
 			u_set(ai_a, &u);
 			show(c, ai_a, &u);
+			follow(&u);
+			moved(c);
 			return AI_SEE;
 		}
 		if (r != 2) return 0;

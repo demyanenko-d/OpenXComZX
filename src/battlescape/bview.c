@@ -874,6 +874,16 @@ void bv_center(uint8_t x, uint8_t y) __banked
 	center_at(x, y);
 }
 
+// Юнит в клетке на экране (Camera::isOnScreen для идущего, :558-597): точка у ног в окне карты
+// с запасом в полклетки (у 2x2 — в клетку); панель во всю ширину — ниже окна не считается
+uint8_t bv_on_screen(uint8_t x, uint8_t y, uint8_t z, uint8_t big) __banked
+{
+	int16_t mx = big ? 32 : 16, my = big ? 16 : 20;
+	int16_t sx = ((int16_t)x - y) * 16 + 16 + cam_x;
+	int16_t sy = ((int16_t)x + y) * 8 - (int16_t)z * 24 + (big ? 24 : 32) + cam_y;
+	return sx >= -mx && sx < SCREEN_W + mx && sy >= -my && sy < VIEW_H + my;
+}
+
 uint8_t bv_level(void) __banked
 {
 	return level;

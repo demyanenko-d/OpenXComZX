@@ -76,6 +76,7 @@ uint8_t __at(0xBCE3) vis_eye_dbg;          // глаза последнего б
 uint16_t __at(0xBCE4) vis_rev_n;           // открытых клеток после revealedFloors (vis_blocks) — 0A:3CE4
 #define EYE_FOG 1                       // сектор тумана — с этажа выше (calculateFOV:255)
 #define EYE_SEE 2                       // линия взгляда на юнитов — с этажа выше (getSightOriginVoxel)
+#define EYE_CONE 4                      // sees: только в секторе обзора (calculateFOV); без него — visible
 // Нарисованная область вида (vis_view): открытое вне её не перерисовывается
 static int16_t __at(0xBCD6) vw_lo;
 static int16_t __at(0xBCD8) vw_hi;
@@ -315,12 +316,14 @@ static uint8_t eye_bits(const vu_t *v)
 	return e >= 28 ? EYE_FOG | EYE_SEE : EYE_SEE;
 }
 
-// Видит ли v клетку (x, y, z) с юнитом: сектор, дальность и линия взгляда (TileEngine::visible);
-// eye — глаза v (eye_bits): EYE_SEE — линия от клетки этажом выше
+// Видит ли v клетку (x, y, z) с юнитом: сектор (eye & EYE_CONE — calculateFOV), дальность и линия
+// взгляда (TileEngine::visible: сектора там нет); eye — глаза v (eye_bits): EYE_SEE — линия от
+// клетки этажом выше
 static uint8_t sees(const vu_t *v, uint8_t eye, uint8_t x, uint8_t y, uint8_t z)
 {
 	int8_t dx = (int8_t)(x - v->x), dy = (int8_t)(y - v->y);
-	if (!in_cone(v->dir & 7, dx, dy)) return 0;
+	if (eye & EYE_CONE) { if (!in_cone(v->dir & 7, dx, dy)) return 0; }
+	else if ((int16_t)dx * dx + (int16_t)dy * dy > MAX_VIEW * MAX_VIEW) return 0;
 	return los((int8_t)v->x, (int8_t)v->y, (int8_t)(v->z + ((eye & EYE_SEE) ? 1 : 0)), (int8_t)x, (int8_t)y, (int8_t)z);
 }
 
@@ -496,8 +499,8 @@ uint8_t vis_seen(vu_t *u, uint8_t n, uint8_t nsold, uint8_t *list, uint8_t max) 
 	fog_update(u, nsold);
 	uint8_t ey[MAX_UNITS];               // глаза бойцов — раз на вызов
 	for (uint8_t s = 0; s < nsold && s < MAX_UNITS; s++)
-		ey[s] = (u[s].flags & VU_ALIVE) ? eye_bits(&u[s]) : 0;
-	vis_eye_dbg = nsold ? ey[0] : 0;
+		ey[s] = (u[s].flags & VU_ALIVE) ? eye_bits(&u[s]) | EYE_CONE : 0;
+	vis_eye_dbg = nsold ? ey[0] & ~EYE_CONE : 0;
 	for (uint8_t i = nsold; i < n; i++) {
 		vu_t *a = &u[i];
 		if ((a->flags & (VU_ALIVE | VU_SEEN)) != VU_ALIVE) continue;   // в свой ход отряд не теряет замеченных
@@ -520,7 +523,7 @@ uint8_t vis_list(vu_t *u, uint8_t n, uint8_t nsold, uint8_t sel, uint8_t *list, 
 	vm_cur = old;
 	const vu_t *v = &u[sel];
 	if (vm_page == PG_NONE || !(v->flags & VU_ALIVE)) return 0;
-	uint8_t ey = eye_bits(v);
+	uint8_t ey = eye_bits(v) | EYE_CONE;
 	for (uint8_t i = nsold; i < n && cnt < max; i++) {
 		if ((u[i].flags & VU_ALIVE) && sees_u(v, ey, &u[i])) list[cnt++] = i;
 	}
@@ -535,7 +538,20 @@ uint8_t vis_by_xcom(vu_t *u, uint8_t nsold, uint8_t a) __banked
 	vm_cur = old;
 	if (vm_page == PG_NONE) return 1;
 	for (uint8_t s = 0; s < nsold && s < MAX_UNITS && !seen; s++)
-		if (u[s].flags & VU_ALIVE) seen = sees_u(&u[s], eye_bits(&u[s]), &u[a]);
+		if (u[s].flags & VU_ALIVE) seen = sees_u(&u[s], eye_bits(&u[s]) | EYE_CONE, &u[a]);
+	if (vm_cur != old) pg_map3(old);
+	return seen;
+}
+
+// Видит ли юнит s юнита t: cone — в секторе обзора (calculateFOV), иначе без сектора — дальность и
+// линия взгляда (TileEngine::visible, так ИИ выбирает цель)
+uint8_t vis_pair(vu_t *u, uint8_t s, uint8_t t, uint8_t cone) __banked
+{
+	uint8_t old = pg_win3(), seen = 0;
+	vm_cur = old;
+	if (vm_page == PG_NONE) return 1;
+	if ((u[s].flags & VU_ALIVE) && (u[t].flags & VU_ALIVE))
+		seen = sees_u(&u[s], eye_bits(&u[s]) | (cone ? EYE_CONE : 0), &u[t]);
 	if (vm_cur != old) pg_map3(old);
 	return seen;
 }

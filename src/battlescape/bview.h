@@ -44,6 +44,7 @@ void bv_snapshot(void) __banked;             // то же, но карта ос�
 void bv_snap_copy(uint16_t gx, uint16_t gy, uint8_t pg) __banked;   // её копия (bwalk.c, банк 32)
 void bv_tick(uint8_t sel) __banked;          // прокрутка, курсор клетки, стрелка над sel
 void bv_center(uint8_t x, uint8_t y) __banked;   // камера на клетку (этаж — камеры)
+uint8_t bv_on_screen(uint8_t x, uint8_t y, uint8_t z, uint8_t big) __banked;   // юнит в клетке виден на экране
 uint8_t bv_level(void) __banked;
 void bv_set_level(uint8_t l, uint8_t recenter) __banked;
 void bv_all_levels(void) __banked;           // «1/2»: все этажи или только текущий
