@@ -69,8 +69,7 @@ wait 50
 shot tmp/shots/bat_gren/6_blast.png
 wait 40
 shot tmp/shots/bat_gren/7_blast.png
-# после взрыва — сектора бойцов заново (туман войны, vision.c на C — долго, 14_todo)
-waitmark 249 1500
+waitmark 249 600
 expect 4E:38B8 15
 expect *scr_battle$pf_page:6D00 255
 exit 0
