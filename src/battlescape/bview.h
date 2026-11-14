@@ -57,6 +57,8 @@ void bv_walk_done(void) __banked;            // после 2: новый шаг 
 uint8_t bv_walking(void) __banked;           // кто идёт (#FF — никто)
 // Для ходьбы (bwalk.c): перерисовать прямоугольник вида (мировые); идущий i — в клетке (x, y)
 void bv_repaint(int16_t lo, int16_t hi, int16_t top, int16_t bot) __banked;
+// То же для фазы шага: стрелку выбранного идущего ставит на новое место до перерисовки
+void bv_walk_repaint(int16_t lo, int16_t hi, int16_t top, int16_t bot) __banked;
 // Нарисованная область вида (мировые; в Win1 — читать можно из любого банка), dl_ok — она есть.
 // Функции под это в банке 28 места нет
 extern int16_t vx_lo, vx_hi, vy_lo, vy_hi;

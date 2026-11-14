@@ -158,6 +158,7 @@ static uint8_t aw_l, aw_a;
 int16_t vy_lo, vy_hi;                    // нарисованный мировой диапазон Y (X — vx_lo, vx_hi)
 
 static void repaint(int16_t lo, int16_t hi, int16_t top, int16_t bot);   // кусок вида (ниже)
+static uint8_t arrow_calc(int16_t *px, int16_t *py);                     // место стрелки (ниже)
 
 // Включить сплит: карта — из её холста, панель — из основного, со своей строки 144
 static void split_start(void)
@@ -555,6 +556,19 @@ void bv_repaint(int16_t lo, int16_t hi, int16_t top, int16_t bot) __banked
 	repaint(lo, hi, top, bot);
 }
 
+// Фаза шага (bwalk.c): у выбранного стрелка — между клетками шага, внутри их прямоугольника.
+// Переставить её до перерисовки — тогда arrow_tick не перерисует прежнее и новое место ещё раз
+// (а в каждое попадает идущий целиком — фаза стоила три перерисовки)
+void bv_walk_repaint(int16_t lo, int16_t hi, int16_t top, int16_t bot) __banked
+{
+	if (wk_u == sel) {
+		int16_t x = 0, y = 0;
+		ar_on = arrow_calc(&x, &y);
+		ar_x = x; ar_y = y;
+	}
+	repaint(lo, hi, top, bot);
+}
+
 // Идущий прошёл середину шага: числится в новой клетке (bwalk.c)
 void bv_walk_mid(uint8_t i, uint8_t x, uint8_t y) __banked
 {
@@ -647,21 +661,24 @@ static const uint8_t arrow_bob[8] = { 0, 1, 2, 1, 0, 1, 2, 1 };   // Map.cpp:500
 uint8_t bat_still;                       // 1 — стрелка не качается (сверка кадров в сценариях: poke _bat_still 1)
 // Стрелка — над головой выбранного бойца: середина клетки, 24 - рост (стоя 22, на колене 14 и
 // ещё 2) - высота стрелки, плюс качание (Map.cpp:1185-1198); у идущего — со смещением шага.
+static uint8_t arrow_calc(int16_t *px, int16_t *py)
+{
+	if (sel >= nunits) return 0;
+	const runit_t *u = &units[sel];
+	if (!(u->flags & RU_ALIVE) || u->z > level) return 0;
+	int16_t x = ((int16_t)u->x - u->y) * 16 + 12;
+	int16_t y = ((int16_t)u->x + u->y) * 8 - (int16_t)u->z * 24 + ((u->flags & RU_KNEEL) ? -1 : -7)
+		+ (bat_still ? 0 : arrow_bob[(frames / 5) & 7]);
+	if (wk_u == sel) { x += wk_ox; y += wk_oy; }
+	*px = x; *py = y;
+	return 1;
+}
+
 // Сменилось место или фаза качания — перерисовать прежний и новый прямоугольники
 static void arrow_tick(void)
 {
-	uint8_t on = 0;
 	int16_t x = 0, y = 0;
-	if (sel < nunits) {
-		const runit_t *u = &units[sel];
-		if ((u->flags & RU_ALIVE) && u->z <= level) {
-			on = 1;
-			x = ((int16_t)u->x - u->y) * 16 + 12;
-			y = ((int16_t)u->x + u->y) * 8 - (int16_t)u->z * 24 + ((u->flags & RU_KNEEL) ? -1 : -7)
-				+ (bat_still ? 0 : arrow_bob[(frames / 5) & 7]);
-			if (wk_u == sel) { x += wk_ox; y += wk_oy; }
-		}
-	}
+	uint8_t on = arrow_calc(&x, &y);
 	int16_t ox = ar_x, oy = ar_y;
 	uint8_t oon = ar_on;                 // сравнения — с копиями (SDCC 4.5)
 	if (on == oon && x == ox && y == oy) return;

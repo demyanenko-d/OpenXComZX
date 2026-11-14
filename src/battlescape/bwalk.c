@@ -43,7 +43,8 @@ static uint8_t wk_pend, wk_plx, wk_ply;  // прежняя клетка зако
 static const int8_t wo_x[8] = { 1, 1, 1, 0, -1, -1, -1, 0 };
 static const int8_t wo_y[8] = { 1, 0, -1, -1, -1, 0, 1, 1 };
 
-// Перерисовать прямоугольник обеих клеток шага (и строку-другую на качание торса)
+// Перерисовать прямоугольник обеих клеток шага (и строку-другую на качание торса); сверху — ещё
+// стрелка над выбранным (y клетки − 7 со смещением шага: всегда между двумя клетками)
 static void walk_paint(void)
 {
 	if (wk_u != 0xFF) {
@@ -54,8 +55,8 @@ static void walk_paint(void)
 	int16_t lx = ((int16_t)wk_lx - wk_ly) * 16, dx = ((int16_t)wk_dx - wk_dy) * 16;
 	int16_t ly = ((int16_t)wk_lx + wk_ly) * 8, dy = ((int16_t)wk_dx + wk_dy) * 8;
 	int16_t b = -(int16_t)wk_z * 24;
-	bv_repaint(lx < dx ? lx : dx, (lx > dx ? lx : dx) + TILE_W - 1,
-		(ly < dy ? ly : dy) + b - 2, (ly > dy ? ly : dy) + b + TILE_H + 1);
+	bv_walk_repaint(lx < dx ? lx : dx, (lx > dx ? lx : dx) + TILE_W - 1,
+		(ly < dy ? ly : dy) + b - 8, (ly > dy ? ly : dy) + b + TILE_H + 1);
 }
 
 void bv_walk(uint8_t i, uint8_t lx, uint8_t ly, uint8_t dx, uint8_t dy, uint8_t z, uint8_t d) __banked
