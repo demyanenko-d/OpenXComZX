@@ -167,7 +167,8 @@ namespace OxzConv
 
 		// DEPLOYS (Blob, a = число записей), по 12 байт:
 		//   u8 модулей по X, u8 по Y, u8 этажей, i16 скрипт (-1 — из террейна),
-		//   u8 сколько террейнов, u8 terr[4] — их номера, u8 запас
+		//   u8 сколько террейнов, u8 terr[4] — их номера, u8 запас, u8 флаги (пока 0). До 2026-11-14
+		//   запись была 11 байт при чтении по 12 — у всех развёртываний, кроме первого, — чужие поля
 		byte[] EncodeDeploys()
 		{
 			var b = new List<byte> { (byte)Deploys.Count, (byte)(Deploys.Count >> 8) };
@@ -177,6 +178,7 @@ namespace OxzConv
 				b.Add((byte)(d.Script < 0 ? 0xFF : d.Script)); b.Add((byte)(d.Script < 0 ? 0xFF : d.Script >> 8));
 				b.Add((byte)d.Terrains.Count);
 				for (int i = 0; i < 4; i++) b.Add((byte)(i < d.Terrains.Count ? d.Terrains[i] : 0));
+				b.Add(0);
 				b.Add(0);
 			}
 			return b.ToArray();
@@ -277,8 +279,9 @@ namespace OxzConv
 		// TERRAINS (Blob, a = число террейнов): u16 n, n x u16 смещение записи; запись:
 		//   i16 script (-1 нет), u8 nSets, u8 nBlocks, u8 kind (0 террейн, 1 корабль, 2 НЛО),
 		//   nSets x { u16 MCDSET, u16 TILESET },
-		//   nBlocks x { u16 ресурс MAPBLK, u8 w, u8 l, u8 sz, u8 groups } — размеры в клетках,
-		//   groups — маска групп блока (бит 0 — обычный, 1 — посадочная площадка, …).
+		//   nBlocks x { u16 ресурс MAPBLK, u8 w, u8 l, u8 sz, u16 groups } — размеры в клетках,
+		//   groups — маска групп блока (бит 0 — обычный, 1 — посадочная площадка, …; до 15 —
+		//   у TFTD ENTRY05–08 группы 7..10, байтом они терялись).
 		byte[] EncodeTerrains()
 		{
 			var head = new List<byte>();
@@ -295,7 +298,7 @@ namespace OxzConv
 				foreach (var b in t.Blocks)
 				{
 					U16(body, ids.Id($"MAPBLK_{b.Name}"));
-					body.Add((byte)b.W); body.Add((byte)b.L); body.Add((byte)b.Sz); body.Add((byte)b.Groups);
+					body.Add((byte)b.W); body.Add((byte)b.L); body.Add((byte)b.Sz); U16(body, b.Groups);
 				}
 			}
 			return head.Concat(body).ToArray();

@@ -49,8 +49,10 @@
 
 typedef struct {
 	uint16_t res;                      // ресурс MAPBLK
-	uint8_t w, l, sz, groups;          // размеры в клетках и маска групп
+	uint8_t w, l, sz;                  // размеры в клетках
+	uint16_t groups;                   // маска групп (группы до 15: у TFTD ENTRY05–08 — 7..10)
 } blk_t;
+#define BLK_REC 7                      // запись блока в TERRAINS: u16 res, u8 w, l, sz, u16 groups
 
 // Состояние генерации — в памяти банка (Win1 занят), см. ram= в build.ps1
 typedef struct {
@@ -107,12 +109,13 @@ static uint8_t load_terrain(uint16_t idx, int16_t *script)
 	p += 5;                                 // за nBlocks идёт вид террейна (kind)
 	for (uint8_t i = 0; i < G.nsets; i++) { G.set[i] = far_word(p); G.tset[i] = far_word(p + 2); p += 4; }
 	for (uint8_t i = 0; i < G.nblk; i++) {
-		uint8_t b[6];
-		far_read(p, b, 6);
+		uint8_t b[BLK_REC];
+		far_read(p, b, BLK_REC);
 		G.blk[i].res = (uint16_t)b[0] | ((uint16_t)b[1] << 8);
-		G.blk[i].w = b[2]; G.blk[i].l = b[3]; G.blk[i].sz = b[4]; G.blk[i].groups = b[5];
+		G.blk[i].w = b[2]; G.blk[i].l = b[3]; G.blk[i].sz = b[4];
+		G.blk[i].groups = (uint16_t)b[5] | ((uint16_t)b[6] << 8);
 		G.uses[i] = 0;
-		p += 6;
+		p += BLK_REC;
 	}
 	// размеры наборов нужны, чтобы переводить номер части блока в номер части миссии
 	for (uint8_t i = 0; i < G.nsets; i++) {
@@ -124,7 +127,7 @@ static uint8_t load_terrain(uint16_t idx, int16_t *script)
 
 // ------------------------------------------------------------------ выбор блоков
 
-static uint8_t in_group(uint8_t i, uint8_t g) { return (G.blk[i].groups & (1 << g)) != 0; }
+static uint8_t in_group(uint8_t i, uint8_t g) { return (G.blk[i].groups & ((uint16_t)1 << (g & 15))) != 0; }
 
 // Блок по группам/списку команды: как MapScript::getNextBlock — из блоков нужной группы
 // случайный, с учётом maxUses и того, что блок должен влезть в свободное место.
@@ -340,8 +343,8 @@ static uint8_t place_extra(uint16_t terr, const int16_t *rects, uint8_t nrects, 
 	}
 	p += (uint32_t)nsets * 4;
 
-	uint8_t b[6];
-	far_read(p + (uint32_t)(rng_next() % nblk) * 6, b, 6);
+	uint8_t b[BLK_REC];
+	far_read(p + (uint32_t)(rng_next() % nblk) * BLK_REC, b, BLK_REC);
 	uint16_t res = (uint16_t)b[0] | ((uint16_t)b[1] << 8);
 	uint8_t sw = b[2] / MOD_W, sl = b[3] / MOD_W;
 	if (!sw) sw = 1;
@@ -556,6 +559,13 @@ uint8_t mapgen_run(uint16_t terrain, uint8_t mods, uint8_t levels) __banked
 	G.sx = (uint16_t)G.mx * MOD_W;
 	G.sy = (uint16_t)G.my * MOD_W;
 	if (!load_terrain(terrain, &script)) { dbg_puts("mapgen: no terrain\n"); return 0; }
+	// скрипт развёртывания главнее скрипта террейна (BattlescapeGenerator.cpp:590-594); он задан
+	// mapgen_deploy этой миссии — сбросить, чтобы не достался следующей (отладочный бой без развёртывания)
+	{
+		uint16_t ds = gen_script;
+		gen_script = 0xFFFF;
+		if (ds != 0xFFFF) script = (int16_t)ds;
+	}
 
 	// карта: 4 байта на клетку
 	uint32_t bytes = (uint32_t)G.sx * G.sy * G.sz * 4;
@@ -615,7 +625,10 @@ uint8_t mapgen_run(uint16_t terrain, uint8_t mods, uint8_t levels) __banked
 								if (G.grid[j * MAX_MOD + k]) { G.grid[j * MAX_MOD + k] = 0; G.head[j * MAX_MOD + k] = 0; ok = 1; j = G.my; break; }
 						break;
 					case C_RESIZE:
-						if (c.size > 0 && c.size <= MAX_MOD) {
+						// страницы карты уже выделены: поле больше них — запись за чужие страницы.
+						// Такое поле не растим (в стандартных данных resize только уменьшает: PLANE — до 5)
+						if (c.size > 0 && c.size <= MAX_MOD &&
+						    (uint32_t)c.size * c.size * (MOD_W * MOD_W * 4) * G.sz <= (uint32_t)G.pages * 16384) {
 							G.mx = G.my = (uint8_t)c.size;
 							G.sx = (uint16_t)G.mx * MOD_W;
 							G.sy = (uint16_t)G.my * MOD_W;
