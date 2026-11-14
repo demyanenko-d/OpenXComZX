@@ -85,9 +85,10 @@ typedef struct {
 	uint8_t nm, b, pad;        // открытых клеток в ml_*, позиция упора
 	uint8_t bx, by, bz, ax, ay, az, skip;   // шаг для fog_slow: откуда, куда, пропуск объекта
 	int8_t cx, cy, cz;
+	int8_t x1, y1, z1;         // fl_line: цель (смещение от бойца)
 } fls_t;
 static fls_t __at(0xBE90) F;
-void fl_run(void);                      // vision_s.s
+void fl_line(void);                     // vision_s.s: линия к F.x1..z1 с позиции F.i
 // hblk на ассемблере (vision_s.s hb_fast): 0 — свободно, 1 — упор, #FF — большая стена (-1)
 typedef struct {
 	int8_t sx, sy, z, ex, ey;
@@ -341,46 +342,13 @@ uint8_t fog_slow(void)
 // Линия calculateLine от бойца (ux, uy, uz) к смещению (x1, y1, z1) с позиции st: позиции до st
 // общие с прошлой линией и лежат в pp. Открытые клетки — в ml, потом разом в туман (чтобы Win3 не
 // металось между маской и туманом на каждом шаге). Вернёт номер позиции упора (255 — дошла).
-static uint8_t fov_line(uint8_t ux, uint8_t uy, uint8_t uz, int8_t x1, int8_t y1, int8_t z1, uint8_t st)
+// Боец — в F.ux..uz (fov_unit). Оси, знаки и наклоны линии, шаги — на ассемблере (vision_s.s fl_line;
+// шаги со сменой этажа он отдаёт fog_slow).
+static uint8_t fov_line(int8_t x1, int8_t y1, int8_t z1, uint8_t st)
 {
-	int8_t a1 = x1, b1 = y1, c1 = z1, t;          // в осях линии: a — главная, b и c — ведомые
-	uint8_t sxy = iabs(y1) > iabs(x1);
-	if (sxy) { t = a1; a1 = b1; b1 = t; }
-	uint8_t sxz = iabs(c1) > iabs(a1);
-	if (sxz) { t = a1; a1 = c1; c1 = t; }
-	uint8_t ddx = (uint8_t)iabs(a1), ddy = (uint8_t)iabs(b1), ddz = (uint8_t)iabs(c1);
-	if (st > ddx) return 255;                      // путь целиком общий с прошлой линией
-	int8_t stx = a1 < 0 ? -1 : 1, sty = b1 < 0 ? -1 : 1, stz = c1 < 0 ? -1 : 1;
-	int8_t x = 0, y = 0, z = 0, lx = 0, ly = 0, lz = 0;
-	int16_t dxy = ddx >> 1, dxz = ddx >> 1;
-	uint8_t i = st;
-	if (st) {
-		// позиция st - 1 известна; ведомые оси на ней дают и наклон: после позиции k
-		// drift = ddx/2 - k*ddy + |y_k|*ddx (до шага), — без прохода от начала линии
-		uint8_t j = (uint8_t)(st - 1);
-		lx = pp_x[j]; ly = pp_y[j]; lz = pp_z[j];
-		int8_t px = lx, py = ly, pz = lz;
-		if (sxy) { t = px; px = py; py = t; }
-		if (sxz) { t = px; px = pz; pz = t; }
-		x = px; y = py; z = pz;
-		uint8_t k = (uint8_t)(st - 1);
-		dxy = (int16_t)(ddx >> 1) - (int16_t)((uint16_t)k * ddy) + (int16_t)((uint16_t)(uint8_t)iabs(y) * ddx);
-		dxz = (int16_t)(ddx >> 1) - (int16_t)((uint16_t)k * ddz) + (int16_t)((uint16_t)(uint8_t)iabs(z) * ddx);
-		dxy -= ddy; dxz -= ddz;
-		if (dxy < 0) { y += sty; dxy += ddx; }
-		if (dxz < 0) { z += stz; dxz += ddx; }
-		x += stx;
-	}
-	// сам шаг за шагом — на ассемблере (vision_s.s fl_run); неясные шаги он отдаёт fog_slow
-	F.ux = ux; F.uy = uy; F.uz = uz;
-	F.x = x; F.y = y; F.z = z;
-	F.lx = lx; F.ly = ly; F.lz = lz;
-	F.i = i; F.ddx = ddx; F.ddy = ddy; F.ddz = ddz;
-	F.stx = stx; F.sty = sty; F.stz = stz;
-	F.sxy = sxy; F.sxz = sxz;
-	F.dxy = dxy; F.dxz = dxz;
-	F.nm = 0;
-	fl_run();
+	F.x1 = x1; F.y1 = y1; F.z1 = z1;
+	F.i = st;
+	fl_line();
 	uint8_t nm = F.nm, b = F.b;
 	for (uint8_t k = 0; k < nm; k++) fog_mark(ml_x[k], ml_y[k], ml_z[k]);
 	return b;
@@ -392,6 +360,7 @@ static uint8_t fov_line(uint8_t ux, uint8_t uy, uint8_t uz, int8_t x1, int8_t y1
 static void fov_unit(uint8_t ux, uint8_t uy, uint8_t uz, uint8_t dir)
 {
 	uint8_t swap = (dir & 3) == 0;                 // направления 0 и 4: оси сектора меняются местами
+	F.ux = ux; F.uy = uy; F.uz = uz;               // боец для fl_line
 	int8_t gx = sg_x[dir], gy = sg_y[dir];
 	uint16_t n0 = far_word(FAR(FOGTAB_PAGE, 0));
 	uint16_t n = (dir & 1) ? far_word(FAR(FOGTAB_PAGE, 2)) : n0;
@@ -420,7 +389,7 @@ static void fov_unit(uint8_t ux, uint8_t uy, uint8_t uz, uint8_t dir)
 		if (gx < 0) wx = -wx;
 		if (gy < 0) wy = -wy;
 		if (!in_map((int8_t)(ux + wx), (int8_t)(uy + wy), (int8_t)(uz + dz))) continue;
-		pb = fov_line(ux, uy, uz, wx, wy, dz, have ? leff : 0);
+		pb = fov_line(wx, wy, dz, have ? leff : 0);
 		have = 1;
 		leff = 255;
 	}

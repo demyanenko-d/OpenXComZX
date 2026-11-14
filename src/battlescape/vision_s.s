@@ -8,7 +8,7 @@
 	.module vision_s
 	.optsdcc -mz80 sdcccall(1)
 
-	.globl	_fl_run, _hb_fast, _fog_slow, _pg_map3
+	.globl	_fl_line, _fl_run, _hb_fast, _fog_slow, _pg_map3
 
 	.area	_BANK40
 
@@ -45,6 +45,9 @@ FL_SKIP	= FLS + 31		;   пропуск объекта (позиции 0 и 1)
 FL_CX	= FLS + 32		; текущая позиция (смещение, обычные оси)
 FL_CY	= FLS + 33
 FL_CZ	= FLS + 34
+FL_X1	= FLS + 35		; fl_line: цель (смещение от бойца)
+FL_Y1	= FLS + 36
+FL_Z1	= FLS + 37
 
 PPX	= 0xBE48		; vision.c pp_x / pp_y / pp_z
 PPY	= 0xBE60
@@ -55,6 +58,131 @@ MLZ	= 0xBE30
 YTAB	= 0xBC00		; vision.c ytab: y * sx (слова)
 ZTAB	= 0xBC80		; vision.c ztab: z * sx * sy
 VMCUR	= 0xBCD5		; vision.c vm_cur: что сейчас в Win3
+
+;; void fl_line(void): линия к цели F.x1, y1, z1 с позиции F.i (позиции до неё — в pp_* от прошлой
+;; линии). Оси и знаки линии (calculateLine: главная — самая длинная, xy, затем xz), состояние
+;; ведомых осей на позиции i — прогоном Брезенхема от нуля без проверок, дальше — fl_run.
+;; Выход: F.nm открытых клеток в ml_*, F.b — позиция упора (#FF — дошла или вся линия общая)
+_fl_line::
+	xor	a, a
+	ld	(FL_NM), a
+	ld	(FL_SXY), a
+	ld	(FL_SXZ), a
+	ld	a, (FL_X1)
+	ld	b, a			; B = a1 (главная)
+	ld	a, (FL_Y1)
+	ld	c, a			; C = b1
+	ld	a, (FL_Z1)
+	ld	d, a			; D = c1
+	;; |b1| > |a1| — главная ось y
+	ld	a, c
+	call	aabs
+	ld	e, a
+	ld	a, b
+	call	aabs
+	cp	a, e
+	jr	nc, 1$
+	ld	a, b
+	ld	b, c
+	ld	c, a
+	ld	a, #1
+	ld	(FL_SXY), a
+1$:	;; |c1| > |a1| — главная ось z
+	ld	a, d
+	call	aabs
+	ld	e, a
+	ld	a, b
+	call	aabs
+	cp	a, e
+	jr	nc, 2$
+	ld	a, b
+	ld	b, d
+	ld	d, a
+	ld	a, #1
+	ld	(FL_SXZ), a
+2$:	ld	a, b
+	call	aabs
+	ld	(FL_DDX), a
+	ld	a, c
+	call	aabs
+	ld	(FL_DDY), a
+	ld	a, d
+	call	aabs
+	ld	(FL_DDZ), a
+	ld	a, b
+	call	asgn
+	ld	(FL_STX), a
+	ld	a, c
+	call	asgn
+	ld	(FL_STY), a
+	ld	a, d
+	call	asgn
+	ld	(FL_STZ), a
+	;; позиция i за концом линии — путь целиком общий с прошлой
+	ld	a, (FL_DDX)
+	ld	b, a
+	ld	a, (FL_I)
+	cp	a, b
+	jr	z, 3$
+	jr	c, 3$
+	ld	a, #0xFF
+	ld	(FL_B), a
+	ret
+3$:	;; начало: позиция 0, наклоны ddx / 2
+	xor	a, a
+	ld	(FL_X), a
+	ld	(FL_Y), a
+	ld	(FL_Z), a
+	ld	(FL_LX), a
+	ld	(FL_LY), a
+	ld	(FL_LZ), a
+	ld	a, (FL_DDX)
+	srl	a
+	ld	l, a
+	ld	h, #0
+	ld	(FL_DXY), hl
+	ld	(FL_DXZ), hl
+	ld	a, (FL_I)
+	or	a, a
+	jp	z, _fl_run
+	;; прошлая позиция — из пути прошлой линии
+	dec	a
+	ld	e, a
+	ld	d, #0
+	ld	hl, #PPX
+	add	hl, de
+	ld	a, (hl)
+	ld	(FL_LX), a
+	ld	hl, #PPY
+	add	hl, de
+	ld	a, (hl)
+	ld	(FL_LY), a
+	ld	hl, #PPZ
+	add	hl, de
+	ld	a, (hl)
+	ld	(FL_LZ), a
+	;; Брезенхем вперёд на i позиций без проверок
+	ld	a, (FL_I)
+	ld	b, a
+4$:	push	bc
+	call	fl_adv
+	pop	bc
+	djnz	4$
+	jp	_fl_run
+
+;; A = |A|
+aabs:
+	bit	7, a
+	ret	z
+	neg
+	ret
+;; A = знак шага: -1 при A < 0, иначе 1
+asgn:
+	bit	7, a
+	ld	a, #1
+	ret	z
+	ld	a, #-1
+	ret
 
 ;; void fl_run(void): линия с позиции F.i до конца или упора
 _fl_run::
@@ -185,7 +313,11 @@ fl_pass:
 	ret
 4$:	inc	a
 	ld	(FL_I), a
-	;; ведомые оси: drift -= dd; < 0 — шаг и drift += ddx
+	call	fl_adv
+	jp	fl_loop
+
+;; Шаг Брезенхема (позиция x, y, z в осях линии): ведомые оси — drift -= dd; < 0 — шаг и drift += ddx
+fl_adv:
 	ld	a, (FL_DDX)
 	ld	c, a			; C = ddx
 	ld	hl, (FL_DXY)
@@ -223,7 +355,7 @@ fl_pass:
 	ld	a, (FL_X)
 	add	a, b
 	ld	(FL_X), a
-	jp	fl_loop
+	ret
 
 ;; Клетка a (FL_AX..AZ) — в список открытых
 fl_add:
