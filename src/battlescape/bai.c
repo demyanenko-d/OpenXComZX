@@ -36,18 +36,18 @@
 #define PATH_MAX  48
 #define ATK_MAX   3
 
-// Память банка (tools/build.ps1 ram = #B000)
-static uint8_t __at(0xB000) ai_path[PATH_MAX];
-static uint8_t __at(0xB030) ai_a;        // кто ходит
-static uint8_t __at(0xB031) ai_pn;       // шагов в пути
-static uint8_t __at(0xB032) ai_pi;       //   и пройдено
-static uint8_t __at(0xB033) ai_moved;    // уже шёл в этот ход
-static uint8_t __at(0xB034) ai_atk;      // атак в этот ход
-static uint8_t __at(0xB035) ai_walk;     // идёт шаг с анимацией
-static uint8_t __at(0xB036) ai_wx;       // куда шаг
-static uint8_t __at(0xB037) ai_wy;
-static uint8_t __at(0xB038) ai_aim;      // повернулся к цели — выстрел в следующем такте (карта видна)
-// #B040..#B067 — ai_tss[MAX_BUNITS], turnsSinceSpotted (bai.h)
+// Память банка (tools/build.ps1 ram = #BF00): код — до #BEFF
+static uint8_t __at(0xBF00) ai_path[PATH_MAX];
+static uint8_t __at(0xBF30) ai_a;        // кто ходит
+static uint8_t __at(0xBF31) ai_pn;       // шагов в пути
+static uint8_t __at(0xBF32) ai_pi;       //   и пройдено
+static uint8_t __at(0xBF33) ai_moved;    // уже шёл в этот ход
+static uint8_t __at(0xBF34) ai_atk;      // атак в этот ход
+static uint8_t __at(0xBF35) ai_walk;     // идёт шаг с анимацией
+static uint8_t __at(0xBF36) ai_wx;       // куда шаг
+static uint8_t __at(0xBF37) ai_wy;
+static uint8_t __at(0xBF38) ai_aim;      // повернулся к цели — выстрел в следующем такте (карта видна)
+// #BF40..#BF67 — ai_tss[MAX_BUNITS], turnsSinceSpotted (bai.h)
 #define CHEAT_TURN 20                     // AlienDeployment::_cheatTurn по умолчанию
 
 static const int8_t dir_dx[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
@@ -117,7 +117,7 @@ static void moved(const aictx_t *c)
 }
 
 // Кого каждый боец уже видел в этот ход (BattleUnit::_unitsSpottedThisTurn): по биту на юнита
-#define AI_SPOT ((uint8_t *)0xB068)      // MAX_UNITS x 5 байт, до #B0A3
+#define AI_SPOT ((uint8_t *)0xBF68)      // MAX_UNITS x 5 байт, до #BFA3
 #define SPOT_W  ((MAX_BUNITS + 7) / 8)
 
 uint8_t ai_spotted(uint8_t s, const uint8_t *list, uint8_t n) __banked
@@ -146,6 +146,7 @@ static void spot_reset(const aictx_t *c)
 void ai_tss_init(const aictx_t *c) __banked
 {
 	memset(ai_tss, 255, MAX_BUNITS);
+	memset(ai_hitby, 0, MAX_BUNITS * 2);
 	spot_reset(c);
 }
 
@@ -161,6 +162,7 @@ void ai_round(const aictx_t *c, uint8_t turn) __banked
 	}
 	spot_all(c);
 	spot_reset(c);
+	memset(ai_hitby, 0, MAX_BUNITS * 2);             // AIModule::reset — пришельцы забывают, кто в них попал
 }
 
 void ai_spot(const aictx_t *c, uint8_t m) __banked
@@ -330,11 +332,10 @@ uint8_t ai_react(const aictx_t *c, uint8_t m) __banked
 			if (!gun(c, i, &b, &right, &w) || !w.tu_snap || d2 >= (uint16_t)w.max_range * w.max_range) continue;
 			uint8_t cost = tu_cost(&r, &w, w.tu_snap);
 			if (!cost || r.tu <= cost) continue;
-			// видит ли i юнита m: пришелец смотрит на бойцов [0, nsold), боец — на пришельцев [nsold, n)
-			uint8_t list[16], nl = player ? vis_list(v, c->nsold, 0, i, list, sizeof list)
-			                              : vis_list(v, c->n, c->nsold, i, list, sizeof list), seen = 0;
-			for (uint8_t k = 0; k < nl; k++) if (list[k] == m) seen = 1;
-			if (!seen) continue;
+			// видит ли i юнита m: в секторе, а если в i попали (gotHit) — и без сектора
+			// видит ли i юнита m: в секторе, а если в i попали (gotHit) — и без сектора
+			uint8_t hit = i < c->nsold ? ai_hitby[i] != 0 : m < 16 && (ai_hitby[i] >> m) & 1;
+			if (!vis_pair(v, i, m, !hit)) continue;
 			int16_t sc = r.tu_max ? (int16_t)((uint16_t)r.reactions * r.tu / r.tu_max) : 0;
 			if (sc > bs) { bs = sc; br = i; bright = right; bcost = cost; bb = b; bw = w; }
 		}
@@ -451,6 +452,7 @@ static uint8_t hidden(const aictx_t *c)
 
 uint8_t ai_tick(const aictx_t *c) __banked
 {
+	memset(ai_hitby, 0, c->nsold * 2);               // resetUnitHitStates — перед действием ИИ
 	uint8_t r = ai_step(c);
 	return r & AI_DONE ? r : r | hidden(c);
 }

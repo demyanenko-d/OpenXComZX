@@ -102,7 +102,10 @@ uint8_t ba_shot(const bashot_t *q) __banked
 	v.mor = loss >= v.mor ? 0 : (uint8_t)(v.mor - loss);
 	uint8_t dead = !v.hp || v.stun >= v.hp;
 	if (dead) v.alive = 0;
-	if (v.faction == FACTION_HOSTILE) ai_tss[q->shooter] = 0;   // попал в пришельца — его заметили (ProjectileFlyBState:794)
+	if (v.faction == FACTION_HOSTILE) {          // попал в пришельца — его заметили (ProjectileFlyBState:794)
+		ai_tss[q->shooter] = 0;
+		if (q->shooter < 16) ai_hitby[s.hit] |= (uint16_t)1 << q->shooter;   // setWasHitBy
+	} else ai_hitby[s.hit] = 1;                  // hitState
 	u_set(s.hit, &v);
 	if (dead) ba_kill(q->page, s.hit, n);
 	return s.hit;

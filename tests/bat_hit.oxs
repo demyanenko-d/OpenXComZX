@@ -1,0 +1,36 @@
+# Огонь в ответ раненого (TileEngine::getSpottingUnits: gotHit — AIModule::getWasHitBy): сцена
+# bat_known — боец (6,34) у пришельца (3,34), пришелец смотрит на юго-запад и бойца в секторе не
+# видит. Помечаем, что боец 0 в него попал (ai_hitby[6] = 1 — слово #3FB0 страницы #ED, память
+# банка 36; так его ставит bact.c при попадании). Боец шагает на запад в (5,34) — пришелец отвечает
+# и вне сектора: разворот на восток (units[6].dir, #39A3 = 2), выстрел навскидку (время 54 -> 38).
+# Без пометки он стоит (проверено отладкой; bat_spot — тот же шаг без ответа).
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_hit.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _bat_still 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+key j
+wait 60
+key x
+wait 10
+key CS+J
+wait 60
+expect 4E:39A3 5
+poke ED:3FB0 1
+key c
+wait 60
+# клетка (5,34) к западу: экран центрован на бойце
+pokew _cursor_x 160
+pokew _cursor_y 88
+wait 5
+click L
+wait 60
+shot tmp/shots/bat_hit/00.png
+expect 4E:3880 5
+expect 4E:39A3 2
+expect 4E:39A6 38
+exit 0
