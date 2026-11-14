@@ -207,7 +207,8 @@ static void see_update(void)
 		v[i].flags = (u->alive ? VU_ALIVE : 0) | (u->size > 1 ? VU_BIG : 0) | (u->seen ? VU_SEEN : 0);
 	}
 	int16_t r[4];                        // туман войны: перерисовать открытое в нарисованной области
-	vis_view(bv_area(r) ? r : 0);
+	r[0] = vx_lo; r[1] = vx_hi; r[2] = vy_lo; r[3] = vy_hi;
+	vis_view(dl_ok ? r : 0);
 	uint8_t n = vis_seen(v, nunits, nsold, list, sizeof list);
 	if (vis_fog_rect(r)) bv_repaint(r[0], r[1], r[2], r[3]);
 	// значки над панелью — кого видит выбранный боец (updateSoldierInfo: getVisibleUnits)

@@ -56,8 +56,10 @@ void bv_walk_done(void) __banked;            // после 2: новый шаг 
 uint8_t bv_walking(void) __banked;           // кто идёт (#FF — никто)
 // Для ходьбы (bwalk.c): перерисовать прямоугольник вида (мировые); идущий i — в клетке (x, y)
 void bv_repaint(int16_t lo, int16_t hi, int16_t top, int16_t bot) __banked;
-// Нарисованная область вида (мировые lo, hi, top, bot) — 1; вида ещё нет — 0
-uint8_t bv_area(int16_t *r) __banked;
+// Нарисованная область вида (мировые; в Win1 — читать можно из любого банка), dl_ok — она есть.
+// Функции под это в банке 28 места нет
+extern int16_t vx_lo, vx_hi, vy_lo, vy_hi;
+extern uint8_t dl_ok;
 void bv_walk_mid(uint8_t i, uint8_t x, uint8_t y) __banked;
 uint16_t bv_dl_n(void) __banked;             // команд в списке вида (отладка)
 // Спрайты поверх вида (пуля, вспышка — bfx.c): n записей в третьей рабочей странице (loader.h

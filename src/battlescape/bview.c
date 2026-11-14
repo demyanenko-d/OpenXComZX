@@ -35,7 +35,7 @@ static uint8_t level;                // этаж камеры
 // внутрь, но верхние этажи не видны — как в оригинале.
 static uint8_t all_levels = 1;
 static int16_t cam_x, cam_y;         // начало координат карты на экране
-static int16_t vx_lo, vx_hi;         // мировой диапазон X, который сейчас нарисован (Y — vy_lo, vy_hi)
+int16_t vx_lo, vx_hi;                // мировой диапазон X, который сейчас нарисован (Y — vy_lo, vy_hi; bview.h)
 static uint8_t __at(0xBC00) tile_y[256];   // вертикальное смещение тайла (MCD.P_Level) — память банка
 static far_t cells;                  // начало клеток карты
 static uint8_t loaded;
@@ -104,7 +104,7 @@ static uint8_t cur_anim;                 // _animFrame: 0..7, шаг 100 мс
 #define DL_PAGE_N 2048                   // записей в странице (16 КБ / 8)
 uint8_t dl_page = PG_NONE;               // первая из двух подряд (и scr_battle_s.s)
 uint16_t dl_n;                       // записей в списке
-static uint8_t dl_ok;                // список отвечает текущему виду
+uint8_t dl_ok;                       // список отвечает текущему виду (bview.h)
 
 // Сплит-экран (17_battle_render.md §3): карта живёт в своём холсте и показывается смещениями
 // GXOffs/GYOffs, а панель ICONS остаётся в основном холсте — на строке VIEW_H-1 строчное
@@ -155,7 +155,7 @@ static uint8_t away;                     // поверх боя открывал
 // только если они те же
 static int16_t aw_x, aw_y;
 static uint8_t aw_l, aw_a;
-static int16_t vy_lo, vy_hi;             // нарисованный мировой диапазон Y (X — vx_lo, vx_hi)
+int16_t vy_lo, vy_hi;                    // нарисованный мировой диапазон Y (X — vx_lo, vx_hi)
 
 static void repaint(int16_t lo, int16_t hi, int16_t top, int16_t bot);   // кусок вида (ниже)
 
@@ -553,13 +553,6 @@ void bv_cell(uint8_t x, uint8_t y, uint8_t z) __banked
 void bv_repaint(int16_t lo, int16_t hi, int16_t top, int16_t bot) __banked
 {
 	repaint(lo, hi, top, bot);
-}
-
-uint8_t bv_area(int16_t *r) __banked
-{
-	if (!dl_ok || dl_page == PG_NONE) return 0;
-	r[0] = vx_lo; r[1] = vx_hi; r[2] = vy_lo; r[3] = vy_hi;
-	return 1;
 }
 
 // Идущий прошёл середину шага: числится в новой клетке (bwalk.c)

@@ -267,9 +267,10 @@ namespace OxzConv
 				nBat++;
 			}
 			// Частицы пуль (extraSprites Projectiles, 105x33 по 3x3: 35 на тип пули, Map::drawTerrain):
-			// кадр шириной 4 (DMA — словами), за ними — те же кадры тенью (blitNShade 16: цвет ->
-			// последний своего ряда палитры). У TFTD — наземный набор (UnderwaterProjectiles — когда
-			// у боя будет глубина)
+			// кадр шириной 4 (DMA — словами), за ними — те же кадры тенью (blitNShade 16: тень больше
+			// 15 — «так темно, что перешло бы в другой цвет» — точка цвета 15, чёрная в палитре боя;
+			// Surface.cpp:946-949). У TFTD — наземный набор (UnderwaterProjectiles — когда у боя
+			// будет глубина)
 			string proj = Extra("Projectiles");
 			if (proj != null)
 			{
@@ -284,7 +285,7 @@ namespace OxzConv
 								for (int x = 0; x < 3; x++)
 								{
 									byte c = p.Px[(fy * 3 + y) * p.W + fx * 3 + x];
-									fr.Px[y * 4 + x] = c != 0 && shade != 0 ? (byte)((c & 0xF0) | 0x0F) : c;
+									fr.Px[y * 4 + x] = c != 0 && shade != 0 ? (byte)15 : c;
 								}
 							pf.Add(fr);
 						}
