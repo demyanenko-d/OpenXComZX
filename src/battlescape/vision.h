@@ -29,6 +29,7 @@ uint8_t vis_list(vu_t *u, uint8_t n, uint8_t nsold, uint8_t sel, uint8_t *list, 
 #define FOG_W 1                // западная стена
 #define FOG_N 2                // северная стена
 #define FOG_C 4                // пол и содержимое (с ним — и обе стены)
+#define FOG_L 8                // клетка уже отмечена линией (соседям стены выставлены) — виду не нужен
 uint8_t vis_fog_page(void) __banked;
 // Открытое с прошлого вызова: прямоугольник вида (мировые lo, hi, top, bot) — 1, ничего — 0
 uint8_t vis_fog_rect(int16_t *r) __banked;
