@@ -21,8 +21,10 @@ typedef struct {
 // Что пришельцы знают об остальных (BattleUnit::_turnsSinceSpotted): ходов с тех пор, как юнита
 // видел кто-то из пришельцев (255 — никогда). ИИ целится только в тех, у кого счёт не больше
 // его intelligence (AIModule::validTarget). Память банка 36 — только для кода банка (bact.c)
-#define ai_tss ((uint8_t *)0xB040)   // MAX_BUNITS байт с #B040 (extern с __at SDCC не сводит)
-void ai_tss_init(void) __banked;            // начало боя: никого не видели
+#define ai_tss ((uint8_t *)0xB040)   // MAX_BUNITS байт с #B040 (extern с __at SDCC не сводит)void ai_tss_init(const aictx_t *c) __banked;   // начало боя: никого не видели
+// Боец s видит юнитов list[n]: 1 — среди них есть новые для него в этот ход (getUnitsSpottedThisTurn:
+// путь обрывается, UnitWalkBState.cpp:202-216, :446-468)
+uint8_t ai_spotted(uint8_t s, const uint8_t *list, uint8_t n) __banked;
 // Начало хода X-COM (SavedBattleGame::endTurn:884-901): счёт +1, с хода cheatTurn (или его
 // половины при двух пришельцах и меньше) пришельцы знают всех бойцов; и обзор пришельцев заново
 void ai_round(const aictx_t *c, uint8_t turn) __banked;

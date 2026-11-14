@@ -69,7 +69,6 @@ static uint8_t bt_reserve, bt_res_kneel; // резерв времени (RES_*) 
 static uint8_t bt_action, bt_action_tu, bt_hand;   // выбранное действие, его цена и рука
 static uint8_t bt_acc, bt_aim;                     // меткость действия; ждём клетку-цель (прицел)
 static void next_turn_close(void);       // окно хода (ниже)
-static void unit_armor(unit_t *u, uint16_t arm);   // броня бойца (ниже)
 static uint8_t reserve_ok(uint8_t i, uint8_t cost);   // резерв времени (ниже)
 static void do_kneel(void);
 static void ai_ctx(aictx_t *c);           // миссия для ИИ (ниже)
@@ -198,6 +197,8 @@ static void marks_on(void)
 	marks_show(nmarks, ui_color_in(UI_SCR_BATTLESCAPE, UI_EL_VISIBLEUNITS, 0));
 }
 
+static uint8_t wl_spot;                  // на этом шаге замечен новый пришелец — путь обрывается
+
 static void see_update(void)
 {
 	uint8_t list[16];
@@ -221,6 +222,7 @@ static void see_update(void)
 	// значки над панелью — кого видит выбранный боец (updateSoldierInfo: getVisibleUnits)
 	for (uint8_t i = 0; i < nunits; i++) if (units[i].seen) v[i].flags |= VU_SEEN;
 	nmarks = sel < nsold ? vis_list(v, nunits, nsold, sel, marks_u, sizeof marks_u) : 0;
+	if (bt_side == FACTION_PLAYER && ai_spotted(sel, marks_u, nmarks)) wl_spot = 1;   // новые для него
 	marks_on();
 	if (!n) return;
 	for (uint8_t i = 0; i < n; i++) units[list[i]].seen = 1;
@@ -457,7 +459,12 @@ static void step_unit(void)
 		unit_changed(i);
 		return;
 	}
-	if (u->dir != d) { turn_to(i, d); return; }      // сперва развернуться лицом к шагу
+	if (u->dir != d) {                               // сперва развернуться лицом к шагу; поворот
+		wl_spot = 0;                                 //   открыл нового пришельца — стоп
+		turn_to(i, d);                               //   (UnitWalkBState.cpp:446-468)
+		if (wl_spot) path_n = 0;
+		return;
+	}
 	uint8_t r = door_try(u, d, 0);                   // дверь открывается вместо шага, створку
 	if (r == 1) { path_n = 0; hud_warn(STR_NOT_ENOUGH_TIME_UNITS); }   //   НЛО ждут; не хватило
 	if (r != 2) return;                              //   времени — путь прерван
@@ -537,36 +544,13 @@ static uint8_t load_gen(uint16_t terrain)
 	an_on = 0;
 	bt_turn = 1;
 	bt_side = FACTION_PLAYER;
-	ai_tss_init();                       // пришельцы ещё никого не видели
 	gen_mode = 1;
 	sel = 0;
-	for (uint8_t i = 0; i < nsold; i++) {   // боевые показатели: солдат кампании или отладочные
-		unit_t *u = &units[i];
-		uint16_t arm = 0xFFFF;
-		uint8_t st = 0;                      // тип солдата (soldiers): рост и броня по умолчанию
-		u->hand = 1;                         // активная рука — правая (BattleUnit: STR_RIGHT_HAND)
-		if (u->sol != 0xFF) {
-			soldier_t s;
-			far_read(FAR(SOLDIER_PAGE, 0) + (uint16_t)u->sol * sizeof s, &s, sizeof s);
-			u->bravery = s.cur.bravery; u->reactions = s.cur.reactions; u->firing = s.cur.firing;
-			u->throwing = s.cur.throwing; u->strength = s.cur.strength; u->psi_str = s.cur.psi_strength;
-			u->psi_skill = s.cur.psi_skill; u->melee = s.cur.melee;
-			arm = s.armor == 0xFF ? 0xFFFF : s.armor;
-			st = s.type;
-		} else {
-			u->bravery = 50; u->reactions = 50; u->firing = 60; u->throwing = 60;
-			u->strength = 30; u->melee = 40;
-		}
-		{
-			rtab_t t;
-			r_soldiers_t sr;
-			if (rtab_open(RES_RULE_SOLDIERS, &t) && st < t.n) {
-				rtab_get(&t, st, &sr);
-				u->h_stand = sr.stand_height; u->h_kneel = sr.kneel_height; u->h_float = sr.float_height;
-				if (u->sol == 0xFF) arm = sr.armor;   // отладочный боец — броня типа солдата
-			}
-		}
-		unit_armor(u, arm);
+	stats_crew(nsold);                   // боевые показатели, рост и броня отряда (bstats.c)
+	{                                    // пришельцы ещё никого не видели; бойцы — кого видят сейчас
+		aictx_t c;
+		ai_ctx(&c);
+		ai_tss_init(&c);
 	}
 	see_update();                        // кого отряд видит с места высадки (рост уже известен — глаза)
 	bt_reserve = RES_NONE;
@@ -758,24 +742,6 @@ static uint8_t in_craft(const unit_t *u)
 	uint8_t c;
 	far_read(cells + ((uint32_t)((uint16_t)u->z * m_sy + u->y) * m_sx + u->x) * 4, &c, 1);
 	return c >= m_cbase && c;
-}
-
-// Броня бойца (BattleUnit(Soldier*)): значения по сторонам и прибавка к характеристикам
-// (_stats += armor->getStats())
-static void unit_armor(unit_t *u, uint16_t arm)
-{
-	rtab_t t;
-	r_armors_t a;
-	u->armor_rule = arm;
-	if (!rtab_open(RES_RULE_ARMORS, &t) || arm >= t.n) return;
-	rtab_get(&t, arm, &a);
-	u->armor[0] = a.front_armor; u->armor[1] = u->armor[2] = a.side_armor;
-	u->armor[3] = a.rear_armor; u->armor[4] = a.under_armor;
-	u->tu += a.stats.tu; u->tu_max += a.stats.tu; u->en += a.stats.stamina; u->en_max += a.stats.stamina;
-	u->hp += a.stats.health; u->hp_max += a.stats.health; u->bravery += a.stats.bravery;
-	u->reactions += a.stats.reactions; u->firing += a.stats.firing; u->throwing += a.stats.throwing;
-	u->strength += a.stats.strength; u->psi_str += a.stats.psi_strength; u->psi_skill += a.stats.psi_skill;
-	u->melee += a.stats.melee;
 }
 
 // ---------------------------------------------------------------- характеристики
@@ -1013,9 +979,13 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				unit_t *u = &units[i];
 				u->x = wl_x; u->y = wl_y;
 				ru_put(i);
+				wl_spot = 0;
 				see_update();                // шаг — пересчёт обзора (UnitWalkBState)
 			} else if (r == 2) {             // следующий шаг — в том же такте, без кадра стойки
-				if (react(i)) {              // шаг сделан: огонь в ответ обрывает путь
+				// замечен новый пришелец — путь обрывается, огня в ответ на этом шаге нет
+				// (UnitWalkBState.cpp:202-216: новый для идущего в этот ход — bai.c ai_spotted)
+				if (wl_spot) { wl_spot = 0; path_n = 0; }
+				else if (react(i)) {         // шаг сделан: огонь в ответ обрывает путь
 					path_n = 0;
 					bv_walk_done();
 					if (!battle_end(0)) ui_dirty(0);

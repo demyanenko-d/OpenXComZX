@@ -1,0 +1,42 @@
+# Путь обрывается, когда идущий замечает нового для себя юнита (UnitWalkBState.cpp:202-216 —
+# после шага, :446-468 — на повороте; getUnitsSpottedThisTurn — bai.c ai_spotted, маска бойца s —
+# 5 байт с #3068 + 5s страницы #ED). Сцена bat_known: боец (6,34) у пришельца (3,34). Бойца
+# отворачиваем на восток (units[0].dir, #3883 = 2), его маску «уже видел» обнуляем и щёлкаем по
+# (4,34) к западу: на повороте к юго-западу (dir 5) пришелец входит в сектор — боец стоит в
+# (6,34), путь прерван. Раньше он доходил дальше.
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_spot.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _bat_still 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+key j
+wait 60
+key x
+wait 10
+key CS+J
+wait 60
+poke 4E:3883 2
+poke 4E:39C2 0
+key c
+wait 60
+# клетка (4,34): экран центрован на бойце — точка 176 + (dx - dy)·16, 96 + (dx + dy)·8
+pokew _cursor_x 144
+pokew _cursor_y 80
+wait 5
+poke ED:3068 0
+poke ED:3069 0
+poke ED:306A 0
+poke ED:306B 0
+poke ED:306C 0
+click L
+wait 150
+shot tmp/shots/bat_spot/00.png
+expect 4E:3880 6
+expect 4E:3881 34
+expect 4E:3883 5
+expect scr_battle$path_n 0
+exit 0

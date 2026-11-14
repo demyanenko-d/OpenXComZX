@@ -12,6 +12,9 @@ typedef struct {
 	uint8_t armor[5];
 } ustat_t;
 
-void stats_draw(const ustat_t *s) __banked;   // весь экран 320x200
+void stats_draw(const ustat_t *s) __banked;
+// Боевые показатели отряда (units[0..nsold), units.h UNITS_FAR): солдат кампании или отладочные,
+// рост и броня типа солдата, броня с прибавками (BattleUnit(Soldier*)). Вынесено из банка 31
+void stats_crew(uint8_t nsold) __banked;   // весь экран 320x200
 
 #endif

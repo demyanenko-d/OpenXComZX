@@ -116,9 +116,37 @@ static void moved(const aictx_t *c)
 	spot_by(c, v, ai_a);
 }
 
-void ai_tss_init(void) __banked
+// Кого каждый боец уже видел в этот ход (BattleUnit::_unitsSpottedThisTurn): по биту на юнита
+#define AI_SPOT ((uint8_t *)0xB068)      // MAX_UNITS x 5 байт, до #B0A3
+#define SPOT_W  ((MAX_BUNITS + 7) / 8)
+
+uint8_t ai_spotted(uint8_t s, const uint8_t *list, uint8_t n) __banked
+{
+	uint8_t r = 0;
+	if (s >= MAX_UNITS) return 0;
+	uint8_t *m = AI_SPOT + (uint16_t)s * SPOT_W;
+	for (uint8_t k = 0; k < n; k++) {
+		uint8_t i = list[k], b = (uint8_t)(1 << (i & 7));
+		if (!(m[i >> 3] & b)) { m[i >> 3] |= b; r = 1; }
+	}
+	return r;
+}
+
+// Начало хода X-COM (prepareNewTurn + recalculateFOV): у бойцов в списке — кого они видят сейчас
+static void spot_reset(const aictx_t *c)
+{
+	vu_t v[MAX_BUNITS];
+	uint8_t list[16];
+	memset(AI_SPOT, 0, MAX_UNITS * SPOT_W);
+	fill_vu(c, v);
+	for (uint8_t s = 0; s < c->nsold && s < MAX_UNITS; s++)
+		ai_spotted(s, list, vis_list(v, c->n, c->nsold, s, list, sizeof list));
+}
+
+void ai_tss_init(const aictx_t *c) __banked
 {
 	memset(ai_tss, 255, MAX_BUNITS);
+	spot_reset(c);
 }
 
 void ai_round(const aictx_t *c, uint8_t turn) __banked
@@ -132,6 +160,7 @@ void ai_round(const aictx_t *c, uint8_t turn) __banked
 		if (cheat && i < c->nsold) { u_get(i, &x); if (x.alive) ai_tss[i] = 0; }
 	}
 	spot_all(c);
+	spot_reset(c);
 }
 
 void ai_spot(const aictx_t *c, uint8_t m) __banked
