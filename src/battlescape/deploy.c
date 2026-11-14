@@ -168,7 +168,9 @@ uint8_t aliens_deploy(const adreq_t *r, uint8_t nsold, uint8_t sx, uint8_t sy) _
 {
 	adep_t *q = &adq;
 	unit_t *u = du;
-	uint8_t n = nsold, max = MAX_BUNITS;
+	// юнитов миссии — до MAX_BUNITS, пришельцев — сколько помещается в TL_AUNITS (иначе запись
+	// затирала кадры рук и TL_HANDPG: колония TFTD — 34 пришельца при шести бойцах)
+	uint8_t n = nsold, max = nsold + TL_AMAX < MAX_BUNITS ? nsold + TL_AMAX : MAX_BUNITS;
 	q->deploy = r->deploy; q->race = r->race; q->ufo = r->ufo; q->page = r->page;
 	far_read(FAR(q->page + 1, TL_UNITS), du, (uint16_t)nsold * sizeof(unit_t));   // отряд: занятые клетки
 	rtab_t t;

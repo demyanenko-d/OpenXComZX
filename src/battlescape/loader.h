@@ -33,6 +33,7 @@
 #define TL_BIGW   11264        // 256 байт: MCD.Big_Wall части по номеру (Pathfinding::bigWallTypes)
 #define TL_BITEMS 11520        // предметы боя: bitem_t (bitems.h), BI_MAX по 10 байт (до #3700)
 #define TL_AUNITS 14080        // пришельцы от расстановки (deploy.c): unit_t, до 28 записей (до #3C40)
+#define TL_AMAX   28           //   больше не помещается: следом TL_HARMS, TL_UHS, TL_HANDPG
 // Оружие в руках бойцов X-COM (UnitSprite::drawRoutine0): кадры листа 232..263 — руки, держащие
 // предмет; у бойца i — два байта слотов кадров предмета (правая, левая): 0 — пусто, иначе
 // номер слота + 1, бит 7 — двуручное; кадры предметов HANDOB по слотам — по 8 направлений,

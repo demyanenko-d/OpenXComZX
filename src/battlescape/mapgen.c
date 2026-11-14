@@ -51,8 +51,9 @@ typedef struct {
 	uint16_t res;                      // ресурс MAPBLK
 	uint8_t w, l, sz;                  // размеры в клетках
 	uint16_t groups;                   // маска групп (группы до 15: у TFTD ENTRY05–08 — 7..10)
+	uint8_t rev;                       // revealedFloors: маска этажей, открытых сразу
 } blk_t;
-#define BLK_REC 7                      // запись блока в TERRAINS: u16 res, u8 w, l, sz, u16 groups
+#define BLK_REC 8                      // запись блока в TERRAINS: u16 res, u8 w, l, sz, u16 groups, u8 rev
 
 // Состояние генерации — в памяти банка (Win1 занят), см. ram= в build.ps1
 typedef struct {
@@ -114,6 +115,7 @@ static uint8_t load_terrain(uint16_t idx, int16_t *script)
 		G.blk[i].res = (uint16_t)b[0] | ((uint16_t)b[1] << 8);
 		G.blk[i].w = b[2]; G.blk[i].l = b[3]; G.blk[i].sz = b[4];
 		G.blk[i].groups = (uint16_t)b[5] | ((uint16_t)b[6] << 8);
+		G.blk[i].rev = b[7];
 		G.uses[i] = 0;
 		p += BLK_REC;
 	}
@@ -540,6 +542,17 @@ uint16_t mapgen_deploy(uint16_t dep, uint8_t *mods, uint8_t *levels) __banked
 	gen_script = (uint16_t)d[3] | ((uint16_t)d[4] << 8);
 	if (!d[5]) return 0xFFFF;
 	return d[6 + (rng_next() % d[5])];
+}
+
+// revealedFloors собранной карты (BattlescapeGenerator::loadMAP:1645 — клетки блока на этих этажах
+// открыты сразу): маска этажей на модуль, out[y * MAX_MOD + x]; вернёт сторону поля в модулях
+uint8_t mapgen_reveal(uint8_t *out) __banked
+{
+	for (uint8_t i = 0; i < MAX_MOD * MAX_MOD; i++) {
+		uint8_t b = G.grid[i];
+		out[i] = b && b <= G.nblk ? G.blk[b - 1].rev : 0;
+	}
+	return G.mx;
 }
 
 void mapgen_set_extra(uint16_t craft, uint16_t ufo) __banked

@@ -11,6 +11,9 @@ uint8_t mapgen_run(uint16_t terrain, uint8_t mods, uint8_t levels) __banked;
 // Корабль отряда и НЛО: номера террейнов (#FFFF — не ставить). Скрипт террейна сам решает,
 // где их разместить (команды addCraft/addUFO).
 void mapgen_set_extra(uint16_t craft, uint16_t ufo) __banked;
+// revealedFloors собранной карты: маска этажей на модуль 10x10, out[y * 8 + x] (64 байта);
+// вернёт сторону поля в модулях
+uint8_t mapgen_reveal(uint8_t *out) __banked;
 // Развёртывание миссии: размер поля, этажи и террейн (#FFFF — список пуст)
 uint16_t mapgen_deploy(uint16_t dep, uint8_t *mods, uint8_t *levels) __banked;
 uint16_t mapgen_find_kind(uint8_t kind) __banked;

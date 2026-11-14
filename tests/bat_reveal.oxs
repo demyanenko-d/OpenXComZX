@@ -1,0 +1,22 @@
+# revealedFloors блоков (MapBlock::isFloorRevealed, BattlescapeGenerator::loadMAP:1645; vision.c
+# vis_blocks): отладочный бой, затем карта развёртывания 17 (TFTD STR_ALIEN_COLONY_P2, скрипт
+# ALIEN_COLONY_P2 — блоки A_BASE00 с revealedFloors: 2 по 10x10). Число открытых клеток сразу после
+# раскрытия блоков — слово 0A:3CE4 (корабля у второй фазы нет — других раскрытий нет).
+# Снимки — tmp/shots/bat_reveal/. Запуск: powershell -File tools\run.ps1 -Script tests\bat_reveal.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+poke _cursor_off 1
+poke _bat_still 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _ui_request 248
+waitmark 248 900
+wait 150
+pokew scr_battle$mis_deploy 17
+key g
+wait 900
+peek 0A:3CE4 2
+expectw 0A:3CE4 200
+shot tmp/shots/bat_reveal/00_colony.png
+echo battle reveal OK
+exit 0

@@ -24,6 +24,7 @@
 #include "loader.h"
 #include "units.h"
 #include "vision.h"
+#include "mapgen.h"
 
 #define VM_W   1               // западная стена держит обзор (MCD.Stop_LOS)
 #define VM_N   2               // северная стена
@@ -69,6 +70,7 @@ static uint8_t __at(0xBCD4) fd_y;
 static far_t __at(0xBCDE) vm_cells;
 static uint8_t __at(0xBCE2) vm_wpg;
 uint8_t __at(0xBCE3) vis_eye_dbg;          // глаза последнего бойца 0 в vis_seen — сценарии, 0A:3CE3
+uint16_t __at(0xBCE4) vis_rev_n;           // открытых клеток после revealedFloors (vis_blocks) — 0A:3CE4
 #define EYE_FOG 1                       // сектор тумана — с этажа выше (calculateFOV:255)
 #define EYE_SEE 2                       // линия взгляда на юнитов — с этажа выше (getSightOriginVoxel)
 // Нарисованная область вида (vis_view): открытое вне её не перерисовывается
@@ -435,18 +437,39 @@ void vis_view(const int16_t *r) __banked
 	else { vw_lo = vw_top = -32768; vw_hi = vw_bot = 32767; }
 }
 
-void vis_reveal(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1) __banked
+// Открыть клетки прямоугольника на этажах из маски zm (бит z). Бит FOG_L не ставится: стены
+// восточного и южного соседей откроет линия обзора, как в оригинале (setDiscovered(…, 2))
+static void reveal_box(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint8_t zm)
 {
 	if (fog_pg == PG_NONE) return;
 	uint8_t old = pg_win3();
 	vm_cur = old;
 	if (x1 >= vm_sx) x1 = vm_sx - 1;
 	if (y1 >= vm_sy) y1 = vm_sy - 1;
-	for (uint8_t z = 0; z < vm_sz; z++)
+	for (uint8_t z = 0; z < vm_sz; z++, zm >>= 1) {
+		if (!(zm & 1)) continue;
 		for (uint8_t y = y0; y <= y1; y++)
 			for (uint8_t x = x0; x <= x1; x++)
 				fset(ztab[z] + ytab[y] + x, FOG_W | FOG_N | FOG_C, x, y, z);
+	}
 	if (vm_cur != old) pg_map3(old);
+}
+
+void vis_reveal(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1) __banked
+{
+	reveal_box(x0, y0, x1, y1, 0xFF);
+}
+
+void vis_blocks(void) __banked
+{
+	uint8_t rv[64];
+	uint8_t mx = mapgen_reveal(rv);
+	for (uint8_t my = 0; my < mx && my < 8; my++)
+		for (uint8_t k = 0; k < mx && k < 8; k++) {
+			uint8_t zm = rv[my * 8 + k];
+			if (zm) reveal_box((uint8_t)(k * 10), (uint8_t)(my * 10), (uint8_t)(k * 10 + 9), (uint8_t)(my * 10 + 9), zm);
+		}
+	vis_rev_n = vis_fog_n;
 }
 
 uint8_t vis_seen(vu_t *u, uint8_t n, uint8_t nsold, uint8_t *list, uint8_t max) __banked

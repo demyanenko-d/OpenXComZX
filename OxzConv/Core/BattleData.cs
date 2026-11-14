@@ -50,6 +50,7 @@ namespace OxzConv
 		{
 			public string Name;
 			public int W, L, Sz, Groups;
+			public int Revealed;                 // revealedFloors — маска этажей (бит z), открытых сразу
 			public int ResId;
 		}
 
@@ -112,6 +113,7 @@ namespace OxzConv
 						W = Y.Int(Y.Get(b, "width"), 10),
 						L = Y.Int(Y.Get(b, "length"), 10),
 						Groups = GroupMask(Y.Get(b, "groups")),
+						Revealed = Y.Get(b, "revealedFloors") == null ? 0 : GroupMask(Y.Get(b, "revealedFloors")) & 0xFF,
 					};
 					if (blk.Name != null) t.Blocks.Add(blk);
 				}
@@ -279,7 +281,8 @@ namespace OxzConv
 		// TERRAINS (Blob, a = число террейнов): u16 n, n x u16 смещение записи; запись:
 		//   i16 script (-1 нет), u8 nSets, u8 nBlocks, u8 kind (0 террейн, 1 корабль, 2 НЛО),
 		//   nSets x { u16 MCDSET, u16 TILESET },
-		//   nBlocks x { u16 ресурс MAPBLK, u8 w, u8 l, u8 sz, u16 groups } — размеры в клетках,
+		//   nBlocks x { u16 ресурс MAPBLK, u8 w, u8 l, u8 sz, u16 groups, u8 revealed } — размеры в клетках,
+		//   revealed — маска этажей revealedFloors (MapBlock::isFloorRevealed, открыты сразу),
 		//   groups — маска групп блока (бит 0 — обычный, 1 — посадочная площадка, …; до 15 —
 		//   у TFTD ENTRY05–08 группы 7..10, байтом они терялись).
 		byte[] EncodeTerrains()
@@ -299,6 +302,7 @@ namespace OxzConv
 				{
 					U16(body, ids.Id($"MAPBLK_{b.Name}"));
 					body.Add((byte)b.W); body.Add((byte)b.L); body.Add((byte)b.Sz); U16(body, b.Groups);
+					body.Add((byte)b.Revealed);
 				}
 			}
 			return head.Concat(body).ToArray();

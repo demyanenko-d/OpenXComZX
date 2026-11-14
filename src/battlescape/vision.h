@@ -41,6 +41,8 @@ uint8_t vis_fog_rect(int16_t *r) __banked;
 void vis_view(const int16_t *r) __banked;
 // Открыть клетки прямоугольника на всех этажах (корабль отряда при высадке, BattlescapeGenerator)
 void vis_reveal(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1) __banked;
+// revealedFloors блоков собранной карты (mapgen_reveal) — открыть сразу; звать после vis_build
+void vis_blocks(void) __banked;
 // Число открытых клеток для сценариев — слово в памяти банка 40: 0A:BCCE (vision.c vis_fog_n)
 
 #endif

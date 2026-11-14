@@ -493,6 +493,7 @@ static uint8_t load_gen(uint16_t terrain)
 		nunits = nsold + na;
 	}
 	vis_build(q.cells, q.sx, q.sy, q.sz, pf_page);   // маска обзора (vision.c)
+	vis_blocks();                                    // revealedFloors блоков — открыты сразу
 	// Снаряжение отряда (bitems.c): раскладка из кампании — до записей вида (им нужно
 	// оружие в руках), но после листов пришельцев и маски обзора: HANDOB берёт слот кэша SD
 	{
