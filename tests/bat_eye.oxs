@@ -1,0 +1,69 @@
+# Глаза высокого юнита этажом выше (TileEngine::calculateFOV:255, getSightOriginVoxel:362; vision.c
+# eye_bits): отладочный бой, боец 0 переставлен на песок (9, 6) — над ним открытое небо. Присел и
+# встал (key k — kneel пересчитывает обзор, BattlescapeGame.cpp:338): рост 22 — глаза на своём этаже
+# (признак — 0A:3CE3 = 0). Рост стоя (units[0].h_stand, 4E:38A9) — 30: глаза выше — и для линии на
+# юнитов (порог 25, бит 2), и для тумана (порог 28, бит 1) — сектор с этажа 1 открывает больше
+# клеток (0A:3CCE). Затем частичная перерисовка открытого против полной пересборки вида.
+# Снимки — tmp/shots/bat_eye/. Запуск: powershell -File tools\run.ps1 -Script tests\bat_eye.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+poke _cursor_off 1
+poke _bat_still 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _ui_request 248
+waitmark 248 900
+wait 150
+poke 4E:3880 9
+poke 4E:3881 6
+key k
+wait 60
+# переставлен poke — копия вида узнала клетку только при приседании, прежняя не стёрта: пересобрать
+pokew _cursor_x 220
+pokew _cursor_y 150
+click L
+wait 60
+click L
+wait 60
+pokew _cursor_x 160
+pokew _cursor_y 100
+key k
+wait 60
+peek 0A:3CCE 2
+expectw 0A:3CCE 1242
+expect 0A:3CE3 0
+shot tmp/shots/bat_eye/00_h22.png
+# рост 26: глаз выше этажа только для линии на юнитов (25), туман — с прежнего этажа (28)
+poke 4E:38A9 26
+key k
+wait 60
+key k
+wait 60
+peek 0A:3CCE 2
+expectw 0A:3CCE 1242
+expect 0A:3CE3 2
+# рост 30: и туман с этажа 1
+poke 4E:38A9 30
+key k
+wait 60
+key k
+wait 200
+peek 0A:3CCE 2
+expectw 0A:3CCE 1247
+expect 0A:3CE3 3
+pokew _cursor_x 160
+pokew _cursor_y 150
+wait 30
+shot tmp/shots/bat_eye/01_h30.png
+shotmark
+pokew _cursor_x 220
+click L
+wait 60
+click L
+wait 60
+pokew _cursor_x 160
+wait 30
+shot tmp/shots/bat_eye/02_full.png
+shotsame
+echo battle eye OK
+exit 0

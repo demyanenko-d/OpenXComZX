@@ -36,8 +36,10 @@ typedef struct {
 	uint16_t armor_rule;       // правило armors: маски вокселей, модификаторы урона (#FFFF — нет)
 	uint8_t dset;              // пришелец: запись data развёртывания (её itemSets), #FF — нет
 	uint8_t ilevel;            //   уровень предметов (alienItemLevels[месяц][случайный])
-	uint8_t pad[1];            // запас: запись — 48 байт, адреса полей в тестах не плывут
+	uint8_t h_float;           // парение (floatHeight) — воксели; в росте учитывается всегда
 } unit_t;
+// Рост юнита сейчас (BattleUnit::getHeight + getFloatHeight)
+#define UNIT_H(u) ((uint8_t)(((u)->kneel ? (u)->h_kneel : (u)->h_stand) + (u)->h_float))
 _Static_assert(sizeof(unit_t) == 48, "unit_t");
 // Юниты миссии (MAX_BUNITS записей) — в памяти банка экрана боя: scr_battle.c units[] с #B880,
 // банк 31 — страница #4E (tools/build.ps1). Другие банки (bact.c) берут их дальним доступом, пока

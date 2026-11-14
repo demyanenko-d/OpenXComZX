@@ -65,6 +65,12 @@ extern volatile uint16_t frames;           // crt0.s
 // #B800..#B93F — кусок таблицы линий (vision_s.s fu_run, TB)
 static uint8_t __at(0xBCD3) fd_x;               // дверь, сменившая обзор (fog_all = 2)
 static uint8_t __at(0xBCD4) fd_y;
+// Клетки карты и рабочая страница (свойства частей) — для глаз юнита (eye_bits); задаёт vis_build
+static far_t __at(0xBCDE) vm_cells;
+static uint8_t __at(0xBCE2) vm_wpg;
+uint8_t __at(0xBCE3) vis_eye_dbg;          // глаза последнего бойца 0 в vis_seen — сценарии, 0A:3CE3
+#define EYE_FOG 1                       // сектор тумана — с этажа выше (calculateFOV:255)
+#define EYE_SEE 2                       // линия взгляда на юнитов — с этажа выше (getSightOriginVoxel)
 // Нарисованная область вида (vis_view): открытое вне её не перерисовывается
 static int16_t __at(0xBCD6) vw_lo;
 static int16_t __at(0xBCD8) vw_hi;
@@ -280,12 +286,37 @@ static uint8_t in_cone(uint8_t d, int8_t dx, int8_t dy)
 	return (int16_t)x * x + (int16_t)y * y <= MAX_VIEW * MAX_VIEW;
 }
 
-// Видит ли v клетку (x, y, z) с юнитом: сектор, дальность и линия взгляда (TileEngine::visible)
-static uint8_t sees(const vu_t *v, uint8_t x, uint8_t y, uint8_t z)
+// Глаза юнита этажом выше: рост (с парением) над уровнем пола клетки (Tile::getTerrainLevel — меньший
+// MCD.T_Level пола и объекта; лестница опускает пол — глаза выше) доходит до следующего этажа, а над
+// клеткой нет пола (hasNoFloor). Туман — от 28 (TileEngine.cpp:255-262), линия на юнитов — глаз на
+// воксель ниже роста, у крупного — на воксель выше, от 25 / 24 (getSightOriginVoxel, :362-385).
+// far_* возвращают Win3 в логическую страницу — её и держит vm_cur (pg_map3)
+static uint8_t eye_bits(const vu_t *v)
+{
+	uint8_t z = v->z;
+	if ((uint8_t)(z + 1) >= vm_sz) return 0;
+	uint16_t i = ztab[z] + ytab[v->y] + v->x;
+	uint8_t c[4];
+	far_read(vm_cells + ((uint32_t)i << 2), c, 4);
+	far_t tl_tab = FAR(vm_wpg, PF_TLEVEL);
+	int8_t tl = c[0] ? (int8_t)far_byte(tl_tab + c[0]) : 0;
+	if (c[3]) { int8_t t = (int8_t)far_byte(tl_tab + c[3]); if (t < tl) tl = t; }
+	int16_t e = (int16_t)(v->flags >> 3) - tl;
+	if (v->flags & VU_BIG) e++;
+	if (e < 25) return 0;
+	uint8_t a = far_byte(vm_cells + ((uint32_t)(i + ztab[1]) << 2));   // пол клетки выше
+	if (a && !(far_byte(FAR(vm_wpg, PF_FLAGS) + a) & 1)) return 0;
+	if (v->flags & VU_BIG) e--;
+	return e >= 28 ? EYE_FOG | EYE_SEE : EYE_SEE;
+}
+
+// Видит ли v клетку (x, y, z) с юнитом: сектор, дальность и линия взгляда (TileEngine::visible);
+// eye — глаза v (eye_bits): EYE_SEE — линия от клетки этажом выше
+static uint8_t sees(const vu_t *v, uint8_t eye, uint8_t x, uint8_t y, uint8_t z)
 {
 	int8_t dx = (int8_t)(x - v->x), dy = (int8_t)(y - v->y);
 	if (!in_cone(v->dir & 7, dx, dy)) return 0;
-	return los((int8_t)v->x, (int8_t)v->y, (int8_t)v->z, (int8_t)x, (int8_t)y, (int8_t)z);
+	return los((int8_t)v->x, (int8_t)v->y, (int8_t)(v->z + ((eye & EYE_SEE) ? 1 : 0)), (int8_t)x, (int8_t)y, (int8_t)z);
 }
 
 // ---------------------------------------------------------------- туман войны
@@ -363,7 +394,8 @@ static void fog_update(const vu_t *u, uint8_t nsold)
 		const vu_t *v = &u[s];
 		if (!(v->flags & VU_ALIVE)) continue;
 		uint8_t *l = fl_last + s * 4;
-		uint8_t x = v->x, y = v->y, z = v->z, d = v->dir & 7;
+		// глаза высокого — этажом выше: в fl_last этаж глаз (присел / встал — сектор заново)
+		uint8_t x = v->x, y = v->y, z = (uint8_t)(v->z + (eye_bits(v) & EYE_FOG)), d = v->dir & 7;
 		uint8_t l0 = l[0], l1 = l[1], l2 = l[2], l3 = l[3];
 		uint8_t again = all == 1;
 		if (all == 2) {                    // дверь: только тем, кому она в пределах обзора
@@ -427,15 +459,19 @@ uint8_t vis_seen(vu_t *u, uint8_t n, uint8_t nsold, uint8_t *list, uint8_t max) 
 		return cnt;
 	}
 	fog_update(u, nsold);
+	uint8_t ey[MAX_UNITS];               // глаза бойцов — раз на вызов
+	for (uint8_t s = 0; s < nsold && s < MAX_UNITS; s++)
+		ey[s] = (u[s].flags & VU_ALIVE) ? eye_bits(&u[s]) : 0;
+	vis_eye_dbg = nsold ? ey[0] : 0;
 	for (uint8_t i = nsold; i < n; i++) {
 		vu_t *a = &u[i];
 		if ((a->flags & (VU_ALIVE | VU_SEEN)) != VU_ALIVE) continue;   // в свой ход отряд не теряет замеченных
 		uint8_t nq = (a->flags & VU_BIG) ? 4 : 1, seen = 0;
-		for (uint8_t s = 0; s < nsold && !seen; s++) {
+		for (uint8_t s = 0; s < nsold && s < MAX_UNITS && !seen; s++) {
 			const vu_t *v = &u[s];
 			if (!(v->flags & VU_ALIVE)) continue;
 			for (uint8_t q = 0; q < nq && !seen; q++)
-				seen = sees(v, (uint8_t)(a->x + (q & 1)), (uint8_t)(a->y + (q >> 1)), a->z);
+				seen = sees(v, ey[s], (uint8_t)(a->x + (q & 1)), (uint8_t)(a->y + (q >> 1)), a->z);
 		}
 		if (!seen) continue;
 		a->flags |= VU_SEEN;
@@ -453,12 +489,13 @@ uint8_t vis_list(vu_t *u, uint8_t n, uint8_t nsold, uint8_t sel, uint8_t *list, 
 	vm_cur = old;
 	const vu_t *v = &u[sel];
 	if (vm_page == PG_NONE || !(v->flags & VU_ALIVE)) return 0;
+	uint8_t ey = eye_bits(v);
 	for (uint8_t i = nsold; i < n && cnt < max; i++) {
 		const vu_t *a = &u[i];
 		if (!(a->flags & VU_ALIVE)) continue;
 		uint8_t nq = (a->flags & VU_BIG) ? 4 : 1, seen = 0;
 		for (uint8_t q = 0; q < nq && !seen; q++)
-			seen = sees(v, (uint8_t)(a->x + (q & 1)), (uint8_t)(a->y + (q >> 1)), a->z);
+			seen = sees(v, ey, (uint8_t)(a->x + (q & 1)), (uint8_t)(a->y + (q >> 1)), a->z);
 		if (seen) list[cnt++] = i;
 	}
 	if (vm_cur != old) pg_map3(old);
@@ -500,6 +537,7 @@ uint8_t vis_build(far_t cells, uint8_t sx, uint8_t sy, uint8_t sz, uint8_t page)
 	vm_sx = sx; vm_sy = sy; vm_sz = sz;
 	H.vmp = vm_page; H.msx = sx; H.msy = sy; H.msz = sz;   // для hb_fast
 	H.wsx = sx; H.nsx = -(int16_t)sx;
+	vm_cells = cells; vm_wpg = page;      // для глаз юнита (eye_bits)
 	for (uint8_t y = 0; y < sy && y < 64; y++) ytab[y] = (uint16_t)y * sx;
 	for (uint8_t z = 0; z < sz && z < 8; z++) ztab[z] = (uint16_t)z * sx * sy;
 	// Туман войны: всё закрыто; страниц не нашлось — видно всё (вид проверяет fog_pg)

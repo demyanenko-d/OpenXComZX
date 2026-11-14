@@ -204,7 +204,8 @@ static void see_update(void)
 	for (uint8_t i = 0; i < nunits; i++) {
 		const unit_t *u = &units[i];
 		v[i].x = u->x; v[i].y = u->y; v[i].z = u->z; v[i].dir = u->dir;
-		v[i].flags = (u->alive ? VU_ALIVE : 0) | (u->size > 1 ? VU_BIG : 0) | (u->seen ? VU_SEEN : 0);
+		v[i].flags = (u->alive ? VU_ALIVE : 0) | (u->size > 1 ? VU_BIG : 0) | (u->seen ? VU_SEEN : 0)
+			| VU_H(UNIT_H(u));
 	}
 	int16_t r[4];                        // туман войны: перерисовать открытое в нарисованной области
 	r[0] = vx_lo; r[1] = vx_hi; r[2] = vy_lo; r[3] = vy_hi;
@@ -405,6 +406,7 @@ static void do_kneel(void)
 	u->kneel = !u->kneel;
 	path_n = 0;
 	unit_changed(i);
+	see_update();                        // рост сменился — глаза могли опуститься или подняться (kneel:338)
 	ui_dirty(0);
 }
 
@@ -509,7 +511,6 @@ static uint8_t load_gen(uint16_t terrain)
 	bv_load(&v);
 	for (uint8_t i = 0; i < nunits; i++) ru_put(i);
 	bv_sync(nunits);
-	see_update();                        // кого отряд видит с места высадки
 	an_on = 0;
 	bt_turn = 1;
 	bt_side = FACTION_PLAYER;
@@ -537,12 +538,13 @@ static uint8_t load_gen(uint16_t terrain)
 			r_soldiers_t sr;
 			if (rtab_open(RES_RULE_SOLDIERS, &t) && st < t.n) {
 				rtab_get(&t, st, &sr);
-				u->h_stand = sr.stand_height; u->h_kneel = sr.kneel_height;
+				u->h_stand = sr.stand_height; u->h_kneel = sr.kneel_height; u->h_float = sr.float_height;
 				if (u->sol == 0xFF) arm = sr.armor;   // отладочный боец — броня типа солдата
 			}
 		}
 		unit_armor(u, arm);
 	}
+	see_update();                        // кого отряд видит с места высадки (рост уже известен — глаза)
 	bt_reserve = RES_NONE;
 	bt_res_kneel = 0;
 	if (nunits) center_on_unit();        // камера на первого бойца отряда

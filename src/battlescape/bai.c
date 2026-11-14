@@ -113,7 +113,7 @@ static void fill_vu(const aictx_t *c, vu_t *v)
 	for (uint8_t i = 0; i < c->n; i++) {
 		u_get(i, &x);
 		v[i].x = x.x; v[i].y = x.y; v[i].z = x.z; v[i].dir = x.dir;
-		v[i].flags = (x.alive ? VU_ALIVE : 0) | (x.size > 1 ? VU_BIG : 0);
+		v[i].flags = (x.alive ? VU_ALIVE : 0) | (x.size > 1 ? VU_BIG : 0) | VU_H(UNIT_H(&x));
 	}
 }
 

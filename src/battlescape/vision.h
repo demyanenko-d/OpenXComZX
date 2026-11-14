@@ -10,6 +10,9 @@
 #define VU_ALIVE 1
 #define VU_BIG   2             // 2x2
 #define VU_SEEN  4             // виден отряду
+// Биты 3–7 — рост юнита в вокселях (стоя или на колене + парение, до 31): по нему глаза
+// поднимаются на этаж (TileEngine::calculateFOV:255, getSightOriginVoxel:362)
+#define VU_H(h) ((uint8_t)(((h) > 31 ? 31 : (h)) << 3))
 typedef struct { uint8_t x, y, z, dir, flags; } vu_t;
 
 // Маска обзора карты (байт на клетку) — в своих страницах пула; page — рабочая страница боя
