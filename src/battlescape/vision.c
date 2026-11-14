@@ -475,6 +475,15 @@ void vis_blocks(void) __banked
 	vis_rev_n = vis_fog_n;
 }
 
+// Видит ли v (глаза ey) юнита a — любую его клетку
+static uint8_t sees_u(const vu_t *v, uint8_t ey, const vu_t *a)
+{
+	uint8_t nq = (a->flags & VU_BIG) ? 4 : 1;
+	for (uint8_t q = 0; q < nq; q++)
+		if (sees(v, ey, (uint8_t)(a->x + (q & 1)), (uint8_t)(a->y + (q >> 1)), a->z)) return 1;
+	return 0;
+}
+
 uint8_t vis_seen(vu_t *u, uint8_t n, uint8_t nsold, uint8_t *list, uint8_t max) __banked
 {
 	uint8_t old = pg_win3(), cnt = 0;
@@ -492,13 +501,9 @@ uint8_t vis_seen(vu_t *u, uint8_t n, uint8_t nsold, uint8_t *list, uint8_t max) 
 	for (uint8_t i = nsold; i < n; i++) {
 		vu_t *a = &u[i];
 		if ((a->flags & (VU_ALIVE | VU_SEEN)) != VU_ALIVE) continue;   // в свой ход отряд не теряет замеченных
-		uint8_t nq = (a->flags & VU_BIG) ? 4 : 1, seen = 0;
-		for (uint8_t s = 0; s < nsold && s < MAX_UNITS && !seen; s++) {
-			const vu_t *v = &u[s];
-			if (!(v->flags & VU_ALIVE)) continue;
-			for (uint8_t q = 0; q < nq && !seen; q++)
-				seen = sees(v, ey[s], (uint8_t)(a->x + (q & 1)), (uint8_t)(a->y + (q >> 1)), a->z);
-		}
+		uint8_t seen = 0;
+		for (uint8_t s = 0; s < nsold && s < MAX_UNITS && !seen; s++)
+			if (u[s].flags & VU_ALIVE) seen = sees_u(&u[s], ey[s], a);
 		if (!seen) continue;
 		a->flags |= VU_SEEN;
 		if (cnt < max) list[cnt++] = i;
@@ -517,15 +522,22 @@ uint8_t vis_list(vu_t *u, uint8_t n, uint8_t nsold, uint8_t sel, uint8_t *list, 
 	if (vm_page == PG_NONE || !(v->flags & VU_ALIVE)) return 0;
 	uint8_t ey = eye_bits(v);
 	for (uint8_t i = nsold; i < n && cnt < max; i++) {
-		const vu_t *a = &u[i];
-		if (!(a->flags & VU_ALIVE)) continue;
-		uint8_t nq = (a->flags & VU_BIG) ? 4 : 1, seen = 0;
-		for (uint8_t q = 0; q < nq && !seen; q++)
-			seen = sees(v, ey, (uint8_t)(a->x + (q & 1)), (uint8_t)(a->y + (q >> 1)), a->z);
-		if (seen) list[cnt++] = i;
+		if ((u[i].flags & VU_ALIVE) && sees_u(v, ey, &u[i])) list[cnt++] = i;
 	}
 	if (vm_cur != old) pg_map3(old);
 	return cnt;
+}
+
+// Видит ли кто-то из отряда (u[0..nsold)) юнита a (calculateFOV после шага пришельца)
+uint8_t vis_by_xcom(vu_t *u, uint8_t nsold, uint8_t a) __banked
+{
+	uint8_t old = pg_win3(), seen = 0;
+	vm_cur = old;
+	if (vm_page == PG_NONE) return 1;
+	for (uint8_t s = 0; s < nsold && s < MAX_UNITS && !seen; s++)
+		if (u[s].flags & VU_ALIVE) seen = sees_u(&u[s], eye_bits(&u[s]), &u[a]);
+	if (vm_cur != old) pg_map3(old);
+	return seen;
 }
 
 // Маска клетки по её частям c[4] и их свойствам (pathfind.h PF_FLAGS: 1 нет пола, 2 держит

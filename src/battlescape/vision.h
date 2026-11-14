@@ -25,6 +25,8 @@ void vis_free(void) __banked;
 uint8_t vis_seen(vu_t *u, uint8_t n, uint8_t nsold, uint8_t *list, uint8_t max) __banked;
 // Кого из пришельцев видит юнит sel сейчас (getVisibleUnits): номера в list, вернёт их число
 uint8_t vis_list(vu_t *u, uint8_t n, uint8_t nsold, uint8_t sel, uint8_t *list, uint8_t max) __banked;
+// Видит ли кто-то из отряда (u[0..nsold)) юнита a сейчас — после шага и выстрела пришельца
+uint8_t vis_by_xcom(vu_t *u, uint8_t nsold, uint8_t a) __banked;
 
 // Туман войны (Tile::_discovered): байт на клетку в страницах vis_fog_page() подряд, номер клетки —
 // (z * sy + y) * sx + x; PG_NONE — страниц не нашлось, видно всё. Сектора бойцов пересчитывает

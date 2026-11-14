@@ -7,7 +7,9 @@
 //     руке · 0.8), до трёх атак за ход;
 //   - иначе патрулирует (setupPatrol): идёт к случайному узлу, связанному с его узлом (RMP),
 //     или к любому узлу, сколько хватит времени. На виду у отряда — шагами с анимацией (bwalk.c),
-//     вне вида — сразу по клетке; после каждого шага экран пересчитывает обзор отряда (AI_SEE).
+//     вне вида — сразу по клетке; после каждого шага экран пересчитывает обзор отряда (AI_SEE);
+//   - перед действием, после шага и выстрела пришелец, которого отряд не видит, снова невидим
+//     (handleAI:204, UnitWalkBState.cpp:197-201) — стирается с карты, дальше «Hidden Movement».
 // Чего нет: гранат, засад и отступлений, оценки укрытий, реакции отряда, дверей по пути,
 // надписи «Hidden Movement».
 #include <stdint.h>
@@ -308,6 +310,28 @@ static uint8_t step(const aictx_t *c, unit_t *u)
 	return 1;
 }
 
+// Клетки юнита — перерисовать
+static void cells(const unit_t *u)
+{
+	for (uint8_t q = 0; q < u->size * u->size; q++)
+		bv_cell((uint8_t)(u->x + (q & 1)), (uint8_t)(u->y + (q >> 1)), u->z);
+}
+
+// Пришелец, которого отряд больше не видит, снова невидим: перед каждым действием
+// (BattlescapeGame::handleAI:204) и после каждого шага (UnitWalkBState.cpp:197-201) — setVisible(false)
+// и calculateFOV. 1 — спрятан (клетки перерисовывает вызывающий)
+static uint8_t hide_check(const aictx_t *c, unit_t *u)
+{
+	if (!u->seen || !u->alive) return 0;
+	vu_t v[MAX_BUNITS];
+	fill_vu(c, v);
+	if (vis_by_xcom(v, c->nsold, ai_a)) return 0;
+	u->seen = 0;
+	u_set(ai_a, u);
+	show(c, ai_a, u);
+	return 1;
+}
+
 static uint8_t ai_step(const aictx_t *c);
 
 // Ходит невидимый отряду пришелец (и не целится): экрану — «Hidden Movement» (Map::draw)
@@ -342,6 +366,7 @@ static uint8_t ai_step(const aictx_t *c)
 		uint8_t rf = ai_react(c, ai_a);              // шаг сделан — отряд может ответить огнём
 		if (rf) ai_pn = 0;                           //   (UnitWalkBState: путь обрывается)
 		u_get(ai_a, &u);
+		if (hide_check(c, &u)) bv_walk_done();       // ушёл из вида — клетки шага уже без него
 		if (u.alive && ai_pi < ai_pn && step(c, &u)) return AI_SEE;   // следующий шаг — без кадра стойки
 		bv_walk_done();
 		return AI_SEE | rf;
@@ -349,12 +374,23 @@ static uint8_t ai_step(const aictx_t *c)
 	while (ai_a < c->n) {
 		u_get(ai_a, &u);
 		if (!u.alive || u.faction != FACTION_HOSTILE || ai_a < c->nsold) { next_alien(); continue; }
-		if (attack(c, &u))                           // стрелял — в следующем такте думает снова
-			return AI_SEE | AI_HIT | (ai_aim ? 0 : ai_react(c, ai_a));   // после выстрела — ответ отряда
+		if (!ai_moved && !ai_atk && !ai_aim && hide_check(c, &u)) cells(&u);   // начал действовать
+		if (attack(c, &u)) {                         // стрелял — в следующем такте думает снова
+			if (ai_aim) return AI_SEE | AI_HIT;
+			uint8_t rf = ai_react(c, ai_a);          // после выстрела — ответ отряда
+			u_get(ai_a, &u);
+			if (hide_check(c, &u)) cells(&u);        // мог убить того, кто его видел
+			return AI_SEE | AI_HIT | rf;
+		}
 		if (ai_pi >= ai_pn && !ai_moved) { ai_moved = 1; plan_patrol(c, &u); }
 		if (ai_pi < ai_pn && step(c, &u)) {
-			uint8_t rf = ai_walk ? 0 : ai_react(c, ai_a);   // шаг без анимации — сразу ответ
-			if (rf) ai_pn = 0;
+			uint8_t rf = 0;
+			if (!ai_walk) {                          // шаг без анимации — сразу ответ и проверка вида
+				rf = ai_react(c, ai_a);
+				if (rf) ai_pn = 0;
+				u_get(ai_a, &u);
+				if (hide_check(c, &u)) cells(&u);
+			}
 			return AI_SEE | rf;
 		}
 		next_alien();
