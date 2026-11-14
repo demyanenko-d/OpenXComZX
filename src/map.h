@@ -40,7 +40,7 @@
                                    // #07 soldier_t[MAX_SOLDIERS] (SOLDIER_PAGE, state.h)
 #define STATE_PAGES      4         // #06–#09: #08–#09 — резерв кампании
 
-// #0A–#0E — резерв.
+// #0A–#0E — резерв; следующие банки кода — сюда (14_todo, 2026-11-14: прочие страницы банков заняты).
 #define PG_FREE_FIRST    0x0A
 #define PG_FREE_LAST     0x0E
 
