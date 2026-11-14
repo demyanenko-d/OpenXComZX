@@ -2,8 +2,25 @@
 // спрайта — BattleUnit::keepWalking и Map::calculateWalkingOffset; перерисовка клеток шага — вид
 // (bv_repaint), рисует идущего вид же по состоянию wk_* (bwalk.h).
 #include <stdint.h>
+#include "far.h"
+#include "memmap.h"
+#include "pages.h"
 #include "bview.h"
 #include "bwalk.h"
+
+// Снимок окна карты в экран (bview.c bv_snapshot; вынесено из банка 28): строки окна VIEW_H из
+// холста pg кольца 512x512 с позиции (gx, gy), по X — с заворотом
+void bv_snap_copy(uint16_t gx, uint16_t gy, uint8_t pg) __banked
+{
+	uint16_t w1 = 512 - gx;
+	if (w1 > SCREEN_W) w1 = SCREEN_W;
+	for (uint8_t r = 0; r < 144; r++) {
+		uint16_t sy = (gy + r) & 511;
+		far_t src = FAR(pg + (sy >> 5), (sy & 31) << 9), dst = FAR(SCREEN_PAGE + (r >> 5), (uint16_t)(r & 31) << 9);
+		far_copy(dst, src + gx, w1);
+		if (w1 < SCREEN_W) far_copy(dst + w1, src, SCREEN_W - w1);
+	}
+}
 
 extern volatile uint16_t frames;         // crt0.s
 

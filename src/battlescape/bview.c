@@ -846,15 +846,8 @@ void bv_message(uint8_t on) __banked
 
 void bv_snapshot(void) __banked
 {
-	uint16_t gx = (uint16_t)(BIAS - cam_x) & (RING - 1), gy = (uint16_t)(BIAS - cam_y) & (RING - 1);
-	uint16_t w1 = RING - gx;
-	if (w1 > SCREEN_W) w1 = SCREEN_W;
-	for (uint8_t r = 0; r < VIEW_H; r++) {
-		uint16_t sy = (gy + r) & (RING - 1);
-		far_t src = FAR(vis_pg + (sy >> 5), (sy & 31) << 9), dst = FAR(SCREEN_PAGE + (r >> 5), (uint16_t)(r & 31) << 9);
-		far_copy(dst, src + gx, w1);
-		if (w1 < SCREEN_W) far_copy(dst + w1, src, SCREEN_W - w1);
-	}
+	// копия — в банке 32 (bwalk.c bv_snap_copy): в банке 28 места нет
+	bv_snap_copy((uint16_t)(BIAS - cam_x) & (RING - 1), (uint16_t)(BIAS - cam_y) & (RING - 1), vis_pg);
 	split_stop();
 	away_keep();                             // холсты карты окно не трогает: вернуть — сплитом
 }

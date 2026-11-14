@@ -41,6 +41,7 @@ void bv_message(uint8_t on) __banked;
 // собирается заново, только снова ставится сплит
 void bv_pause(void) __banked;
 void bv_snapshot(void) __banked;             // то же, но карта остаётся картинкой под окном
+void bv_snap_copy(uint16_t gx, uint16_t gy, uint8_t pg) __banked;   // её копия (bwalk.c, банк 32)
 void bv_tick(uint8_t sel) __banked;          // прокрутка, курсор клетки, стрелка над sel
 void bv_center(uint8_t x, uint8_t y) __banked;   // камера на клетку (этаж — камеры)
 uint8_t bv_level(void) __banked;
