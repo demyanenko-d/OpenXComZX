@@ -33,6 +33,9 @@ uint8_t vis_list(vu_t *u, uint8_t n, uint8_t nsold, uint8_t sel, uint8_t *list, 
 uint8_t vis_fog_page(void) __banked;
 // Открытое с прошлого вызова: прямоугольник вида (мировые lo, hi, top, bot) — 1, ничего — 0
 uint8_t vis_fog_rect(int16_t *r) __banked;
+// Нарисованная область вида (r: lo, hi, top, bot; 0 — вся карта): вновь открытое вне её в
+// прямоугольник не идёт — его нарисуют полосы, когда туда приедет камера
+void vis_view(const int16_t *r) __banked;
 // Открыть клетки прямоугольника на всех этажах (корабль отряда при высадке, BattlescapeGenerator)
 void vis_reveal(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1) __banked;
 // Число открытых клеток для сценариев — слово в памяти банка 40: 0A:BCCE (vision.c vis_fog_n)

@@ -65,6 +65,11 @@ extern volatile uint16_t frames;           // crt0.s
 // #B800..#B93F — кусок таблицы линий (vision_s.s fu_run, TB)
 static uint8_t __at(0xBCD3) fd_x;               // дверь, сменившая обзор (fog_all = 2)
 static uint8_t __at(0xBCD4) fd_y;
+// Нарисованная область вида (vis_view): открытое вне её не перерисовывается
+static int16_t __at(0xBCD6) vw_lo;
+static int16_t __at(0xBCD8) vw_hi;
+static int16_t __at(0xBCDA) vw_top;
+static int16_t __at(0xBCDC) vw_bot;
 // Клетки линии, открытые за этот проход (ml_x / ml_y / ml_z по #BE00, #BE18, #BE30 — по оси в своём
 // массиве) — их пишет и читает только vision_s.s; #BE48..#BE56 — заготовки линии (vision_s.s FX).
 // Пути прошлой линии хранить не нужно: позицию перед стартом даёт прогон Брезенхема (fl_line)
@@ -285,10 +290,15 @@ static uint8_t sees(const vu_t *v, uint8_t x, uint8_t y, uint8_t z)
 
 // ---------------------------------------------------------------- туман войны
 
-// Клетка стала видна (целиком или стеной-дверью) — расширить прямоугольник перерисовки
+// Клетка стала видна (целиком или стеной-дверью) — расширить прямоугольник перерисовки. Клетка вне
+// нарисованной области вида (спрайт 32x40, часть поднята MCD.P_Level до 24 точек — как vis_fog_rect)
+// не в счёт: на открытом поле новое — дуга в 20 клетках от бойца, а рамка с ближними клетками
+// перерисовывала бы весь экран на каждом шаге
 static void fog_bb(uint8_t x, uint8_t y, uint8_t z)
 {
 	int16_t d = (int16_t)x - y, s = (int16_t)x + y;
+	int16_t px = d * 16, py = s * 8 - (int16_t)z * 24;
+	if (px + 31 < vw_lo || px > vw_hi || py + 39 < vw_top || py - 24 > vw_bot) return;
 	if (!bb_on) { bb_d0 = bb_d1 = d; bb_s0 = bb_s1 = s; bb_z0 = bb_z1 = z; bb_on = 1; return; }
 	if (d < bb_d0) bb_d0 = d;
 	if (d > bb_d1) bb_d1 = d;
@@ -385,6 +395,12 @@ uint8_t vis_fog_rect(int16_t *r) __banked
 	r[3] = bb_s1 * 8 - (int16_t)bb_z0 * 24 + 39;
 	bb_on = 0;
 	return 1;
+}
+
+void vis_view(const int16_t *r) __banked
+{
+	if (r) { vw_lo = r[0]; vw_hi = r[1]; vw_top = r[2]; vw_bot = r[3]; }
+	else { vw_lo = vw_top = -32768; vw_hi = vw_bot = 32767; }
 }
 
 void vis_reveal(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1) __banked
@@ -493,6 +509,7 @@ uint8_t vis_build(far_t cells, uint8_t sx, uint8_t sy, uint8_t sz, uint8_t page)
 	vis_fog_n = 0;
 	fog_all = 1;
 	bb_on = 0;
+	vis_view(0);
 	far_read(FAR(page, PF_FLAGS), fl, 256);
 	far_read(FAR(page + 1, TL_BIGW), bw, 256);
 	uint16_t i = 0;

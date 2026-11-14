@@ -555,6 +555,13 @@ void bv_repaint(int16_t lo, int16_t hi, int16_t top, int16_t bot) __banked
 	repaint(lo, hi, top, bot);
 }
 
+uint8_t bv_area(int16_t *r) __banked
+{
+	if (!dl_ok || dl_page == PG_NONE) return 0;
+	r[0] = vx_lo; r[1] = vx_hi; r[2] = vy_lo; r[3] = vy_hi;
+	return 1;
+}
+
 // Идущий прошёл середину шага: числится в новой клетке (bwalk.c)
 void bv_walk_mid(uint8_t i, uint8_t x, uint8_t y) __banked
 {
