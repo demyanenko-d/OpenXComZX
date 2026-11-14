@@ -227,6 +227,22 @@ static void see_update(void)
 	}
 }
 
+// Конец хода (SavedBattleGame::endTurn:903-917): все не свои — невидимы, и сразу обзор отряда заново
+// (recalculateFOV) — кого видно с мест бойцов, тот снова виден; остальные стираются с карты
+static void hide_aliens(void)
+{
+	uint8_t was[MAX_BUNITS];
+	for (uint8_t i = nsold; i < nunits; i++) { was[i] = units[i].seen; units[i].seen = 0; ru_put(i); }
+	bv_sync(nunits);
+	see_update();
+	for (uint8_t i = nsold; i < nunits; i++) {
+		const unit_t *a = &units[i];
+		if (!was[i] || a->seen) continue;
+		for (uint8_t q = 0; q < a->size * a->size; q++)
+			bv_cell((uint8_t)(a->x + (q & 1)), (uint8_t)(a->y + (q >> 1)), a->z);
+	}
+}
+
 // Значок на экране: клетка под курсором — значок i (y = 128 - 13 i, x 300..314, 12 строк)
 static uint8_t mark_at(void)
 {
@@ -621,9 +637,8 @@ static void end_turn(void)
 	if (fuses() || battle_end(0)) return;   // пришельцев или отряда нет — разбор
 	bt_side = FACTION_HOSTILE;
 	side_prepare(FACTION_HOSTILE);
-	for (uint8_t i = nsold; i < nunits; i++) units[i].seen = 0;   // setVisible(false) не своим
-	for (uint8_t i = 0; i < nunits; i++) ru_put(i);
-	bv_sync(nunits);
+	for (uint8_t i = 0; i < nsold; i++) ru_put(i);
+	hide_aliens();                       // setVisible(false) не своим, обзор заново
 	path_n = 0;
 	turn_dir = 0xFF;
 	bv_pause();                          // окно хода рисует в основной холст, карту не трогает
@@ -715,7 +730,7 @@ static void ai_run(void)
 	bt_turn++;
 	side_prepare(FACTION_PLAYER);
 	if (sel < nsold && !units[sel].alive) sel_step(0);   // выбранного убили — следующий живой
-	see_update();                        // заново: кого отряд видит с мест, где стоит
+	hide_aliens();                       // ушедшие из вида за свой ход — невидимы (endTurn)
 	if (hid_on) hidden_show(0);
 	bv_pause();
 	marks_show(0, 0);
