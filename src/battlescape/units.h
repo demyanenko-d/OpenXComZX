@@ -32,7 +32,8 @@ typedef struct {
 	uint8_t sol;               // запись солдата кампании (имя, звание, снаряжение), #FF — нет
 	uint8_t hand;              // активная рука: 1 — правая (BattleUnit::_activeHand)
 	uint8_t done;              // «больше не выбирать» в этот ход (_dontReselect, кнопка NextStop);
-	                           //   у погибшего не-бойца — 1, если убил X-COM (BattleUnit::killedBy)
+	                           //   у погибшего не-бойца — 1, если убил X-COM (BattleUnit::killedBy);
+	                           //   у выбывшего бойца U_MIA — пропал без вести (оставлен при прерывании)
 	uint8_t h_stand, h_kneel;  // рост стоя и на колене (standHeight, kneelHeight) — воксели
 	uint16_t armor_rule;       // правило armors: маски вокселей, модификаторы урона (#FFFF — нет)
 	uint8_t dset;              // пришелец: запись data развёртывания (её itemSets), #FF — нет
@@ -42,6 +43,7 @@ typedef struct {
 	uint8_t h_float;           // парение (floatHeight) — воксели; в росте учитывается всегда
 } unit_t;
 #define U_TONODE(u) (*(uint16_t *)&(u)->dset)   // #FFFF — цели нет
+#define U_MIA 0xAA                 // done бойца: пропал без вести (STR_XCOM_OPERATIVES_MISSING_IN_ACTION)
 // Рост юнита сейчас (BattleUnit::getHeight + getFloatHeight)
 #define UNIT_H(u) ((uint8_t)(((u)->kneel ? (u)->h_kneel : (u)->h_stand) + (u)->h_float))
 _Static_assert(sizeof(unit_t) == 48, "unit_t");

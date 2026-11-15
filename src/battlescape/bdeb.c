@@ -6,9 +6,9 @@
 // — его value, оглушённый и подобранный — value · 2, труп и предметы пришельцев — их recoveryPoints
 // (только если поле осталось за отрядом), погибший боец — минус value, отряд не вернулся — корабль
 // потерян; мирный житель: убит пришельцами (или бой проигран) — минус value, отрядом — минус
-// value + 2·(value/3), спасён — value. Чего нет: второй страницы (рост характеристик бойцов),
-// частей НЛО на карте, пропавших без вести снаружи корабля, последствий для кампании (гибель солдат, трофеи на базу,
-// судьба НЛО и места миссии), очков региону и стране.
+// value + 2·(value/3), спасён — value; прервали — боец вне корабля пропал без вести (минус value).
+// Итог кампании — campaign() ниже. Чего нет: второй страницы (рост характеристик бойцов), частей
+// НЛО на карте.
 #include <stdint.h>
 #include <string.h>
 #include <stddef.h>
@@ -28,6 +28,7 @@
 #include "game.h"
 #include "bdeb.h"
 #include "bact.h"
+#include "bstage.h"
 
 #define DS_MAX 10
 typedef struct { uint16_t str; uint8_t qty; int16_t score; } dstat_t;
@@ -297,7 +298,7 @@ static void score(const debreq_t *q, uint8_t success, uint8_t i0)
 			rtab_t ts;
 			if (u.sol != 0xFF) far_read(FAR(SOLDIER_PAGE, 0) + (uint16_t)u.sol * sizeof(soldier_t) + offsetof(soldier_t, type), &st, 1);
 			int16_t value = rtab_open(RES_RULE_SOLDIERS, &ts) && st < ts.n ? (uint8_t)rtab_word(&ts, st, offsetof(r_soldiers_t, value)) : 20;
-			add_stat(D_XKIA, -value);
+			add_stat(u.done == U_MIA ? D_MIA : D_XKIA, -value);   // оставлен при прерывании — пропал
 		}
 	}
 	if (success)                                 // упавшее в бою (вещи выбывших; не груз корабля и не
@@ -326,7 +327,14 @@ void deb_start(const debreq_t *q) __banked
 	ds_reset();
 	DEB_ACC = 0;
 	for (uint8_t i = 0; i < q->nsold; i++) {
-		far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
+		far_t a = UNITS_FAR + (uint16_t)i * sizeof u;
+		far_read(a, &u, sizeof u);
+		// прервали: живой (и оглушённый) не в корабле и не в зоне выхода — пропал без вести
+		// (DebriefingState.cpp:1209-1273: killSoldier, минус value)
+		if (q->aborted && (u.alive || u.hp) && st_zone(q->page, i) == 1) {
+			u.alive = 0; u.hp = 0; u.done = U_MIA;
+			far_write(a, &u, sizeof u);
+		}
 		if (u.alive) alive_x++;
 	}
 	uint8_t success = !q->aborted && alive_x;

@@ -230,25 +230,27 @@ static uint8_t abort_get(sdef_t *s, wdef_t *w, uint8_t page, uint16_t dep)
 	return 1;
 }
 
+uint8_t st_zone(uint8_t page, uint8_t i) __banked
+{
+	uint8_t cx, cy, cw, cl, base;
+	unit_t u;
+	mapgen_craft(&cx, &cy, &cw, &cl, &base);
+	far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
+	uint8_t p = far_byte(mapgen_cells() + ((uint32_t)((uint16_t)u.z * mapgen_sy() + u.y) * mapgen_sx() + u.x) * 4), t = special(page, p);
+	if (cw && u.x >= cx && u.y >= cy && u.x < cx + cw && u.y < cy + cl && p && p >= base) return 0;   // на полу корабля (части от base) в его прямоугольнике
+	if (t == SPECIAL_END_POINT) return 2;
+	return t == 1 && !cw ? 0 : 1;            // START_POINT — вход карты без корабля
+}
+
 // Бойцы по зонам: [0] в корабле (у входа), [1] снаружи, [2] в зоне выхода
 static void areas(uint8_t page, uint8_t nsold, uint8_t *cnt, uint8_t *craft)
 {
 	uint8_t cx, cy, cw, cl, base;
 	mapgen_craft(&cx, &cy, &cw, &cl, &base);
 	*craft = cw != 0;
-	far_t cells = mapgen_cells();
-	uint16_t sx = mapgen_sx(), sy = mapgen_sy();
 	cnt[0] = cnt[1] = cnt[2] = 0;
-	for (uint8_t i = 0; i < nsold; i++) {
-		unit_t u;
-		far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
-		if (!u.alive) continue;
-		uint8_t p = far_byte(cells + ((uint32_t)((uint16_t)u.z * sy + u.y) * sx + u.x) * 4), k = 1, t = special(page, p);
-		if (cw && u.x >= cx && u.y >= cy && u.x < cx + cw && u.y < cy + cl && p && p >= base) k = 0;   // на полу корабля (части от base) в его прямоугольнике
-		else if (t == SPECIAL_END_POINT) k = 2;
-		else if (t == 1 && !cw) k = 0;       // START_POINT — вход карты без корабля
-		cnt[k]++;
-	}
+	for (uint8_t i = 0; i < nsold; i++)
+		if (far_byte(UNITS_FAR + (uint16_t)i * sizeof(unit_t) + offsetof(unit_t, alive))) cnt[st_zone(page, i)]++;
 }
 
 void st_abort_text(uint8_t slot, char *buf, uint8_t page, uint8_t nsold) __banked
@@ -272,7 +274,7 @@ uint8_t st_exit(uint8_t page, uint8_t nsold, uint8_t drop) __banked
 		if (!u.alive) continue;
 		uint8_t p = far_byte(cells + ((uint32_t)((uint16_t)u.z * sy + u.y) * sx + u.x) * 4);
 		if (p && far_byte(FAR(page + 2, TV_PROPS) + (uint16_t)p * TV_PSIZE + 10) == SPECIAL_END_POINT) in++;
-		else if (drop) { u.alive = 0; u.hp = 0; far_write(a, &u, sizeof u); }
+		else if (drop) { u.alive = 0; u.hp = 0; u.done = U_MIA; far_write(a, &u, sizeof u); }
 	}
 	return in;
 }

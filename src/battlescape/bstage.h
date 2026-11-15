@@ -18,14 +18,16 @@ uint8_t st_alive(uint8_t n, uint8_t *xc) __banked;
 // Следующая фаза развёртывания dep (#FFFF — нет)
 uint16_t st_next(uint16_t dep) __banked;
 // Живых бойцов (из nsold) на полу END_POINT (BattleUnit::isInExitArea(END_POINT)); page — рабочая.
-// drop — прервали в следующую фазу: оставшиеся вне зоны выбывают (goToTimeOut; у нас — гибель,
-// «пропал без вести» разбор пока не различает)
+// drop — прервали в следующую фазу: оставшиеся вне зоны выбывают (goToTimeOut) — пропали без вести
 uint8_t st_exit(uint8_t page, uint8_t nsold, uint8_t drop) __banked;
 
 // Окно AbortMissionState (SCR_ABORT; вынесено из банка 31): раскладка — по тому, есть ли зона
 // выхода; тексты DYN(0..2) — бойцы в корабле (у входа), снаружи, в зоне выхода
 #include "ui.h"
 void st_abort_text(uint8_t slot, char *buf, uint8_t page, uint8_t nsold) __banked;
+// Зона клетки юнита i (BattleUnit::isInExitArea): 0 — корабль (у карты без корабля — START_POINT),
+// 1 — снаружи, 2 — END_POINT
+uint8_t st_zone(uint8_t page, uint8_t i) __banked;
 // Окно BriefingState (SCR_BRIEFING) развёртывания dep: тексты DYN(0..3) — заголовок, цель корабля
 // craft, корабль, брифинг. st_brief_stage(1) — брифинг следующей фазы поверх боя (OK — назад в бой),
 // 0 — перед боем (OK — бой)

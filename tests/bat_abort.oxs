@@ -25,15 +25,23 @@ click L
 waitmark 248 200
 wait 60
 shot tmp/shots/bat_abort/01_cancel.png
-# ESC (на ZX — SPACE) — то же окно, OK — разбор (прервали: «UFO не взят» / «террор продолжается»), OK — выход
+# боец 0 — вне корабля (клетка 2,2): при прерывании он пропал без вести (DebriefingState.cpp:1263-1273)
+poke 4E:3880 2
+poke 4E:3881 2
+# ESC (на ZX — SPACE) — то же окно (5 в корабле, 1 снаружи), OK — разбор (прервали: «UFO не взят» /
+# «террор продолжается»; строка разбора ds[0] — #EE:3000: пропавших 1), OK — выход
 key SPACE
 waitmark 251 200
+wait 20
+shot tmp/shots/bat_abort/01b_outside.png
 pokew _cursor_x 76
 pokew _cursor_y 118
 click L
 waitmark 254 600
 wait 100
 shot tmp/shots/bat_abort/02_debriefing.png
+expect EE:3002 1
+expect 4E:3884 0
 key ENTER
 waitmark 1 300
 echo battle abort OK
