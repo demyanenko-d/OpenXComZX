@@ -19,6 +19,8 @@
 #include "gfx.h"
 #include "text.h"
 #include "bitems.h"
+#include "units.h"
+#include "bfire.h"
 #include "bmenu.h"
 
 #define AM_MAX 6
@@ -39,11 +41,21 @@ static const amreq_t *rq;
 static r_items_t __at(0xB040) wr;        // правило предмета в руке
 static uint8_t both;                     // заняты обе руки (двуручное — -20 %)
 
-static int16_t acc_mod(void)             // getAccuracyModifier: ранений пока нет
+// BattleUnit::getAccuracyModifier (:1548-1571): 25 · здоровье / максимум + 75 − 10 · раны (головы и руки
+// с оружием, у двуручного — обеих; бросок — только головы), не меньше 10. item — действие предметом
+static int16_t acc_mod_w(uint8_t item)
 {
 	int16_t m = rq->hp_max ? 25 * (int16_t)rq->hp / rq->hp_max + 75 : 100;
+	if (rq->unit < MAX_UNITS) {
+		uint8_t w[6];
+		far_read(WOUNDS_AT(rq->page, rq->unit), w, 6);
+		uint8_t n = w[0];
+		if (item) n += (wr.flags & ITEMS_F_TWO_HANDED) ? w[2] + w[3] : rq->right ? w[2] : w[3];
+		m -= 10 * (int16_t)n;
+	}
 	return m < 10 ? 10 : m;
 }
+#define acc_mod() acc_mod_w(1)
 
 static void add(uint8_t ba, uint16_t name)
 {
@@ -54,7 +66,7 @@ static void add(uint8_t ba, uint16_t name)
 	uint16_t cost = 0;
 	switch (ba) {
 	case BA_PRIME: cost = 50; break;
-	case BA_THROW: cost = 25; acc = (int16_t)((uint16_t)rq->throwing * acc_mod() / 100); break;
+	case BA_THROW: cost = 25; acc = (int16_t)((uint16_t)rq->throwing * acc_mod_w(0) / 100); break;
 	case BA_AUTOSHOT: cost = wr.tu_auto; break;
 	case BA_SNAPSHOT: cost = wr.tu_snap; break;
 	case BA_HIT: cost = wr.tu_melee; break;

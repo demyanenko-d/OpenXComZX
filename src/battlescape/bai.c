@@ -245,6 +245,7 @@ static void fire(const aictx_t *c, uint8_t a, unit_t *u, const vu_t *t, uint8_t 
 	uint16_t acc = act == BA_AIMEDSHOT ? w->accuracy_aimed : act == BA_AUTOSHOT ? w->accuracy_auto : w->accuracy_snap;
 	acc = (uint16_t)u->firing * acc / 100;
 	if (u->kneel) acc = acc * 115 / 100;
+	if (u->hp_max) acc = acc * (25 * u->hp / u->hp_max + 75) / 100;   // getAccuracyModifier: здоровье
 	if ((w->flags & ITEMS_F_TWO_HANDED) && bi_hand(c->page, a, !right, &o)) acc = acc * 80 / 100;
 	u->tu -= cost;
 	u_set(a, u);
