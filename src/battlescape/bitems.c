@@ -19,6 +19,7 @@
 #include "bitems.h"
 #include "bequip.h"
 #include "bfx.h"
+#include "game.h"
 
 static uint8_t bi_n;                     // занято записей
 
@@ -116,6 +117,43 @@ uint8_t bi_crew(uint8_t page, const uint8_t *sol, uint8_t n) __banked
 	hands_build(page, n);
 	fx_build(page, n + far_byte(FAR(page + 1, TL_ANUM)));   // кадры пуль и вспышек (bfx.c)
 	return bi_n;
+}
+
+// После боя (bdeb.c campaign): вещи выживших бойцов (n — их число) — обратно в их записи inv_t
+// кампании, как они лежат в бою (раскладка — InventoryState::saveEquipmentLayout; брошенное,
+// потраченное и подобранное — как есть: иначе брошенная граната и пустые обоймы «возвращались»).
+// Взведённая граната сохраняется невзведённой. Погибших снимает soldier_delete
+void bi_save(uint8_t page, uint8_t n) __banked
+{
+	rtab_t t;
+	if (!rtab_open(RES_RULE_ITEMS, &t)) return;
+	for (uint8_t u = 0; u < n; u++) {
+		unit_t x;
+		far_read(UNITS_FAR + (uint16_t)u * sizeof x, &x, sizeof x);
+		if (x.sol == 0xFF || (!x.alive && !x.hp)) continue;
+		uint8_t had = 0;                         // без своей раскладки — снаряжён из груза корабля
+		for (uint16_t i = 0; i < ST->ninv && !had; i++) {   //   (autoEquip): груз остаётся за кораблём
+			inv_t v;
+			inv_get(i, &v);
+			uint8_t vs = v.soldier, xs = x.sol;  // сравнения — с копиями (SDCC 4.5)
+			had = vs == xs;
+		}
+		if (!had) continue;
+		inv_clear_soldier(x.sol);
+		for (uint16_t i = 0; i < BI_MAX; i++) {
+			bitem_t b;
+			far_read(bi_at(page, (uint8_t)i), &b, sizeof b);
+			if (b.owner != u || b.item >= t.n) continue;
+			uint16_t k = inv_alloc();
+			if (k == INV_NONE) break;
+			uint8_t bt = (uint8_t)rtab_word(&t, b.item, offsetof(r_items_t, battle_type));
+			inv_t v;
+			v.soldier = x.sol; v.slot = b.slot; v.x = b.x; v.y = b.y;
+			v.item = b.item; v.ammo = b.ammo;
+			v.rounds = bt == BT_GRENADE || bt == BT_PROXIMITYGRENADE ? 0 : b.rounds;
+			inv_put(k, &v);
+		}
+	}
 }
 
 // Следующая фаза миссии (BattlescapeGenerator::nextStage :297-411, carryToNextStage): остаются

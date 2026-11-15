@@ -240,6 +240,7 @@ static void campaign(const debreq_t *q, uint8_t alive_x, uint8_t success)
 		uint8_t f = (uint8_t)(far_byte(a) & ~SF_PROMOTED);
 		far_write(a, &f, 1);
 	}
+	bi_save(q->page, q->nsold);                  // вещи выживших — в их раскладку (bitems.c)
 	for (uint8_t i = 0; i < q->nsold; i++) {        // погибшие — с базы (killSoldier), выжившие — опыт
 		unit_t u;
 		far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
