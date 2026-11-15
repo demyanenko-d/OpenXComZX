@@ -155,6 +155,12 @@ void ai_tss_init(const aictx_t *c) __banked
 	memset(ai_tss, 255, MAX_BUNITS);
 	memset(ai_hitby, 0, MAX_BUNITS * 2);
 	ai_dbgn = 0;
+	for (uint8_t i = c->nsold; i < c->n; i++) {      // целей патруля ещё нет (dset/ilevel — снаряжению)
+		unit_t x;
+		u_get(i, &x);
+		U_TONODE(&x) = 0xFFFF;
+		u_set(i, &x);
+	}
 	spot_reset(c);
 }
 
@@ -467,11 +473,17 @@ uint8_t ai_react(const aictx_t *c, uint8_t m) __banked
 	return res;
 }
 
-// Куда патрулировать (setupPatrol): связанный с его узлом узел, иначе любой; путь — в ai_path
+// Куда патрулировать (setupPatrol, AIModule.cpp:415-579): цель — узел _toNode (U_TONODE), пока
+// не дошёл — она помнится между ходами; дошёл — узел становится «откуда» (u->node), новая цель —
+// связанный с ним узел, иначе любой; до 5 попыток найти узел, к которому есть путь. В OpenXcom
+// путь полный, и юнит идёт по нему, пока хватает TU; у нас поиск — в пределах времени юнита и
+// только в малом окне вокруг начала и цели (pf_near_once), а не дошли — к достижимой клетке,
+// ближайшей к узлу (pf_partial_once): полный путь стоил ~48 кадров, второй заход по окну 64x64 —
+// до 350. Уже стоит в ближайшей — другой узел. Путь — в ai_path
 static void plan_patrol(const aictx_t *c, unit_t *u)
 {
 	far_t np;
-	uint16_t nn = mapgen_nodes(&np), to = 0xFFFF;
+	uint16_t nn = mapgen_nodes(&np), to = U_TONODE(u);
 	bnode_t b;
 	if (ai_dbgn && ai_dbgn <= 4) {                   // путь от сценария
 		memcpy(ai_path, AI_DBGP, ai_dbgn);
@@ -479,25 +491,39 @@ static void plan_patrol(const aictx_t *c, unit_t *u)
 		return;
 	}
 	if (!nn) return;
-	if (u->node < nn) {
-		far_read(np + (uint32_t)u->node * sizeof b, &b, sizeof b);
-		uint16_t links[5];
-		uint8_t nk = 0;
-		for (uint8_t k = 0; k < 5; k++) if (b.link[k] < nn) links[nk++] = b.link[k];
-		if (nk) to = links[rng_range(0, nk - 1)];
-	}
-	if (to == 0xFFFF) to = rng_range(0, nn - 1);
-	far_read(np + (uint32_t)to * sizeof b, &b, sizeof b);
-	if (b.x == 0xFF || b.z != u->z) return;
-	pf_req_t r;
-	r.cells = c->cells; r.sx = c->sx; r.sy = c->sy; r.z = u->z; r.sz = c->sz;
-	r.fx = u->x; r.fy = u->y; r.tx = b.x; r.ty = b.y;
-	r.budget = u->tu; r.step = STEP_TU; r.page = c->page;
+	if (to < nn) {
+		far_read(np + (uint32_t)to * sizeof b, &b, sizeof b);
+		if (b.x == u->x && b.y == u->y && b.z == u->z) { u->node = to; to = 0xFFFF; }   // дошёл
+	} else to = 0xFFFF;
 	uint8_t path[PATH_MAX];                     // буфер — на стеке: банку 30 память банка 36 не видна
-	ai_pn = pf_find(&r, path, PATH_MAX);
+	ai_pn = 0;
+	for (uint8_t tries = 0; tries < 5 && !ai_pn; tries++) {
+		if (to == 0xFFFF) {
+			if (u->node < nn) {
+				far_read(np + (uint32_t)u->node * sizeof b, &b, sizeof b);
+				uint16_t links[5];
+				uint8_t nk = 0;
+				for (uint8_t k = 0; k < 5; k++) if (b.link[k] < nn) links[nk++] = b.link[k];
+				if (nk) to = links[rng_range(0, nk - 1)];
+			}
+			if (to == 0xFFFF) to = rng_range(0, nn - 1);
+		}
+		far_read(np + (uint32_t)to * sizeof b, &b, sizeof b);
+		if (b.x != 0xFF && b.z == u->z) {
+			pf_req_t r;
+			r.cells = c->cells; r.sx = c->sx; r.sy = c->sy; r.z = u->z; r.sz = c->sz;
+			r.fx = u->x; r.fy = u->y; r.tx = b.x; r.ty = b.y;
+			r.budget = u->tu; r.step = STEP_TU; r.page = c->page;
+			pf_near_once();
+			pf_partial_once();
+			ai_pn = pf_find(&r, path, PATH_MAX);
+		}
+		if (!ai_pn) to = 0xFFFF;
+	}
 	memcpy(ai_path, path, ai_pn);
 	ai_pi = 0;
-	if (ai_pn) { u->node = to; u_set(ai_a, u); }
+	U_TONODE(u) = to;
+	u_set(ai_a, u);
 }
 
 // Клетки двери сменились: перерисовать и пересчитать маску обзора (тройки x, y, z до #FF)

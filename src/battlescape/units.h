@@ -37,8 +37,11 @@ typedef struct {
 	uint16_t armor_rule;       // правило armors: маски вокселей, модификаторы урона (#FFFF — нет)
 	uint8_t dset;              // пришелец: запись data развёртывания (её itemSets), #FF — нет
 	uint8_t ilevel;            //   уровень предметов (alienItemLevels[месяц][случайный])
+	                           // снаряжение берёт их из копии расстановки (TV_AUNITS): в бою оба
+	                           // байта — узел цели патруля ИИ (U_TONODE, AIModule::_toNode)
 	uint8_t h_float;           // парение (floatHeight) — воксели; в росте учитывается всегда
 } unit_t;
+#define U_TONODE(u) (*(uint16_t *)&(u)->dset)   // #FFFF — цели нет
 // Рост юнита сейчас (BattleUnit::getHeight + getFloatHeight)
 #define UNIT_H(u) ((uint8_t)(((u)->kneel ? (u)->h_kneel : (u)->h_stand) + (u)->h_float))
 _Static_assert(sizeof(unit_t) == 48, "unit_t");

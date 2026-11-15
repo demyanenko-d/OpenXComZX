@@ -63,10 +63,16 @@ static uint8_t __at(0xBF09) pf_my;
 static uint8_t __at(0xBF0A) pf_ox;           // угол окна на ней
 static uint8_t __at(0xBF0B) pf_oy;
 static uint8_t __at(0xBF0C) pf_near;         // #A5 — следующий поиск только в малом окне (pf_near_once)
+static uint8_t __at(0xBF0D) pf_part;         // #A5 — не дошли: путь к ближайшей к цели клетке
 
 void pf_near_once(void) __banked
 {
 	pf_near = 0xA5;
+}
+
+void pf_partial_once(void) __banked
+{
+	pf_part = 0xA5;
 }
 
 // Клетка карты (координаты окна): номер считается в 16 битах и умножается на 4 сдвигом —
@@ -155,6 +161,9 @@ static uint8_t wall_blocked(const uint8_t *pf, uint8_t cx, uint8_t cy, uint8_t c
 
 uint8_t pf_find(const pf_req_t *q, uint8_t *path, uint8_t maxlen) __banked
 {
+	uint8_t near = pf_near == 0xA5, part = pf_part == 0xA5;   // просьбы — на один поиск
+	uint8_t pbd = 0xFF, pbx = 0, pby = 0;
+	pf_near = pf_part = 0;
 	if (q->page == PG_NONE || q->tx >= q->sx || q->ty >= q->sy) return 0;
 	// Окно волны на карте: вся карта, если влезает, иначе 64 клетки вокруг середины пути
 	pf_mx = q->sx; pf_my = q->sy;
@@ -214,6 +223,9 @@ uint8_t pf_find(const pf_req_t *q, uint8_t *path, uint8_t maxlen) __banked
 			}
 		}
 		memset(pf, 0xFF, 4096);
+		pbx = fx; pby = fy;                          // ближе, чем стоит, — иначе пути нет
+		pbd = fx > tx ? fx - tx : tx - fx;
+		if ((uint8_t)(fy > ty ? fy - ty : ty - fy) > pbd) pbd = fy > ty ? fy - ty : ty - fy;
 		uint16_t head = 0, tail = 0;
 		PF_COST(fx, fy) = 0;
 		PF_FROM(fx, fy) = (uint8_t)(q->z << 3);   // в старших битах — этаж клетки
@@ -246,6 +258,12 @@ uint8_t pf_find(const pf_req_t *q, uint8_t *path, uint8_t maxlen) __banked
 				if (wall_blocked(pf, cx, cy, cz, d)) continue;
 				PF_COST((uint8_t)nx, (uint8_t)ny) = (uint8_t)nc;
 				PF_FROM((uint8_t)nx, (uint8_t)ny) = (uint8_t)(d | (nz << 3));
+				if (part) {                  // достижимая клетка, ближайшая к цели (pf_partial_once)
+					uint8_t ax = (uint8_t)nx, ay = (uint8_t)ny;
+					uint8_t ex = ax > tx ? ax - tx : tx - ax, ey = ay > ty ? ay - ty : ty - ay;
+					if (ey > ex) ex = ey;
+					if (ex < pbd) { pbd = ex; pbx = ax; pby = ay; }
+				}
 				queue[tail++] = (uint16_t)ny * PF_W + (uint16_t)nx;
 				if (tail >= PF_QMAX) tail = 0;
 				if (tail == head) { head = tail; break; }   // очередь кончилась
@@ -253,22 +271,30 @@ uint8_t pf_find(const pf_req_t *q, uint8_t *path, uint8_t maxlen) __banked
 		}
 		if (PF_COST(tx, ty) != 0xFF) break;           // дошли
 		if (!bx0 && !by0 && bx1 == pf_sx - 1 && by1 == pf_sy - 1) break;   // и так всё окно
-		if (pf_near == 0xA5) break;                   // просили без второго захода (бегство паники)
+		if (near) break;                              // просили без второго захода (бегство, патруль)
 	}
-	pf_near = 0;
+	if (part && PF_COST(tx, ty) == 0xFF) { tx = pbx; ty = pby; }   // не дошли: к ближайшей к цели
+	// Путь — от цели назад: длина, затем первые maxlen шагов (длиннее — обрезается: ИИ идёт,
+	// пока хватает времени, как по полному пути Pathfinding::calculate)
 	uint8_t n = 0;
 	if (PF_COST(tx, ty) != 0xFF) {
-		uint8_t x = tx, y = ty;
-		uint8_t buf[32];
-		while ((x != fx || y != fy) && n < 32 && n < maxlen) {
+		uint8_t x = tx, y = ty, len = 0;
+		while ((x != fx || y != fy) && len < 255) {
 			uint8_t d = PF_FROM(x, y) & 7;
-			buf[n++] = d;
 			x = (uint8_t)((int16_t)x - pf_dx[d]);
 			y = (uint8_t)((int16_t)y - pf_dy[d]);
+			len++;
 		}
-		if (x == fx && y == fy)
-			for (uint8_t i = 0; i < n; i++) path[i] = buf[n - 1 - i];
-		else n = 0;
+		if (x == fx && y == fy) {
+			n = len < maxlen ? len : maxlen;
+			x = tx; y = ty;
+			for (uint8_t i = len; i; i--) {
+				uint8_t d = PF_FROM(x, y) & 7;
+				if (i <= n) path[i - 1] = d;
+				x = (uint8_t)((int16_t)x - pf_dx[d]);
+				y = (uint8_t)((int16_t)y - pf_dy[d]);
+			}
+		}
 	}
 	pg_map3(old);
 	return n;
