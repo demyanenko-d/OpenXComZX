@@ -48,8 +48,6 @@ uint16_t ba_fire(bafire_t *q) __banked;
 #define BA_XP ((uint8_t *)0xB100)   // MAX_UNITS x EXP_N — только код банка 37
 void ba_exp(uint8_t unit, uint8_t kind) __banked;
 void ba_exp_reset(void) __banked;
-// Отряд в корабле / снаружи (AbortMissionState): вернёт «в корабле», снаружи — в *out
-uint8_t ba_in_craft(uint8_t nsold, uint8_t *out) __banked;
 // Бегство паникующего i: путь (до max шагов) в path — Win1 или стек; вернёт число шагов
 uint8_t ba_flee(uint8_t page, uint8_t i, uint8_t *path, uint8_t max) __banked;
 // Паника в начале хода стороны side (bact2.c): кто запаниковал — номера в list (бит 7 — берсерк,

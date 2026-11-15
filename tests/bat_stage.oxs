@@ -1,0 +1,65 @@
+# Многофазная миссия (alienDeployments.nextStage; BattlescapeState::finishBattle,
+# BattlescapeGenerator::nextStage; bstage.c): отладочный бой, карта развёртывания 10 (TFTD
+# STR_CARGO_SHIP_P1, nextStage — 11 STR_CARGO_SHIP_P2). Пришельцы (units[6..9]) «убиты» записью в
+# память, конец хода — фаза 2: развёртывание карты (scr_battle bt_dep — #4E:3810) 11, отряд тот же.
+# Снимки — tmp/shots/bat_stage/. Запуск: powershell -File tools\run.ps1 -Script tests\bat_stage.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _ui_request 248
+waitmark 248 900
+wait 150
+pokew scr_battle$mis_deploy 10
+key g
+wait 900
+peek scr_battle$nunits 1
+expect 4E:3810 10
+# окно прерывания фазы 1: строка «в зоне выхода» (END_POINT), CANCEL
+pokew _cursor_x 256
+pokew _cursor_y 168
+click L
+waitmark 251 200
+wait 20
+shot tmp/shots/bat_stage/00_abort.png
+pokew _cursor_x 240
+pokew _cursor_y 118
+click L
+waitmark 248 200
+wait 30
+poke 4E:39A4 0
+poke 4E:39A8 0
+poke 4E:39D4 0
+poke 4E:39D8 0
+poke 4E:3A04 0
+poke 4E:3A08 0
+poke 4E:3A34 0
+poke 4E:3A38 0
+pokew _cursor_x 250
+pokew _cursor_y 150
+click L
+wait 900
+expect 4E:3810 11
+expect scr_battle$nsold 6
+expect scr_battle$nunits 9
+# бойцы — на узлах NR_XCOM новой карты: боец 0 в (43,13,0), оружие осталось в руках (запись 0)
+expect 4E:3880 43
+expect 4E:3881 13
+expect D1:2D00 0
+shot tmp/shots/bat_stage/01_stage2.png
+# фаза 2 (последняя): пришельцы units[6..8] — разбор, убитых за обе фазы 4 + 3 (ds[0] — #EE:3000)
+poke 4E:39A4 0
+poke 4E:39A8 0
+poke 4E:39D4 0
+poke 4E:39D8 0
+poke 4E:3A04 0
+poke 4E:3A08 0
+pokew _cursor_x 250
+pokew _cursor_y 150
+click L
+waitmark 254 900
+wait 100
+shot tmp/shots/bat_stage/02_debriefing.png
+peek EE:3000 10
+expect EE:3002 7
+exit 0

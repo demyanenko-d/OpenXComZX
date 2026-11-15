@@ -188,6 +188,33 @@ static void promotions(void)
 	while (n / 5 > cnt[2] && (k = s_best(1)) != 0xFF) { s_promote(k); cnt[2]++; }
 }
 
+// Поле за отрядом: трупы и упавшее в бою — на склад базы корабля (кампания)
+static void loot(const debreq_t *q)
+{
+	if (q->craft >= MAX_CRAFTS || ST->craft[(uint8_t)q->craft].type == NONE8) return;
+	uint8_t b = ST->craft[(uint8_t)q->craft].base;
+	rtab_t ti, ta;
+	unit_t u;
+	rtab_open(RES_RULE_ITEMS, &ti);
+	rtab_open(RES_RULE_ARMORS, &ta);
+	for (uint8_t i = q->nsold; i < q->n; i++) {     // трупы
+		far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
+		if (u.alive || u.hp || u.faction != FACTION_HOSTILE || u.armor_rule >= ta.n) continue;
+		r_armors_t a;
+		uint16_t corpse;
+		rtab_get(&ta, u.armor_rule, &a);
+		if (!a.corpse_battle.n) continue;
+		rtab_tail(&ta, a.corpse_battle.off, &corpse, 2);
+		store(b, &ti, corpse);
+	}
+	for (uint16_t i = 0; i < BI_MAX; i++) {          // упавшее в бою (вещи выбывших)
+		bitem_t it;
+		if (!dropped(q, i, &it, &ti)) continue;
+		store(b, &ti, it.item);
+		if (it.ammo != 0xFFFF && it.rounds) store(b, &ti, it.ammo);
+	}
+}
+
 static void campaign(const debreq_t *q, uint8_t alive_x, uint8_t success)
 {
 	uint8_t c = (uint8_t)q->craft;
@@ -195,29 +222,7 @@ static void campaign(const debreq_t *q, uint8_t alive_x, uint8_t success)
 	if (cr->type == NONE8) return;
 	uint8_t dk = cr->dest_kind, di = cr->dest;
 	geo_t pos = cr->pos;
-	uint8_t b = cr->base;
-	if (success) {
-		rtab_t ti, ta;
-		unit_t u;
-		rtab_open(RES_RULE_ITEMS, &ti);
-		rtab_open(RES_RULE_ARMORS, &ta);
-		for (uint8_t i = q->nsold; i < q->n; i++) {     // трупы
-			far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
-			if (u.alive || u.hp || u.faction != FACTION_HOSTILE || u.armor_rule >= ta.n) continue;
-			r_armors_t a;
-			uint16_t corpse;
-			rtab_get(&ta, u.armor_rule, &a);
-			if (!a.corpse_battle.n) continue;
-			rtab_tail(&ta, a.corpse_battle.off, &corpse, 2);
-			store(b, &ti, corpse);
-		}
-		for (uint16_t i = 0; i < BI_MAX; i++) {          // упавшее в бою (вещи выбывших)
-			bitem_t it;
-			if (!dropped(q, i, &it, &ti)) continue;
-			store(b, &ti, it.item);
-			if (it.ammo != 0xFFFF && it.rounds) store(b, &ti, it.ammo);
-		}
-	}
+	if (success) loot(q);
 	craft_return(c);                             // returnToBase: цель кораблю меняет — взята раньше
 	if (dk == DK_SITE && di < MAX_SITES && ST->site[di].id) { ST->site[di].id = 0; ST->nsites--; }
 	if (dk == DK_UFO && di < MAX_UFOS && ST->ufo[di].type != NONE8) {
@@ -245,21 +250,22 @@ static void campaign(const debreq_t *q, uint8_t alive_x, uint8_t success)
 	add_activity(&pos, d_total, 1);
 }
 
-void deb_start(const debreq_t *q) __banked
+// Строки очков — с нуля, если не копятся с прошлых фаз миссии (DEB_ACC)
+static void ds_reset(void)
+{
+	if (DEB_ACC) return;
+	for (uint8_t k = 0; k < DS_MAX; k++) { ds[k].str = ds_str[k]; ds[k].qty = 0; ds[k].score = 0; }
+}
+
+// Очки по юнитам с i0 и упавшим предметам (prepareDebriefing); success — поле за отрядом
+static void score(const debreq_t *q, uint8_t success, uint8_t i0)
 {
 	rtab_t tu, ti, ta;
 	unit_t u;
-	uint8_t alive_x = 0;
-	for (uint8_t k = 0; k < DS_MAX; k++) { ds[k].str = ds_str[k]; ds[k].qty = 0; ds[k].score = 0; }
 	rtab_open(RES_RULE_UNITS, &tu);
 	rtab_open(RES_RULE_ITEMS, &ti);
 	rtab_open(RES_RULE_ARMORS, &ta);
-	for (uint8_t i = 0; i < q->n; i++) {
-		far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
-		if (u.faction == FACTION_PLAYER && u.alive) alive_x++;
-	}
-	uint8_t success = !q->aborted && alive_x;
-	for (uint8_t i = 0; i < q->n; i++) {
+	for (uint8_t i = i0; i < q->n; i++) {
 		far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
 		uint8_t f = u.faction;                   // сравнения — с копиями (SDCC 4.5)
 		if (f == FACTION_NEUTRAL) {              // мирный (:1199-1205, :1291-1302)
@@ -301,6 +307,30 @@ void deb_start(const debreq_t *q) __banked
 			int16_t rp = (int16_t)rtab_word(&ti, b.item, offsetof(r_items_t, recovery_points));
 			if (rp) add_stat(D_ART, rp);
 		}
+}
+
+// Конец фазы (BattlescapeGenerator::nextStage): пришельцы и мирные фазы, упавшее — в итог (бойцы —
+// в конце миссии); won — пришельцы перебиты: трофеи — на склад (takeHomeGuaranteed)
+void deb_stage(const debreq_t *q, uint8_t won) __banked
+{
+	ds_reset();
+	score(q, won, q->nsold);
+	if (won) loot(q);
+	DEB_ACC = 1;
+}
+
+void deb_start(const debreq_t *q) __banked
+{
+	unit_t u;
+	uint8_t alive_x = 0;
+	ds_reset();
+	DEB_ACC = 0;
+	for (uint8_t i = 0; i < q->nsold; i++) {
+		far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
+		if (u.alive) alive_x++;
+	}
+	uint8_t success = !q->aborted && alive_x;
+	score(q, success, 0);
 	if (!alive_x) add_stat(D_CRAFT, 0);          // отряд не вернулся (очки корабля — когда будет кампания)
 	if (success) d_title = q->ufo ? STR_UFO_IS_RECOVERED : STR_ALIENS_DEFEATED;
 	else if (!alive_x) d_title = STR_CRAFT_IS_LOST;

@@ -23,6 +23,7 @@
 #include "pathfind.h"
 #include "mapgen.h"
 #include "game.h"
+#include "bdeb.h"
 
 uint8_t ba_fill(const bashot_t *q, fu_t *f, shot_t *s) __banked;   // bact.c
 uint8_t ba_melee(const bashot_t *a, const unit_t *u, const r_items_t *w, uint8_t go) __banked;
@@ -122,29 +123,9 @@ void ba_exp(uint8_t unit, uint8_t kind) __banked
 void ba_exp_reset(void) __banked
 {
 	memset(BA_XP, 0, MAX_UNITS * EXP_N);
+	DEB_ACC = 0;                             // очки разбора — с нуля (bdeb.c, та же память банка)
 }
 
-// Кто из отряда (nsold) в корабле — для AbortMissionState: на его полу (части от base) внутри
-// прямоугольника (клетки START_POINT у карт кораблей; признака в наших MCDSET нет). Вернёт
-// число в корабле, остальных живых — в *out
-uint8_t ba_in_craft(uint8_t nsold, uint8_t *out) __banked
-{
-	uint8_t cx, cy, cw, cl, base, in = 0, o = 0;
-	mapgen_craft(&cx, &cy, &cw, &cl, &base);
-	far_t cells = mapgen_cells();
-	uint16_t sx = mapgen_sx(), sy = mapgen_sy();
-	for (uint8_t i = 0; i < nsold; i++) {
-		unit_t u;
-		u_get(i, &u);
-		if (!u.alive) continue;
-		uint8_t c = 0;
-		if (cw && u.x >= cx && u.y >= cy && u.x < cx + cw && u.y < cy + cl)
-			c = far_byte(cells + ((uint32_t)((uint16_t)u.z * sy + u.y) * sx + u.x) * 4);
-		if (c && c >= base) in++; else o++;
-	}
-	*out = o;
-	return in;
-}
 
 // Бегство паникующего (handlePanickingUnit :1306-1328): до 20 попыток — случайная клетка ±5 на его
 // этаже, путь на всё его время (у нас без попыток этажом ниже). Вернёт шагов в path (0 — некуда)

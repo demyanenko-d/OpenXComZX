@@ -118,6 +118,26 @@ uint8_t bi_crew(uint8_t page, const uint8_t *sol, uint8_t n) __banked
 	return bi_n;
 }
 
+// Следующая фаза миссии (BattlescapeGenerator::nextStage :297-411, carryToNextStage): остаются
+// только вещи бойцов (n — их число; у погибших и оглушённых они уже на земле), лежавшее на земле
+// — в итог фазы (bdeb.c) и прочь; записи — подряд с начала. Предметы новых пришельцев, кадры рук
+uint8_t bi_stage(uint8_t page, uint8_t n) __banked
+{
+	bitem_t b;
+	uint8_t k = 0;
+	for (uint16_t i = 0; i < BI_MAX; i++) {
+		far_read(bi_at(page, (uint8_t)i), &b, sizeof b);
+		if (b.owner >= n || !far_byte(UNITS_FAR + (uint16_t)b.owner * sizeof(unit_t) + offsetof(unit_t, alive))) continue;
+		if (k != i) far_write(bi_at(page, k), &b, sizeof b);
+		k++;
+	}
+	far_fill(bi_at(page, k), BI_NONE, (uint16_t)(BI_MAX - k) * sizeof(bitem_t));
+	bi_n = be_aliens(page, k, n);
+	hands_build(page, n);
+	fx_build(page, n + far_byte(FAR(page + 1, TL_ANUM)));
+	return bi_n;
+}
+
 // Оружие в руках для вида (UnitSprite::drawRoutine0: itemR / itemL — кадр HANDOB.PCK
 // handSprite + направление): у бойца — слоты кадров предметов в руках (loader.h TL_UHS), кадры
 // слота — 8 направлений; пиксели нужных кадров копируются подряд в свою страницу (TL_HANDPG):

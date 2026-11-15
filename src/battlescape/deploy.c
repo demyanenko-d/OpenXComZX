@@ -166,6 +166,40 @@ static uint16_t alien_make(unit_t *a, uint16_t type, uint8_t rank, uint8_t diff,
 	return sheet;
 }
 
+// Отряд в следующей фазе (BattlescapeGenerator::nextStage :443-479): живой боец — на узел ранга
+// NR_XCOM (1), нет узла — рядом с уже поставленным (placeUnitNearFriend: у нас — свободная
+// соседняя клетка первого, без проверки стен); оглушённый — телом в клетку первого (его несли на
+// себе: takeToNextStage -> _craftInventoryTile); погибший остаётся вне карты. Записи — в TL_UNITS
+static void stage_crew(unit_t *u, uint8_t nsold, uint8_t sx, uint8_t sy)
+{
+	static const int8_t ddx[8] = { 0, 1, 1, 1, 0, -1, -1, -1 }, ddy[8] = { -1, -1, 0, 1, 1, 1, 0, -1 };
+	uint8_t f = 0xFF;                        // первый поставленный
+	for (uint8_t i = 0; i < nsold; i++) u[i].z = 0xFF;   // ещё не на карте: cell_free их не видит
+	for (uint8_t i = 0; i < nsold; i++) {
+		unit_t *a = &u[i];
+		if (!a->alive) continue;
+		int16_t s = spawn_node(u, nsold, 1, 1, 0, sx, sy);
+		if (s >= 0) { a->x = sn[s].x; a->y = sn[s].y; a->z = sn[s].z; }
+		else if (f != 0xFF) {
+			const unit_t *g = &u[f];
+			a->x = g->x; a->y = g->y; a->z = g->z;   // некуда — в его клетку
+			for (uint8_t k = 0; k < 8; k++) {
+				int16_t x = (int16_t)g->x + ddx[k], y = (int16_t)g->y + ddy[k];
+				if (x < 0 || y < 0 || x >= sx || y >= sy || !cell_free(u, nsold, (uint8_t)x, (uint8_t)y, g->z, 1)) continue;
+				a->x = (uint8_t)x; a->y = (uint8_t)y;
+				break;
+			}
+		} else { a->x = a->y = 0; a->z = 0; }
+		if (f == 0xFF) f = i;
+	}
+	for (uint8_t i = 0; i < nsold; i++) {    // оглушённые — к первому, погибшие — вне карты (этаж 0)
+		unit_t *a = &u[i];
+		if (a->z != 0xFF) continue;
+		if (a->hp && f != 0xFF) { a->x = u[f].x; a->y = u[f].y; a->z = u[f].z; }
+		else a->z = 0;
+	}
+}
+
 uint8_t aliens_deploy(const adreq_t *r, uint8_t nsold, uint8_t sx, uint8_t sy) __banked
 {
 	adep_t *q = &adq;
@@ -208,6 +242,7 @@ uint8_t aliens_deploy(const adreq_t *r, uint8_t nsold, uint8_t sx, uint8_t sy) _
 		s->x = b.x; s->y = b.y; s->z = b.z; s->type = b.type; s->rank = b.rank; s->priority = b.priority;
 		s->idx = i;
 	}
+	if (r->stage) stage_crew(u, nsold, sx, sy);
 	dbg_puts("aliens: deploy "); dbg_dec(dep); dbg_puts(" race "); dbg_dec(race);
 	dbg_puts(" nodes "); dbg_dec(nn); dbg_puts(" spawn "); dbg_dec(nsn);
 	uint8_t n0 = n;
@@ -282,6 +317,7 @@ uint8_t aliens_deploy(const adreq_t *r, uint8_t nsold, uint8_t sx, uint8_t sy) _
 	}
 	dbg_puts("\n");
 	if (n > n0) far_write(FAR(q->page + 2, TV_AUNITS), du + n0, (uint16_t)(n - n0) * sizeof(unit_t));
+	if (r->stage) far_write(FAR(q->page + 1, TL_UNITS), du, (uint16_t)nsold * sizeof(unit_t));   // отряд на новых местах
 	far_write(FAR(q->page + 1, TL_ADEP), &dep, 2);
 	n0 = n - n0;
 	far_write(FAR(q->page + 1, TL_ANUM), &n0, 1);

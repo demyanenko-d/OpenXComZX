@@ -18,7 +18,8 @@ typedef struct {
 } adep_t;
 
 // поля — как в adep_t; terrain — террейн карты (его civilianTypes, ресурс CIVTYPES)
-typedef struct { uint16_t deploy, race; uint8_t ufo, page; uint16_t terrain; } adreq_t;
+// stage — следующая фаза миссии: отряд из TL_UNITS ставится заново (bstage.h)
+typedef struct { uint16_t deploy, race; uint8_t ufo, page; uint16_t terrain; uint8_t stage; } adreq_t;
 // Поставить пришельцев к отряду из nsold бойцов, за ними — мирных жителей (civilians
 // развёртывания, FACTION_NEUTRAL); вернёт число тех и других (записи — TV_AUNITS).
 // sx, sy — размер карты. Листы брони грузятся в страницы пула — отдать aliens_free.

@@ -29,6 +29,8 @@ typedef struct {
 // копия их раскладки inv_t (placeItemByLayout); бойцу без раскладки в отладочном бою — винтовка
 // с обоймой в правую руку. page — рабочая страница боя. Вернёт число предметов.
 uint8_t bi_crew(uint8_t page, const uint8_t *sol, uint8_t n) __banked;
+// Следующая фаза миссии: остаются вещи n бойцов, добавляются предметы новых пришельцев
+uint8_t bi_stage(uint8_t page, uint8_t n) __banked;
 // Предмет в руке юнита (right — правая): номер записи + 1 (0 — пусто), копия в *out
 uint16_t bi_hand(uint8_t page, uint8_t unit, uint8_t right, bitem_t *out) __banked;
 // Граната юнита не в руках (BattleUnit::getGrenadeFromBelt: любая в инвентаре) при свободной руке:

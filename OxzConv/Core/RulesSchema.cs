@@ -336,6 +336,7 @@ namespace OxzConv
 					Fn("itemSets", "nums", (e, k, rs) => ItemSets(rs, Y.Get(e, "data"), $"alienDeployments.{k}.itemSets"),
 						"по записи data: [уровней, ([n, предметы] x уровней)] (DeploymentData::itemSets)"),
 					F("civilians", "u8", "0", comment: "мирных жителей до (deployCivilians: от половины до стольких)"),
+					F("nextStage", "ref:alienDeployments", comment: "следующая фаза миссии (BattlescapeGenerator::nextStage); #FFFF — нет"),
 				},
 			});
 

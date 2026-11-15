@@ -43,6 +43,7 @@
 #include "game.h"
 #include "bgren.h"
 #include "bexpl.h"
+#include "bstage.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 
@@ -72,7 +73,7 @@ static void next_turn_close(void);       // окно хода (ниже)
 static uint8_t reserve_ok(uint8_t i, uint8_t cost);   // резерв времени (ниже)
 static void do_kneel(void);
 static void ai_ctx(aictx_t *c);           // миссия для ИИ (ниже)
-static uint16_t ufo_deploy(uint8_t utype);   // развёртывание по типу НЛО (ниже)
+static void side_prepare(uint8_t side);   // начало хода стороны (ниже)
 static uint8_t sel;                      // выбранный боец (панель показывает его состояние)
 #define KNEEL_TU_DOWN  4                 // цена приседания и вставания (BattlescapeGame::kneel)
 #define KNEEL_TU_UP    8
@@ -89,6 +90,8 @@ static uint8_t __at(0xB80B) hit_pend;    // выбран удар — выпол
 static uint8_t __at(0xB80D) bz_u;        // берсерк стреляет после своего окна (#FF — никто)
 static uint8_t __at(0xB80E) bz_k;        //   выстрелов сделано (до 10)
 static uint8_t __at(0xB80F) fl_u;        // паникующий бежит по пути (#FF — никто): дошёл — время 0
+static uint16_t __at(0xB810) bt_dep;     // развёртывание карты (его nextStage — bstage.c)
+static uint8_t __at(0xB812) bt_stage;    // load_gen собирает следующую фазу (отряд — прежний)
 
 static const wdef_t w_battle[] = {
 	// Виджет карты: рисует экран (EVT_DRAW) и отдаёт клики экрану (EVT_BUTTON, arg 0) —
@@ -144,17 +147,6 @@ static const wdef_t w_next[] = {
 	HOT(0, 0, 320, 200, A_CUSTOM, 1, 0),
 };
 
-// AbortMissionState: окно 320x144 на фоне TAC00.SCR — кто в корабле, кто снаружи, вопрос, OK и
-// CANCEL (выхода END_POINT в наших картах нет — строки «в корабле» и «снаружи» стоят в 26 и 54)
-static const wdef_t w_abort[] = {
-	WIN(0, 0, 320, 144, UI_EL_MESSAGEWINDOWBORDER),
-	TXT(16, 26, 304, 17, UI_EL_MESSAGEWINDOWS, DYN(0), BIG),
-	TXT(16, 54, 304, 17, UI_EL_MESSAGEWINDOWS, DYN(1), BIG),
-	TXT(0, 80, 320, 17, UI_EL_MESSAGEWINDOWS, STR_ABORT_MISSION_QUESTION, TC | BIG),
-	BTN(16, 110, 120, 16, UI_EL_MESSAGEWINDOWBUTTONS, STR_OK, A_CUSTOM, 1, ENT),
-	BTN(184, 110, 120, 16, UI_EL_MESSAGEWINDOWBUTTONS, STR_CANCEL_UC, A_POP, 0, ESC),
-};
-
 // PauseState(OPT_BATTLESCAPE): окно 216x160 в (52, 20), всё цветом mainMenu.battlescapeTheme с
 // контрастом, фон TAC00.SCR (applyBattlescapeTheme). Кнопки «сохранить» нет: сохранение боя ещё
 // не сделано, а запись кампании посреди боя вернула бы на геоскейп до высадки (14_todo)
@@ -180,7 +172,6 @@ static const scr_t tab[] = {
 	SCR(SCR_NEXT_TURN, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_RAWPAL, w_next),
 	SCR(SCR_ACTION_MENU, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, 0, SF_POPUP | SF_RAWPAL, w_amenu),
 	SCR(SCR_PRIME, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, 0, SF_POPUP | SF_RAWPAL, w_amenu),   // окно рисует bgren.c
-	SCR(SCR_ABORT, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_POPUP | SF_RAWPAL, w_abort),
 	SCR(SCR_UNIT_INFO, UI_SCR_STATS, RES_PAL_BATTLESCAPE, 0, SF_RAWPAL, w_uinfo),
 	SCR(SCR_BATTLE_PAUSE, UI_SCR_MAINMENU, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_POPUP | SF_RAWPAL, w_bpause),
 };
@@ -527,18 +518,21 @@ static uint8_t load_gen(uint16_t terrain)
 	q.page = pf_page;
 	aliens_free();                       // листы пришельцев прошлой карты
 	if (!bat_load(&q)) return 0;
-	nunits = nsold = q.nunits;
-	far_read(FAR(pf_page + 1, TL_UNITS), units, (uint16_t)nunits * sizeof(unit_t));
+	// следующая фаза — прежний отряд (его заново ставит расстановка), иначе — высаженный экипаж
+	if (bt_stage) far_write(FAR(pf_page + 1, TL_UNITS), units, (uint16_t)nsold * sizeof(unit_t));
+	else nsold = q.nunits;
 	// Пришельцы: состав — развёртывание миссии (у сбитого или севшего НЛО — развёртывание его
 	// типа, BattlescapeGenerator::run), места — узлы маршрутов карты
 	{
 		adreq_t ar;
-		ar.deploy = mis_utype != 0xFF ? ufo_deploy(mis_utype) : mis_deploy;
+		ar.deploy = bt_dep = mis_utype != 0xFF ? st_ufo_deploy(mis_utype) : mis_deploy;
 		ar.race = mis_race != 0xFF ? mis_race : 0xFFFF;
 		ar.ufo = mis_ufo != 0xFFFF || mis_deploy == 0xFFFF;
 		ar.page = pf_page;
 		ar.terrain = q.terrain;
+		ar.stage = bt_stage;
 		uint8_t na = aliens_deploy(&ar, nsold, q.sx, q.sy);
+		far_read(FAR(pf_page + 1, TL_UNITS), units, (uint16_t)nsold * sizeof(unit_t));
 		far_read(FAR(pf_page + 2, TV_AUNITS), units + nsold, (uint16_t)na * sizeof(unit_t));
 		nunits = nsold + na;
 	}
@@ -546,7 +540,8 @@ static uint8_t load_gen(uint16_t terrain)
 	vis_blocks();                                    // revealedFloors блоков — открыты сразу
 	// Снаряжение отряда (bitems.c): раскладка из кампании — до записей вида (им нужно
 	// оружие в руках), но после листов пришельцев и маски обзора: HANDOB берёт слот кэша SD
-	{
+	if (bt_stage) bi_stage(pf_page, nsold);  // следующая фаза: вещи бойцов — с ними
+	else {
 		uint8_t sol[MAX_UNITS];
 		for (uint8_t i = 0; i < nsold; i++) sol[i] = units[i].sol;
 		bi_crew(pf_page, sol, nsold);
@@ -567,11 +562,14 @@ static uint8_t load_gen(uint16_t terrain)
 	pn_n = pn_i = 0;                     // память банка не обнуляется
 	hit_pend = wl_spot = 0;
 	bz_u = fl_u = 0xFF;
-	ba_exp_reset();                      // опыт бойцов за бой (bact2.c)
 	bt_side = FACTION_PLAYER;
 	gen_mode = 1;
 	sel = 0;
-	stats_crew(nsold);                   // боевые показатели, рост и броня отряда (bstats.c)
+	if (bt_stage) side_prepare(FACTION_PLAYER);   // prepareNewTurn(false): время и энергия
+	else {
+		ba_exp_reset();                  // опыт бойцов за бой (bact2.c), очки разбора — с нуля
+		stats_crew(nsold);               // боевые показатели, рост и броня отряда (bstats.c)
+	}
 	{                                    // пришельцы ещё никого не видели; бойцы — кого видят сейчас
 		aictx_t c;
 		ai_ctx(&c);
@@ -601,22 +599,6 @@ static void draw_panel(void)
 	hud_draw(&p);
 }
 
-// Развёртывание НЛО типа utype — то, что называется как сам НЛО (alienDeployments STR_SMALL_SCOUT
-// и т. п., BattlescapeGenerator::run: getDeployment(ufo->getRules()->getType())); #FFFF — нет
-static uint16_t ufo_deploy(uint8_t utype)
-{
-	rtab_t t;
-	if (!rtab_open(RES_RULE_UFOS, &t) || utype >= t.n) return 0xFFFF;
-	uint16_t name = rtab_word(&t, utype, 0);
-	if (!rtab_open(RES_RULE_ALIENDEPLOYMENTS, &t)) return 0xFFFF;
-	uint16_t i;
-	for (i = 0; i < t.n; i++) {
-		uint16_t w = rtab_word(&t, i, 0);    // сравнение — с копией (SDCC 4.5, checkasm)
-		if (w == name) break;
-	}
-	return i < t.n ? i : 0xFFFF;
-}
-
 // ---------------------------------------------------------------- ход сторон
 // BattlescapeGame::endTurn / SavedBattleGame::endTurn: X-COM -> пришельцы -> (мирные) -> X-COM,
 // номер хода растёт, когда ход снова у X-COM. Сторона, к которой перешёл ход, восстанавливает
@@ -639,14 +621,7 @@ static void panic_roll(uint8_t side)
 
 static void side_prepare(uint8_t side)
 {
-	for (uint8_t i = 0; i < nunits; i++) {
-		unit_t *u = &units[i];
-		if (!u->alive || u->faction != side) continue;
-		u->done = 0;                     // _dontReselect = false
-		u->tu = u->tu_max;
-		uint16_t e = (uint16_t)u->en + u->en_rec;
-		u->en = e > u->en_max ? u->en_max : (uint8_t)e;
-	}
+	st_side_prepare(side, nunits);       // bstage.c (банк 32): этот банк полон
 }
 
 static uint8_t battle_end(uint8_t aborted);   // конец боя (ниже)
@@ -715,16 +690,25 @@ static void hidden_show(uint8_t on)
 // не осталось, или миссию прервали — разбор (bdeb.c). 1 — бой кончился
 static uint8_t battle_end(uint8_t aborted)
 {
-	uint8_t al = 0, xc = 0;
-	for (uint8_t i = 0; i < nunits; i++) {
-		if (!units[i].alive) continue;
-		if (units[i].faction == FACTION_HOSTILE) al++;
-		else if (units[i].faction == FACTION_PLAYER) xc++;
-	}
+	uint8_t xc, al = st_alive(nunits, &xc);
 	if (!aborted && al && xc) return 0;
 	debreq_t q;
 	q.page = pf_page; q.n = nunits; q.nsold = nsold; q.aborted = aborted; q.ufo = mis_ufo != 0xFFFF;
 	q.craft = mis_crew;
+	// Многофазная миссия (finishBattle: nextStage и inExitArea — живые при победе, на END_POINT при
+	// прерывании): итог фазы копится, карта — следующей фазы, отряд — с собой (bstage.c)
+	uint16_t nx = st_next(bt_dep);
+	if (nx != 0xFFFF && (aborted ? st_exit(pf_page, nsold, 0) : xc)) {
+		if (aborted) st_exit(pf_page, nsold, 1);   // оставшиеся вне зоны выхода — выбыли
+		deb_stage(&q, !al);
+		mis_deploy = nx; mis_utype = 0xFF; mis_ufo = 0xFFFF;
+		if (aborted) UI_GO(A_POP, 0);
+		bt_stage = 1;
+		load_gen(0xFFFF);
+		bt_stage = 0;
+		ui_dirty(0);
+		return 1;
+	}
 	deb_start(&q);
 	if (hid_on) hidden_show(0);
 	bv_pause();
@@ -932,6 +916,7 @@ void bat_mission(uint16_t deploy, uint16_t ufo, uint16_t craft_map, uint16_t cre
 uint8_t bat_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
 {
 	if (id == SCR_DEBRIEFING) return deb_get(id, s, w);
+	if (id == SCR_ABORT) return st_abort_get(s, w, pf_page, bt_dep);   // AbortMissionState (bstage.c)
 	return scr_find(tab, sizeof tab / sizeof tab[0], id, s, w);
 }
 
@@ -944,11 +929,7 @@ void bat_text(uint8_t id, uint8_t slot, uint8_t line, char *buf) __banked
 		if (slot) { buf[0] = slot == 1 ? '<' : '>'; buf[1] = buf[0]; buf[2] = 0; }
 		return;
 	}
-	if (id == SCR_ABORT) {               // бойцы на полу своего корабля (START_POINT) и прочие (bact2.c)
-		uint8_t out, in = ba_in_craft(nsold, &out);
-		str_plural(buf, slot ? STR_UNITS_OUTSIDE_one : STR_UNITS_IN_CRAFT_one, slot ? out : in);
-		return;
-	}
+	if (id == SCR_ABORT) { st_abort_text(slot, buf, pf_page, nsold); return; }   // по зонам (bstage.c)
 	if (id == SCR_INFOBOX) { strcpy(buf, ui_msg); return; }
 	if (id != SCR_NEXT_TURN) return;
 	char a[16];
@@ -1012,7 +993,8 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		// Память банка при старте не обнуляется: без этого aliens_free отдавал в пул мусорные
 		// номера страниц (а с ними — каталог SD, и карта не находила своих блоков)
 		aliens_reset();
-		globe_det_reset();                   // кэш подписей глобуса отдаёт страницы бою
+		bt_stage = 0;
+		globe_det_reset();                  // кэш подписей глобуса отдаёт страницы бою
 		if (pf_page == PG_NONE) pf_page = pg_alloc(3, 1);   // рабочая память боя: поиск пути, таблицы, воксели
 		if (pf_page == PG_NONE) { dbg_puts("battle: no pages\n"); break; }   // иначе — в страницу #FF
 		// Карта миссии собирается генератором (16 §3). Пока миссии нет, террейн берётся
@@ -1259,8 +1241,8 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			uint8_t ok = load_gen(gen_terrain);
 			dbg_puts("mapgen: terrain ");
 			dbg_dec(gen_terrain);
-			dbg_puts(ok ? " ok " : " FAIL ");
-			dbg_puts(" dl "); dbg_dec(bv_dl_n()); dbg_puts(" units "); dbg_dec(nunits); dbg_puts(" doors "); dbg_dec(ndoors);
+			dbg_puts(ok ? " ok units " : " FAIL ");
+			dbg_dec(nunits);
 			dbg_puts("\n");
 			gen_terrain++;
 			ui_dirty(0);
