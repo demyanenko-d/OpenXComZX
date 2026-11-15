@@ -10,60 +10,77 @@ ZX Evolution / Pentevo: Z80 до 14 МГц, 4 МБ страничной памя
 
 ## Как это выглядит
 
-Кадры 320×200 из эмулятора, увеличены вдвое без сглаживания. Игра — Terror from the
-Deep; в конце — то же на UFO Defense. Снимки делает `tools\readme_shots.ps1` из
-автотестов, так что они всегда соответствуют текущей сборке.
+Кадры 320×200 из эмулятора, увеличены вдвое без сглаживания. В каждой строке — одно и то же
+место игры: слева X-COM: UFO Defense, справа X-COM: Terror from the Deep. Код один, данные —
+свои у каждой игры (правила, палитры, цвета интерфейса). Снимки делает
+`tools\readme_shots.ps1` из автотестов, так что они всегда соответствуют текущей сборке.
 
 ### Геоскейп
 
-| | |
+| UFO Defense | Terror from the Deep |
 |---|---|
-| [<img src="project_docs/scr/geo_globe.png" width="400">](project_docs/scr/geo_globe.png)<br>Глобус на закате: тень по времени суток | [<img src="project_docs/scr/geo_cities.png" width="400">](project_docs/scr/geo_cities.png)<br>Ближний зум: города, реки, подписи стран |
-| [<img src="project_docs/scr/geo_ufo.png" width="400">](project_docs/scr/geo_ufo.png)<br>Обнаружена подлодка пришельцев | [<img src="project_docs/scr/geo_dogfight.png" width="400">](project_docs/scr/geo_dogfight.png)<br>Перехват: бой с USO |
+| [<img src="project_docs/scr/ufo_geo_globe.png" width="400">](project_docs/scr/ufo_geo_globe.png)<br>Глобус: тень по времени суток | [<img src="project_docs/scr/tftd_geo_globe.png" width="400">](project_docs/scr/tftd_geo_globe.png)<br>Глобус: тень по времени суток |
+| [<img src="project_docs/scr/ufo_geo_dogfight.png" width="400">](project_docs/scr/ufo_geo_dogfight.png)<br>Перехват: воздушный бой | [<img src="project_docs/scr/tftd_geo_dogfight.png" width="400">](project_docs/scr/tftd_geo_dogfight.png)<br>Перехват: воздушный бой |
 
 ### Базы
 
-| | |
+| UFO Defense | Terror from the Deep |
 |---|---|
-| [<img src="project_docs/scr/base_view.png" width="400">](project_docs/scr/base_view.png)<br>База | [<img src="project_docs/scr/base_build.png" width="400">](project_docs/scr/base_build.png)<br>Строительство: рамка габаритов модуля |
-| [<img src="project_docs/scr/base_research.png" width="400">](project_docs/scr/base_research.png)<br>Исследования: распределение учёных | [<img src="project_docs/scr/base_manufacture.png" width="400">](project_docs/scr/base_manufacture.png)<br>Производство |
+| [<img src="project_docs/scr/ufo_base_view.png" width="400">](project_docs/scr/ufo_base_view.png)<br>База | [<img src="project_docs/scr/tftd_base_view.png" width="400">](project_docs/scr/tftd_base_view.png)<br>База |
+| [<img src="project_docs/scr/ufo_base_research.png" width="400">](project_docs/scr/ufo_base_research.png)<br>Исследования: распределение учёных | [<img src="project_docs/scr/tftd_base_research.png" width="400">](project_docs/scr/tftd_base_research.png)<br>Исследования: распределение учёных |
 
-### Экипаж и наземный бой
+### Экипаж
 
-| | |
+| UFO Defense | Terror from the Deep |
 |---|---|
-| [<img src="project_docs/scr/crew_soldier.png" width="400">](project_docs/scr/crew_soldier.png)<br>Карточка бойца | [<img src="project_docs/scr/crew_equipment.png" width="400">](project_docs/scr/crew_equipment.png)<br>Снаряжение корабля |
-| [<img src="project_docs/scr/crew_inventory.png" width="400">](project_docs/scr/crew_inventory.png)<br>Инвентарь бойца: оружие заряжено, обойма под курсором | [<img src="project_docs/scr/crew_battle.png" width="400">](project_docs/scr/crew_battle.png)<br>Наземный бой: отряд в «Тритоне» |
+| [<img src="project_docs/scr/ufo_crew_soldier.png" width="400">](project_docs/scr/ufo_crew_soldier.png)<br>Карточка бойца | [<img src="project_docs/scr/tftd_crew_soldier.png" width="400">](project_docs/scr/tftd_crew_soldier.png)<br>Карточка бойца |
+| [<img src="project_docs/scr/ufo_crew_inventory.png" width="400">](project_docs/scr/ufo_crew_inventory.png)<br>Инвентарь: оружие заряжено, обойма под курсором | [<img src="project_docs/scr/tftd_crew_inventory.png" width="400">](project_docs/scr/tftd_crew_inventory.png)<br>Инвентарь: оружие заряжено, обойма под курсором |
 
-### Бой
+### Наземный бой
 
-| | |
+По ходу миссии: от брифинга до разбора.
+
+#### Высадка
+
+| UFO Defense | Terror from the Deep |
 |---|---|
-| [<img src="project_docs/scr/bat_fog.png" width="400">](project_docs/scr/bat_fog.png)<br>Туман войны: открыто только то, что видел отряд | [<img src="project_docs/scr/bat_aim.png" width="400">](project_docs/scr/bat_aim.png)<br>Пришелец замечен: значок справа над панелью |
-| [<img src="project_docs/scr/bat_menu.png" width="400">](project_docs/scr/bat_menu.png)<br>Меню действий: точность и цена в единицах времени | [<img src="project_docs/scr/bat_medikit.png" width="400">](project_docs/scr/bat_medikit.png)<br>Аптечка: раны по частям тела |
+| [<img src="project_docs/scr/ufo_bat_briefing.png" width="400">](project_docs/scr/ufo_bat_briefing.png)<br>Брифинг перед высадкой | [<img src="project_docs/scr/tftd_bat_briefing.png" width="400">](project_docs/scr/tftd_bat_briefing.png)<br>Брифинг перед высадкой |
+| [<img src="project_docs/scr/ufo_bat_landing.png" width="400">](project_docs/scr/ufo_bat_landing.png)<br>Отряд в корабле | [<img src="project_docs/scr/tftd_bat_landing.png" width="400">](project_docs/scr/tftd_bat_landing.png)<br>Отряд в корабле |
 
-### Миссия
+#### Разведка
 
-| | |
+| UFO Defense | Terror from the Deep |
 |---|---|
-| [<img src="project_docs/scr/bat_briefing.png" width="400">](project_docs/scr/bat_briefing.png)<br>Брифинг перед высадкой | [<img src="project_docs/scr/bat_mindcontrol.png" width="400">](project_docs/scr/bat_mindcontrol.png)<br>Контроль разума: акватоид ходит за X-COM |
-| [<img src="project_docs/scr/bat_debriefing.png" width="400">](project_docs/scr/bat_debriefing.png)<br>Разбор: счёт и трофеи | [<img src="project_docs/scr/bat_promotions.png" width="400">](project_docs/scr/bat_promotions.png)<br>Повышения после победы |
+| [<img src="project_docs/scr/ufo_bat_fog.png" width="400">](project_docs/scr/ufo_bat_fog.png)<br>Туман войны: открыто только то, что видел отряд | [<img src="project_docs/scr/tftd_bat_fog.png" width="400">](project_docs/scr/tftd_bat_fog.png)<br>Туман войны: открыто только то, что видел отряд |
+| [<img src="project_docs/scr/ufo_bat_aim.png" width="400">](project_docs/scr/ufo_bat_aim.png)<br>Пришелец замечен: значок справа над панелью | [<img src="project_docs/scr/tftd_bat_aim.png" width="400">](project_docs/scr/tftd_bat_aim.png)<br>Пришелец замечен: значок справа над панелью |
+
+#### Действия
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_bat_menu.png" width="400">](project_docs/scr/ufo_bat_menu.png)<br>Меню действий: точность и цена в единицах времени | [<img src="project_docs/scr/tftd_bat_menu.png" width="400">](project_docs/scr/tftd_bat_menu.png)<br>Меню действий: точность и цена в единицах времени |
+| [<img src="project_docs/scr/ufo_bat_grenade.png" width="400">](project_docs/scr/ufo_bat_grenade.png)<br>Граната: таймер взрывателя | [<img src="project_docs/scr/tftd_bat_grenade.png" width="400">](project_docs/scr/tftd_bat_grenade.png)<br>Граната: таймер взрывателя |
+
+#### Раненые и пси
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_bat_medikit.png" width="400">](project_docs/scr/ufo_bat_medikit.png)<br>Аптечка: раны по частям тела | [<img src="project_docs/scr/tftd_bat_medikit.png" width="400">](project_docs/scr/tftd_bat_medikit.png)<br>Аптечка: раны по частям тела |
+| [<img src="project_docs/scr/ufo_bat_mindcontrol.png" width="400">](project_docs/scr/ufo_bat_mindcontrol.png)<br>Контроль разума: пришелец ходит за X-COM | [<img src="project_docs/scr/tftd_bat_mindcontrol.png" width="400">](project_docs/scr/tftd_bat_mindcontrol.png)<br>Контроль разума: пришелец ходит за X-COM |
+
+#### Конец миссии
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_bat_abort.png" width="400">](project_docs/scr/ufo_bat_abort.png)<br>Прервать миссию: кто в корабле, кто снаружи | [<img src="project_docs/scr/tftd_bat_abort.png" width="400">](project_docs/scr/tftd_bat_abort.png)<br>Прервать миссию: кто в корабле, кто снаружи |
+| [<img src="project_docs/scr/ufo_bat_debriefing.png" width="400">](project_docs/scr/ufo_bat_debriefing.png)<br>Разбор: счёт и трофеи | [<img src="project_docs/scr/tftd_bat_debriefing.png" width="400">](project_docs/scr/tftd_bat_debriefing.png)<br>Разбор: счёт и трофеи |
 
 ### Уфопедия и отчёты
 
-| | |
+| UFO Defense | Terror from the Deep |
 |---|---|
-| [<img src="project_docs/scr/info_craft.png" width="400">](project_docs/scr/info_craft.png)<br>Уфопедия: корабль | [<img src="project_docs/scr/info_weapon.png" width="400">](project_docs/scr/info_weapon.png)<br>Уфопедия: оружие |
-| [<img src="project_docs/scr/info_report.png" width="400">](project_docs/scr/info_report.png)<br>Отчёт за месяц | [<img src="project_docs/scr/info_graphs.png" width="400">](project_docs/scr/info_graphs.png)<br>Графики: доход по странам |
-
-### X-COM: UFO Defense
-
-Тот же код, данные из UFO Defense: правила, палитры и цвета интерфейса — свои у каждой игры.
-
-| | |
-|---|---|
-| [<img src="project_docs/scr/ufo_globe.png" width="400">](project_docs/scr/ufo_globe.png)<br>Геоскейп | [<img src="project_docs/scr/ufo_base.png" width="400">](project_docs/scr/ufo_base.png)<br>База |
-| [<img src="project_docs/scr/ufo_article.png" width="400">](project_docs/scr/ufo_article.png)<br>Уфопедия | [<img src="project_docs/scr/ufo_inventory.png" width="400">](project_docs/scr/ufo_inventory.png)<br>Инвентарь бойца |
+| [<img src="project_docs/scr/ufo_info_article.png" width="400">](project_docs/scr/ufo_info_article.png)<br>Уфопедия: статья | [<img src="project_docs/scr/tftd_info_article.png" width="400">](project_docs/scr/tftd_info_article.png)<br>Уфопедия: статья |
+| [<img src="project_docs/scr/ufo_info_report.png" width="400">](project_docs/scr/ufo_info_report.png)<br>Отчёт за месяц | [<img src="project_docs/scr/tftd_info_report.png" width="400">](project_docs/scr/tftd_info_report.png)<br>Отчёт за месяц |
 
 ## Что уже работает
 
