@@ -48,6 +48,8 @@ wait 30
 click L
 wait 30
 expect scr_battle$sel 6
+wait 5
+shot tmp/shots/bat_mcamp/01_selected.png
 pokew _cursor_x 192
 pokew _cursor_y 104
 wait 10

@@ -35,6 +35,20 @@ Deep; в конце — то же на UFO Defense. Снимки делает `t
 | [<img src="project_docs/scr/crew_soldier.png" width="400">](project_docs/scr/crew_soldier.png)<br>Карточка бойца | [<img src="project_docs/scr/crew_equipment.png" width="400">](project_docs/scr/crew_equipment.png)<br>Снаряжение корабля |
 | [<img src="project_docs/scr/crew_inventory.png" width="400">](project_docs/scr/crew_inventory.png)<br>Инвентарь бойца: оружие заряжено, обойма под курсором | [<img src="project_docs/scr/crew_battle.png" width="400">](project_docs/scr/crew_battle.png)<br>Наземный бой: отряд в «Тритоне» |
 
+### Бой
+
+| | |
+|---|---|
+| [<img src="project_docs/scr/bat_fog.png" width="400">](project_docs/scr/bat_fog.png)<br>Туман войны: открыто только то, что видел отряд | [<img src="project_docs/scr/bat_aim.png" width="400">](project_docs/scr/bat_aim.png)<br>Пришелец замечен: значок справа над панелью |
+| [<img src="project_docs/scr/bat_menu.png" width="400">](project_docs/scr/bat_menu.png)<br>Меню действий: точность и цена в единицах времени | [<img src="project_docs/scr/bat_medikit.png" width="400">](project_docs/scr/bat_medikit.png)<br>Аптечка: раны по частям тела |
+
+### Миссия
+
+| | |
+|---|---|
+| [<img src="project_docs/scr/bat_briefing.png" width="400">](project_docs/scr/bat_briefing.png)<br>Брифинг перед высадкой | [<img src="project_docs/scr/bat_mindcontrol.png" width="400">](project_docs/scr/bat_mindcontrol.png)<br>Контроль разума: акватоид ходит за X-COM |
+| [<img src="project_docs/scr/bat_debriefing.png" width="400">](project_docs/scr/bat_debriefing.png)<br>Разбор: счёт и трофеи | [<img src="project_docs/scr/bat_promotions.png" width="400">](project_docs/scr/bat_promotions.png)<br>Повышения после победы |
+
 ### Уфопедия и отчёты
 
 | | |
@@ -59,13 +73,13 @@ Deep; в конце — то же на UFO Defense. Снимки делает `t
 | Базы | строительство, склад, закупки и продажа, переводы, исследования и производство, экономика, оборона базы |
 | Экипаж | бойцы, корабли и их оружие, броня, снаряжение корабля, инвентарь бойца (раскладка, зарядка и разрядка оружия) |
 | Уфопедия | статьи всех разделов, графики, отчёты |
-| Наземный бой | генератор карты по `mapScript`, отрисовка изометрии, отряд с корабля, ходьба с учётом стен, дверей и этажей, приседание, панель |
+| Наземный бой | генератор карты по `mapScript`, изометрия, ходьба с учётом стен, дверей и этажей; брифинг, инвентарь перед высадкой; пришельцы с ИИ (патруль, огонь, гранаты, ближний бой, пси-атаки), мирные жители; стрельба и броски, огонь в ответ, туман войны, взрывы и разрушение местности, раны, оглушение, паника, аптечка, пси-усилитель и контроль разума; многофазные миссии, разбор, повышения |
 | Сохранения | в эмуляторе — в файлы; на железе — в памяти до выключения, запись на SD-карту в работе |
 | Звук | музыка четырьмя способами вывода, конвертер из ADLIB/MIDI |
 | Железо | данные читаются с SD-карты FAT32 через DMA; игра запускается на настоящем ZX Evolution |
 
-Чего пока нет: пришельцы и стрельба в бою, видимость и туман войны, разбор после
-боя, звуковые эффекты. Подробный список — [project_docs/14_todo.md](project_docs/14_todo.md).
+Чего пока нет: ночь и дым в бою, сохранение посреди боя, наземная оборона базы,
+звуковые эффекты. Подробный список — [project_docs/14_todo.md](project_docs/14_todo.md).
 
 ## Сборка
 
