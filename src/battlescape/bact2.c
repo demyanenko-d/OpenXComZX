@@ -54,6 +54,7 @@ static uint16_t throw_it(bafire_t *q, unit_t *u, uint16_t bi, const bitem_t *b, 
 	if (e) return e == 1 ? STR_OUT_OF_RANGE : STR_UNABLE_TO_THROW_HERE;
 	u->tu -= q->tu;
 	u_set(a->shooter, u);
+	if (u->faction == FACTION_PLAYER) ba_exp(a->shooter, EXP_THROW);   // addThrowingExp
 	if (u->faction != FACTION_PLAYER && w->battle_type == BT_GRENADE) {
 		bitem_t g = *b;
 		g.rounds = 1;                            // таймер 0
@@ -87,7 +88,10 @@ uint8_t ba_panic(uint8_t page, uint8_t side, uint8_t n, uint8_t *list, uint8_t m
 		uint8_t f = u.faction;               // сравнения — с копиями (SDCC 4.5)
 		if (!u.alive || f != side || u.size != 1) continue;
 		int16_t chance = 100 - 2 * (int16_t)u.mor;
-		if ((int16_t)rng_range(1, 100) > chance) continue;
+		if ((int16_t)rng_range(1, 100) > chance) {       // устоял: опыт храбрости (_expBravery)
+			if (chance > 1 && f == FACTION_PLAYER) ba_exp(i, EXP_BRAVE);
+			continue;
+		}
 		uint8_t berserk = rng_range(0, 100) <= 33;
 		uint8_t flee = !berserk && rng_range(0, 100) <= 50;
 		if (flee)                                        // бросает оружие и бежит (ba_flee)
@@ -105,6 +109,19 @@ uint8_t ba_panic(uint8_t page, uint8_t side, uint8_t n, uint8_t *list, uint8_t m
 	}
 	if (cnt) { bi_hands(page, n); bv_sync(n); }
 	return cnt;
+}
+
+// Опыт бойца unit: счётчик kind +1 (до 255); юнит должен быть бойцом X-COM — проверяет вызывающий
+void ba_exp(uint8_t unit, uint8_t kind) __banked
+{
+	if (unit >= MAX_UNITS) return;
+	uint8_t *p = BA_XP + (uint16_t)unit * EXP_N + kind;
+	if (*p < 255) (*p)++;
+}
+
+void ba_exp_reset(void) __banked
+{
+	memset(BA_XP, 0, MAX_UNITS * EXP_N);
 }
 
 // Кто из отряда (nsold) в корабле — для AbortMissionState: на его полу (части от base) внутри

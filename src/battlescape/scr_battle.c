@@ -566,6 +566,7 @@ static uint8_t load_gen(uint16_t terrain)
 	pn_n = pn_i = 0;                     // память банка не обнуляется
 	hit_pend = wl_spot = 0;
 	bz_u = fl_u = 0xFF;
+	ba_exp_reset();                      // опыт бойцов за бой (bact2.c)
 	bt_side = FACTION_PLAYER;
 	gen_mode = 1;
 	sel = 0;

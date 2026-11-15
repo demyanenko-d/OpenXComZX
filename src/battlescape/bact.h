@@ -36,6 +36,18 @@ typedef struct {
 	uint8_t hand, tu;
 } bafire_t;
 uint16_t ba_fire(bafire_t *q) __banked;
+// Опыт бойцов за бой (BattleUnit::_expFiring и т. д., bact2.c): счётчики бойца unit (< MAX_UNITS,
+// только X-COM) в памяти банка 37 — читает разбор (bdeb.c, тот же банк)
+#define EXP_FIRE   0           // попал по пришельцу (ProjectileFlyBState)
+#define EXP_THROW  1           // бросил (addThrowingExp)
+#define EXP_MELEE  2           // ударил пришельца (MeleeAttackBState)
+#define EXP_REACT  3           // огонь в ответ (tryReaction)
+#define EXP_BRAVE  4           // устоял от паники (prepareNewTurn)
+#define EXP_KILLS  5           // убил (updateGeoscapeStats: kills)
+#define EXP_N      6
+#define BA_XP ((uint8_t *)0xB100)   // MAX_UNITS x EXP_N — только код банка 37
+void ba_exp(uint8_t unit, uint8_t kind) __banked;
+void ba_exp_reset(void) __banked;
 // Отряд в корабле / снаружи (AbortMissionState): вернёт «в корабле», снаружи — в *out
 uint8_t ba_in_craft(uint8_t nsold, uint8_t *out) __banked;
 // Бегство паникующего i: путь (до max шагов) в path — Win1 или стек; вернёт число шагов

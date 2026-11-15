@@ -319,4 +319,7 @@ wait 100
 shot tmp/shots/bat_geo_win/01_debriefing.png
 key ENTER
 waitmark 32 900
+# выживший боец 0 (солдат кампании 0): миссий +1 (postMissionProcedures; soldier_t.missions —
+# смещение 52 записи солдата, страница #07)
+expect 07:0034 1
 exit 0

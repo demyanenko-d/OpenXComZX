@@ -40,4 +40,6 @@ shot tmp/shots/bat_melee/01_after.png
 expect 4E:3886 36
 expect 4E:39B1 52
 expect 4E:39A4 0
+# опыт рукопашной бойца 0 (BA_XP + EXP_MELEE — #3102 страницы #EE)
+expect EE:3102 1
 exit 0

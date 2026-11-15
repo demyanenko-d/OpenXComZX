@@ -72,4 +72,6 @@ shot tmp/shots/bat_gren/7_blast.png
 waitmark 249 600
 expect 4E:38B8 15
 expect *scr_battle$pf_page:6D00 255
+# опыт броска бойца 0 (BA_XP + EXP_THROW — #3101 страницы #EE)
+expect EE:3101 1
 exit 0

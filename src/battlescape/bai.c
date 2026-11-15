@@ -460,6 +460,7 @@ uint8_t ai_react(const aictx_t *c, uint8_t m) __banked
 		u_set(br, &r);
 		show(c, br, &r);
 		if (r.seen || r.faction == FACTION_PLAYER) bv_cell(r.x, r.y, r.z);
+		if (r.faction == FACTION_PLAYER) ba_exp(br, EXP_REACT);   // tryReaction: addReactionExp
 		fire(c, br, &r, &v[m], BA_SNAPSHOT, bcost, bright, &bb, &bw);
 		res = AI_SEE | AI_HIT;
 	}

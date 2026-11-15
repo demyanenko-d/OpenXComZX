@@ -82,6 +82,7 @@ void ba_morale(uint8_t victim, uint8_t m, uint8_t n) __banked
 		if (vf == FACTION_NEUTRAL) mor_add(&x, mf == FACTION_PLAYER ? -10 : 10);
 		else if (vf == mf) mor_add(&x, -20);
 		else mor_add(&x, 20);
+		if (vf == FACTION_HOSTILE && mf == FACTION_PLAYER) ba_exp(m, EXP_KILLS);   // addKillCount
 		u_set(m, &x);
 	}
 	if (v.faction == FACTION_NEUTRAL) return;
@@ -97,11 +98,18 @@ void ba_morale(uint8_t victim, uint8_t m, uint8_t n) __banked
 
 // Попадание по юниту h (TileEngine::hit): урон с бронёй по стороне — от точки удара (vx, vy, vz),
 // мораль; выбывший — со сцены. Стрелок замечен пришельцами и помнится раненым (gotHit)
+static uint8_t is_player(uint8_t i)
+{
+	return far_byte(UNITS_FAR + (uint16_t)i * sizeof(unit_t) + offsetof(unit_t, faction)) == FACTION_PLAYER;
+}
+
+// xp — опыт бьющего бойца за попадание по пришельцу (EXP_FIRE / EXP_MELEE)
 static void hurt(uint8_t page, uint8_t n, uint8_t shooter, uint8_t h, int16_t vx, int16_t vy, int16_t vz,
-		 uint16_t power, uint8_t type, uint8_t height)
+		 uint16_t power, uint8_t type, uint8_t height, uint8_t xp)
 {
 	unit_t v;
 	u_get(h, &v);
+	if (v.faction == FACTION_HOSTILE && is_player(shooter)) ba_exp(shooter, xp);
 	dmg_t d;
 	uint8_t hs = v.size * 8;
 	d.power = power; d.type = type;
@@ -151,7 +159,7 @@ uint8_t ba_shot(const bashot_t *q) __banked
 		fx_shot(&x);
 	}
 	if (s.res != V_UNIT || s.hit == 0xFF) return 0xFF;
-	hurt(q->page, n, q->shooter, s.hit, s.vx, s.vy, s.vz, power, type, f[s.hit].height);
+	hurt(q->page, n, q->shooter, s.hit, s.vx, s.vy, s.vz, power, type, f[s.hit].height, EXP_FIRE);
 	return s.hit;
 }
 
@@ -183,7 +191,7 @@ static uint8_t melee(const bashot_t *a, const unit_t *u, const r_items_t *w, uin
 	u_get(h, &v);
 	int8_t sx = (int8_t)(u->x > a->tx ? 1 : u->x < a->tx ? -1 : 0), sy = (int8_t)(u->y > a->ty ? 1 : u->y < a->ty ? -1 : 0);
 	hurt(a->page, a->n, a->shooter, h, (int16_t)a->tx * 16 + 8 + sx, (int16_t)a->ty * 16 + 8 + sy,
-	     (int16_t)a->tz * 24 + UNIT_H(&v) / 2, power, type, UNIT_H(&v));
+	     (int16_t)a->tz * 24 + UNIT_H(&v) / 2, power, type, UNIT_H(&v), EXP_MELEE);
 	return h;
 }
 

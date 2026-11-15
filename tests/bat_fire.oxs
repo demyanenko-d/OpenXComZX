@@ -90,5 +90,7 @@ wait 60
 shot tmp/shots/bat_fire/03_more.png
 expect 4E:39A8 18
 expect 4E:3886 12
+# опыт меткости бойца 0 (bact.h BA_XP — #3100 страницы #EE): одно попадание по пришельцу
+expect EE:3100 1
 echo battle fire OK
 exit 0

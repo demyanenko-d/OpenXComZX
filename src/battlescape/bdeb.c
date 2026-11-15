@@ -26,6 +26,7 @@
 #include "bitems.h"
 #include "game.h"
 #include "bdeb.h"
+#include "bact.h"
 
 #define DS_MAX 8
 typedef struct { uint16_t str; uint8_t qty; int16_t score; } dstat_t;
@@ -74,6 +75,54 @@ static void store(uint8_t b, const rtab_t *ti, uint16_t item)
 	ST->base[b].items[item]++;
 }
 
+// BattleUnit::improveStat (:2268-2275)
+static uint8_t improve(uint8_t e)
+{
+	return e > 10 ? (uint8_t)rng_range(2, 6) : e > 5 ? (uint8_t)rng_range(1, 4) : e > 2 ? (uint8_t)rng_range(1, 3)
+		: e ? (uint8_t)rng_range(0, 1) : 0;
+}
+
+static void grow(uint8_t *v, uint8_t cap, uint8_t div)
+{
+	if (cap > *v) *v += (uint8_t)rng_range(0, (uint8_t)((cap - *v) / div + 2));
+}
+
+// Выживший боец i (BattleUnit::postMissionProcedures :2195-2261): миссии и убийства, дни лечения
+// по потере здоровья (0.5..1.5), рост по опыту (BA_XP, bact.h) до потолков типа солдата: храбрость
+// +10 с шансом, реакция/меткость/рукопашная/бросок — improveStat; был опыт (кроме броска) —
+// новобранец в рядовые и прибавки к времени, здоровью, силе (до (потолок − значение)/10 + 2) и
+// выносливости (/15 + 2). Глобальных повышений званий и второй страницы разбора пока нет
+static void post_soldier(const unit_t *u, uint8_t i)
+{
+	soldier_t s;
+	rtab_t t;
+	r_soldiers_t sr;
+	far_t a = FAR(SOLDIER_PAGE, 0) + (uint16_t)u->sol * sizeof s;
+	far_read(a, &s, sizeof s);
+	if (!rtab_open(RES_RULE_SOLDIERS, &t) || s.type >= t.n) return;
+	rtab_get(&t, s.type, &sr);
+	const uint8_t *x = BA_XP + (uint16_t)i * EXP_N;
+	rstats_t *c = &s.cur;
+	const rstats_t *cap = &sr.stat_caps;
+	s.missions++;
+	s.kills += x[EXP_KILLS];
+	uint8_t hl = u->hp_max > u->hp ? (uint8_t)(u->hp_max - u->hp) : 0;
+	s.recovery = (uint8_t)rng_range(hl / 2, hl + hl / 2);
+	if (x[EXP_BRAVE] && c->bravery < cap->bravery && x[EXP_BRAVE] > rng_range(0, 10)) c->bravery += 10;
+	if (x[EXP_REACT] && c->reactions < cap->reactions) c->reactions += improve(x[EXP_REACT]);
+	if (x[EXP_FIRE] && c->firing < cap->firing) c->firing += improve(x[EXP_FIRE]);
+	if (x[EXP_MELEE] && c->melee < cap->melee) c->melee += improve(x[EXP_MELEE]);
+	if (x[EXP_THROW] && c->throwing < cap->throwing) c->throwing += improve(x[EXP_THROW]);
+	if (x[EXP_BRAVE] || x[EXP_REACT] || x[EXP_FIRE] || x[EXP_MELEE]) {
+		if (!s.rank) s.rank = 1;                 // RANK_ROOKIE -> SQUADDIE
+		grow(&c->tu, cap->tu, 10);
+		grow(&c->health, cap->health, 10);
+		grow(&c->strength, cap->strength, 10);
+		grow(&c->stamina, cap->stamina, 15);
+	}
+	far_write(a, &s, sizeof s);
+}
+
 static void campaign(const debreq_t *q, uint8_t alive_x, uint8_t success)
 {
 	uint8_t c = (uint8_t)q->craft;
@@ -110,10 +159,12 @@ static void campaign(const debreq_t *q, uint8_t alive_x, uint8_t success)
 		if (ST->ufo[di].status == US_LANDED && (q->aborted || !alive_x)) ST->ufo[di].secs = 5;
 		else ufo_free(di);
 	}
-	for (uint8_t i = 0; i < q->nsold; i++) {        // погибшие — с базы (killSoldier)
+	for (uint8_t i = 0; i < q->nsold; i++) {        // погибшие — с базы (killSoldier), выжившие — опыт
 		unit_t u;
 		far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
-		if (!u.alive && !u.hp && u.sol != 0xFF) soldier_delete(u.sol);
+		if (u.sol == 0xFF) continue;
+		if (!u.alive && !u.hp) soldier_delete(u.sol);
+		else post_soldier(&u, i);
 	}
 	add_activity(&pos, d_total, 1);
 }
