@@ -37,6 +37,21 @@ static void unit_armor(unit_t *u, uint16_t arm)
 	u->melee += a.stats.melee;
 }
 
+// Окно характеристик юнита i экрана боя (units.h UNITS_FAR) — вынесено из банка 31
+void stats_unit(uint8_t i) __banked
+{
+	unit_t u;
+	ustat_t s;
+	far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
+	s.sol = u.sol; s.type = u.type;
+	s.tu = u.tu; s.tu_max = u.tu_max; s.en = u.en; s.en_max = u.en_max;
+	s.hp = u.hp; s.hp_max = u.hp_max; s.stun = u.stun; s.mor = u.mor;
+	s.bravery = u.bravery; s.reactions = u.reactions; s.firing = u.firing; s.throwing = u.throwing;
+	s.melee = u.melee; s.strength = u.strength; s.psi_str = u.psi_str; s.psi_skill = u.psi_skill;
+	memcpy(s.armor, u.armor, 5);
+	stats_draw(&s);
+}
+
 void stats_crew(uint8_t nsold) __banked
 {
 	for (uint8_t i = 0; i < nsold; i++) {

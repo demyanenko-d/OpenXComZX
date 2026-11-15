@@ -1,8 +1,8 @@
 # Паника (BattleUnit::prepareNewTurn, handlePanickingUnit; bact2.c ba_panic): мораль бойца 0 —
 # 0 (units[0].mor, #388B), шанс 100 − 2·0 = 100 %. Конец хода, ход пришельцев, снова ход X-COM: в
 # его начале боец паникует (по ГСЧ сценария — берсерк), окно InfoboxState (SCR_INFOBOX 247: рамка
-# толщиной 9, «{0}{NEWLINE}has gone Berserk», у отладочного бойца имени нет), время 0 (#3886),
-# мораль 0 + 15 (#388B). Окно закрывается само через 2 с. Снимки — tmp/shots/bat_panic/.
+# толщиной 9, «{0}{NEWLINE}has gone Berserk», у отладочного бойца имени нет), мораль 0 + 15 (#388B).
+# Окно закрывается само через 2 с. Снимки — tmp/shots/bat_panic/.
 # Запуск: powershell -File tools\run.ps1 -Script tests\bat_panic.oxs -Headless
 waitmark 1 600
 poke _alien_off 1
@@ -23,9 +23,15 @@ click L
 waitmark 247 100
 wait 30
 shot tmp/shots/bat_panic/00_infobox.png
-expect 4E:3886 0
+expect 4E:3886 60
 expect 4E:388B 15
 waitmark 248 200
 wait 30
 shot tmp/shots/bat_panic/01_closed.png
+# берсерк стреляет (UnitPanicBState): по ближайшему видимому, иначе наугад — пять выстрелов
+# навскидку, патроны 12 -> 7 (запись предметов 0, #2D08 страницы #D1), потом время 0
+wait 400
+shot tmp/shots/bat_panic/02_shots.png
+expect D1:2D08 7
+expect 4E:3886 0
 exit 0

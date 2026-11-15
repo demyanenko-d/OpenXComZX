@@ -86,6 +86,8 @@ static uint8_t __at(0xB808) pn_n;
 static uint8_t __at(0xB809) pn_i;
 static uint8_t __at(0xB80A) ib_t;        // окно сообщения: кадр открытия
 static uint8_t __at(0xB80B) hit_pend;    // выбран удар — выполнить в такте боя (меню закрыто)
+static uint8_t __at(0xB80D) bz_u;        // берсерк стреляет после своего окна (#FF — никто)
+static uint8_t __at(0xB80E) bz_k;        //   выстрелов сделано (до 10)
 
 static const wdef_t w_battle[] = {
 	// Виджет карты: рисует экран (EVT_DRAW) и отдаёт клики экрану (EVT_BUTTON, arg 0) —
@@ -562,6 +564,7 @@ static uint8_t load_gen(uint16_t terrain)
 	bt_turn = 1;
 	pn_n = pn_i = 0;                     // память банка не обнуляется
 	hit_pend = wl_spot = 0;
+	bz_u = 0xFF;
 	bt_side = FACTION_PLAYER;
 	gen_mode = 1;
 	sel = 0;
@@ -778,15 +781,7 @@ static uint8_t in_craft(const unit_t *u)
 // ---------------------------------------------------------------- характеристики
 static void uinfo_draw(void)
 {
-	const unit_t *u = &units[sel < nsold ? sel : 0];
-	ustat_t s;
-	s.sol = u->sol; s.type = u->type;
-	s.tu = u->tu; s.tu_max = u->tu_max; s.en = u->en; s.en_max = u->en_max;
-	s.hp = u->hp; s.hp_max = u->hp_max; s.stun = u->stun; s.mor = u->mor;
-	s.bravery = u->bravery; s.reactions = u->reactions; s.firing = u->firing; s.throwing = u->throwing;
-	s.melee = u->melee; s.strength = u->strength; s.psi_str = u->psi_str; s.psi_skill = u->psi_skill;
-	memcpy(s.armor, u->armor, 5);
-	stats_draw(&s);
+	stats_unit(sel < nsold ? sel : 0);       // показатели — из юнита (bstats.c)
 }
 
 // ---------------------------------------------------------------- выстрел и бросок
@@ -805,6 +800,7 @@ static void panic_show(void)
 {
 	uint8_t e = pn_list[pn_i++];
 	const unit_t *u = &units[e & 0x7F];
+	if (e & 0x80) { bz_u = e & 0x7F; bz_k = 0; }   // после окна — стрельба (UnitPanicBState)
 	char name[48];
 	uint8_t fem = stats_name(u->sol, u->type, 0, name);   // строки — по роду (getString(id, gender))
 	str_fmt(ui_msg, str_get((e & 0x80) ? STR_HAS_GONE_BERSERK_MALE + fem : STR_HAS_PANICKED_MALE + fem), name, "");
@@ -1027,6 +1023,15 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		break;
 	case EVT_TICK: {
 		if (!gen_mode || !loaded) break;
+		if (bz_u != 0xFF) {                  // берсерк: выстрел за такт, до 10; потом время 0
+			bafire_t q;
+			q.s.page = pf_page; q.s.cells = cells; q.s.sx = m_sx; q.s.sy = m_sy; q.s.sz = m_sz;
+			q.s.shooter = bz_u; q.s.n = nunits;
+			if (++bz_k > 10 || !ba_berserk(&q)) { units[bz_u].tu = 0; bz_u = 0xFF; }
+			see_update();
+			if (!battle_end(0)) ui_dirty(0);
+			break;
+		}
 		if (pn_i < pn_n && bv_walking() == 0xFF) { panic_show(); break; }   // сперва — окна паники
 		if (bt_side == FACTION_HOSTILE) { ai_run(); break; }
 		if (hit_pend) {                      // удар в клетку перед бойцом

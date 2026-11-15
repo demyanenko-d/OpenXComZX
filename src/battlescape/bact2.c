@@ -19,6 +19,7 @@
 #include "str_ids.h"
 #include "bgren.h"
 #include "bact.h"
+#include "vision.h"
 #include "game.h"
 
 uint8_t ba_fill(const bashot_t *q, fu_t *f, shot_t *s) __banked;   // bact.c
@@ -94,13 +95,66 @@ uint8_t ba_panic(uint8_t page, uint8_t side, uint8_t n, uint8_t *list, uint8_t m
 				far_fill(FAR(page + 1, TL_BITEMS) + (bi - 1) * sizeof(bitem_t), BI_GROUND, 1);
 				fl_drop(page, bi - 1, u.x, u.y, u.z);
 			}
-		u.tu = 0;
+		if (!berserk) u.tu = 0;              // берсерк сперва стреляет (ba_berserk), время — потом
 		u.mor = u.mor > 85 ? 100 : (uint8_t)(u.mor + 15);
 		u_set(i, &u);
 		list[cnt++] = (uint8_t)(i | (berserk ? 0x80 : 0));
 	}
 	if (cnt) { bi_hands(page, n); bv_sync(n); }
 	return cnt;
+}
+
+// Выстрел берсерка (UnitPanicBState::think :62-125): оружие в руке с очередью (иначе навскидку),
+// времени хватает — по ближайшему врагу, которого он видит (в секторе), иначе в случайную клетку
+// ±6. Заполнить в q карту, стрелка и n. 1 — выстрелил
+uint8_t ba_berserk(bafire_t *q) __banked
+{
+	bashot_t *a = &q->s;
+	uint8_t i = a->shooter, right = 0xFF;
+	unit_t u, x;
+	rtab_t t;
+	r_items_t w;
+	bitem_t b;
+	u_get(i, &u);
+	if (!u.alive || !rtab_open(RES_RULE_ITEMS, &t)) return 0;
+	for (uint8_t h = 1; h != 0xFF; h--) {            // getMainHandWeapon
+		if (!bi_hand(a->page, i, h, &b) || b.item >= t.n) continue;
+		rtab_get(&t, b.item, &w);
+		if (w.battle_type == BT_FIREARM && (w.tu_snap || w.tu_auto)) { right = h; break; }
+	}
+	if (right == 0xFF) return 0;
+	uint8_t pct = w.tu_auto ? w.tu_auto : w.tu_snap;
+	uint8_t cost = (w.flags & ITEMS_F_FLAT_RATE) ? pct : (uint8_t)((uint16_t)u.tu_max * pct / 100);
+	if (u.tu < cost) return 0;
+	vu_t v[MAX_BUNITS];
+	uint8_t n = a->n > MAX_BUNITS ? MAX_BUNITS : a->n, tg = 0xFF;
+	for (uint8_t k = 0; k < n; k++) {
+		u_get(k, &x);
+		v[k].x = x.x; v[k].y = x.y; v[k].z = x.z; v[k].dir = x.dir;
+		v[k].flags = (x.alive ? VU_ALIVE : 0) | (x.size > 1 ? VU_BIG : 0) | VU_H(UNIT_H(&x));
+	}
+	uint16_t best = 0xFFFF;
+	for (uint8_t k = 0; k < n; k++) {                // ближайший видимый враг
+		u_get(k, &x);
+		uint8_t f = x.faction, uf = u.faction;       // сравнения — с копиями (SDCC 4.5)
+		if (k == i || f == uf || (uf == FACTION_PLAYER && f == FACTION_NEUTRAL)) continue;
+		int16_t dx = (int16_t)x.x - u.x, dy = (int16_t)x.y - u.y;
+		uint16_t d2 = (uint16_t)(dx * dx + dy * dy);
+		if (d2 < best && vis_pair(v, i, k, 1)) { best = d2; tg = k; }
+	}
+	if (tg != 0xFF) { a->tx = v[tg].x; a->ty = v[tg].y; a->tz = v[tg].z; }
+	else {                                           // наугад ±6
+		int16_t tx = (int16_t)u.x + (int16_t)rng_range(0, 12) - 6, ty = (int16_t)u.y + (int16_t)rng_range(0, 12) - 6;
+		a->tx = (uint8_t)(tx < 0 ? 0 : tx >= a->sx ? a->sx - 1 : tx);
+		a->ty = (uint8_t)(ty < 0 ? 0 : ty >= a->sy ? a->sy - 1 : ty);
+		a->tz = u.z;
+	}
+	uint16_t acc = (uint16_t)u.firing * (w.tu_auto ? w.accuracy_auto : w.accuracy_snap) / 100;
+	if (u.kneel) acc = acc * 115 / 100;
+	a->action = w.tu_auto ? BA_AUTOSHOT : BA_SNAPSHOT;
+	a->acc = acc > 255 ? 255 : (uint8_t)acc;
+	q->hand = right; q->tu = cost;
+	return ba_fire(q) == 0;
 }
 
 uint16_t ba_fire(bafire_t *q) __banked

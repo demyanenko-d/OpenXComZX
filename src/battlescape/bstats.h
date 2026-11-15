@@ -18,6 +18,7 @@ void stats_draw(const ustat_t *s) __banked;
 uint8_t stats_name(uint8_t sol, uint16_t type, uint8_t rank, char *name) __banked;
 // Боевые показатели отряда (units[0..nsold), units.h UNITS_FAR): солдат кампании или отладочные,
 // рост и броня типа солдата, броня с прибавками (BattleUnit(Soldier*)). Вынесено из банка 31
-void stats_crew(uint8_t nsold) __banked;   // весь экран 320x200
+void stats_crew(uint8_t nsold) __banked;
+void stats_unit(uint8_t i) __banked;     // окно характеристик юнита i экрана боя   // весь экран 320x200
 
 #endif
