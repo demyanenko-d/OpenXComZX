@@ -895,6 +895,18 @@ static void amenu_event(uint8_t ev, uint8_t arg)
 	}
 }
 
+// Инвентарь выбранного бойца: окно рисуется в строки 0–199 основного холста (над предметами боя) —
+// без сплита и с ним на экране
+static uint8_t bt_intro;                 // 1 — брифинг закрыт: инвентарь, 2 — затем окно хода (_DATA — нули)
+
+static void inv_open(void)
+{
+	inv_battle(pf_page, sel < nsold ? sel : 0, nsold, nunits, !bt_intro);   // после брифинга — InventoryState(false)
+	bv_suspend();
+	marks_show(0, 0);
+	UI_GO(A_PUSH, SCR_INVENTORY);
+}
+
 // Геоскейп сообщает, какая миссия начинается: развёртывание (state.h site_t.deployment),
 // террейн НЛО и террейн корабля отряда; #FFFF — не задано. utype — тип НЛО (#FF — не НЛО),
 // race — раса миссии (#FF — из развёртывания).
@@ -945,7 +957,10 @@ uint8_t bat_rows(uint8_t id, uint8_t slot) __banked
 uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 {
 	if (id == SCR_DEBRIEFING) return deb_event(id, ev, arg);
-	if (id == SCR_BRIEFING) return st_brief_event(ev, arg, bt_dep);
+	if (id == SCR_BRIEFING) {
+		if (ev == EVT_BUTTON) bt_intro = 1;  // в бою — сперва инвентарь и окно хода
+		return st_brief_event(ev, arg, bt_dep);
+	}
 	if (id == SCR_NEXT_TURN) {
 		if (ev == EVT_BUTTON || ev == EVT_KEY) next_turn_close();
 		return 0;
@@ -1001,6 +1016,14 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		break;
 	case EVT_TICK: {
 		if (!gen_mode || !loaded) break;
+		if (bt_intro) {                      // после брифинга (BriefingState::btnOkClick): инвентарь,
+			if (bt_intro++ == 1) { inv_open(); break; }   //   за ним окно хода, потом бой
+			bt_intro = 0;
+			bv_pause();
+			marks_show(0, 0);
+			UI_GO(A_PUSH, SCR_NEXT_TURN);
+			break;
+		}
 		if (bz_u != 0xFF) {                  // берсерк: выстрел за такт, до 10; потом время 0
 			bafire_t q;
 			q.s.page = pf_page; q.s.cells = cells; q.s.sx = m_sx; q.s.sy = m_sy; q.s.sz = m_sz;
@@ -1140,12 +1163,9 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			break;
 		case 3: { uint8_t l = bv_level(); if (l + 1 < m_sz) { bv_set_level(l + 1, 1); ui_dirty(0); } break; }
 		case 4: { uint8_t l = bv_level(); if (l) { bv_set_level(l - 1, 1); ui_dirty(0); } break; }
-		case 5:                              // инвентарь: окно рисуется в строки 0–199 основного
+		case 5:                              // инвентарь
 			if (!nsold || bv_walking() != 0xFF) break;
-			inv_battle(pf_page, sel < nsold ? sel : 0, nsold, nunits);   // над предметами боя
-			bv_suspend();                    //   холста — без сплита и с ним на экране
-			marks_show(0, 0);
-			UI_GO(A_PUSH, SCR_INVENTORY);
+			inv_open();
 			break;
 		case 6: center_on_unit(); ui_dirty(0); break;
 		case 7: sel_next(); break;           // следующий боец

@@ -75,6 +75,7 @@ static uint8_t __at(0xB7EB) bm_ns;
 static uint8_t __at(0xB7EC) bm_u;
 static uint16_t __at(0xB7ED) bm_warn;    // строка предупреждения (NONE16 — нет)
 static uint8_t __at(0xB7EF) bm_wt;       // кадров до его исчезновения
+static uint8_t __at(0xB7F0) bm_tu;       // 1 — ходы стоят времени (InventoryState(tu = true)), 0 — перед боем
 
 static char t1[40], t2[8];
 static uint16_t hover_item;          // предмет под курсором (подпись внизу)
@@ -639,7 +640,7 @@ static uint8_t move_cost(uint8_t from, uint8_t to)
 static uint8_t tu_spend(uint8_t cost)
 {
 	unit_t u;
-	if (!bm || !cost) return 1;
+	if (!bm || !bm_tu || !cost) return 1;    // перед боем (после брифинга) — даром
 	unit_get(&u);
 	if (u.tu < cost) { warn(STR_NOT_ENOUGH_TIME_UNITS); return 0; }
 	u.tu -= cost;
@@ -817,9 +818,10 @@ static void click_at(int16_t px, int16_t py)
 
 // --- экран
 
-void inv_battle(uint8_t page, uint8_t unit, uint8_t nsold, uint8_t n) __banked
+void inv_battle(uint8_t page, uint8_t unit, uint8_t nsold, uint8_t n, uint8_t tu) __banked
 {
 	bm = 1;
+	bm_tu = tu;
 	bm_page = page;
 	bm_u = unit;
 	bm_ns = nsold;
@@ -891,7 +893,7 @@ void inv_scr_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked
 		unit_t u;
 		unit_get(&u);
 		if (slot == 0 && u.sol != 0xFF) { soldier_get(u.sol, &so); strcpy(buf, so.name); }
-		if (slot == 1) {                         // STR_TIME_UNITS_SHORT (_txtTus)
+		if (slot == 1 && bm_tu) {                // STR_TIME_UNITS_SHORT (_txtTus->setVisible(_tu))
 			fmt_num(t1, u.tu, 0);
 			str_fmt(buf, str_get(STR_TIME_UNITS_SHORT), t1, "");
 		}

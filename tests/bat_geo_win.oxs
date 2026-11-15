@@ -304,6 +304,12 @@ pokew _cursor_y 158
 click L
 waitmark 246 900
 key ENTER
+waitmark 198 900
+pokew _cursor_x 250
+pokew _cursor_y 10
+click L
+waitmark 249 300
+key ENTER
 waitmark 248 900
 wait 200
 pokew _cursor_x 160

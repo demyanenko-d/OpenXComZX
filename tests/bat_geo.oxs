@@ -318,6 +318,16 @@ waitmark 246 900
 wait 30
 shot tmp/shots/bat_geo/00_briefing.png
 key ENTER
+# после брифинга (BriefingState::btnOkClick): инвентарь перед боем — даром, без строки TU
+# (InventoryState(false)), OK — окно хода (TURN 1, X-Com), его закрыть — бой
+waitmark 198 900
+wait 30
+shot tmp/shots/bat_geo/00_inventory.png
+pokew _cursor_x 250
+pokew _cursor_y 10
+click L
+waitmark 249 300
+key ENTER
 waitmark 248 900
 wait 200
 pokew _cursor_x 160

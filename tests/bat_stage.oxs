@@ -43,6 +43,12 @@ waitmark 246 900
 wait 30
 shot tmp/shots/bat_stage/01_briefing.png
 key ENTER
+waitmark 198 300
+pokew _cursor_x 250
+pokew _cursor_y 10
+click L
+waitmark 249 300
+key ENTER
 waitmark 248 300
 wait 60
 expect 4E:3810 11
