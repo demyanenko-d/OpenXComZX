@@ -1252,10 +1252,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				see_update();
 			}
 			if (a->z != bv_level()) bv_set_level(a->z, 0);
-			bv_center(a->x, a->y);
-			dbg_puts("alien "); dbg_dec(dbg_al - nsold); dbg_puts(" at "); dbg_dec(a->x); dbg_puts(",");
-			dbg_dec(a->y); dbg_puts(","); dbg_dec(a->z); dbg_puts(" sheet "); dbg_dec(a->sheet);
-			dbg_puts(" hp "); dbg_dec(a->hp); dbg_puts(" tu "); dbg_dec(a->tu); dbg_puts("\n");
+			bv_center(a->x, a->y);           // (печать в отладку убрана: банк 31 полон)
 			dbg_al++;
 			break;
 		}
