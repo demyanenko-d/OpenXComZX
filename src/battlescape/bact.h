@@ -25,6 +25,8 @@ uint8_t ba_shot(const bashot_t *q) __banked;
 // Юнит i выбыл (alive уже 0): со сцены, его вещи и труп на пол (bfx.c), клетки перерисовать;
 // n — юнитов всего
 void ba_kill(uint8_t page, uint8_t i, uint8_t n) __banked;
+// Мораль после гибели victim (checkForCasualties): убийца m (#FF — неизвестен), его и обе стороны
+void ba_morale(uint8_t victim, uint8_t m, uint8_t n) __banked;
 
 // Действие игрока предметом в руке по клетке (BattlescapeGame::primaryAction ->
 // ProjectileFlyBState): выстрел (очередь — autoShots пуль) или бросок. Заполнить s (кроме weapon

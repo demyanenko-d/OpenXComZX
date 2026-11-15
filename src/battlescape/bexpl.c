@@ -357,8 +357,13 @@ static void blast(int16_t vx, int16_t vy, int16_t vz, uint16_t item)
 	bv_sync(Q->n);
 	for (uint8_t k = 0; k < gi_n; k++)
 		if (gi_i[k] == 0xFF) bv_cell(gi_x[k], gi_y[k], tz);
-	for (uint8_t i = 0; i < Q->n; i++)       // checkForCasualties
-		if (dead[i]) ba_kill(Q->page, i, Q->n);
+	for (uint8_t i = 0; i < Q->n; i++) {     // checkForCasualties: мораль — при гибели (не оглушении)
+		if (!dead[i]) continue;
+		unit_t v;
+		u_get(i, &v);
+		if (!v.hp) ba_morale(i, 0xFF, Q->n);
+		ba_kill(Q->page, i, Q->n);
+	}
 }
 
 uint8_t ex_turn(const exreq_t *q) __banked

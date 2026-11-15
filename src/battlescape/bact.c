@@ -63,6 +63,38 @@ static uint8_t fill(const bashot_t *q, fu_t *f, shot_t *s)
 	return n;
 }
 
+static void mor_add(unit_t *x, int8_t d)
+{
+	int16_t m = (int16_t)x->mor + d;
+	x->mor = m < 0 ? 0 : m > 100 ? 100 : (uint8_t)m;
+}
+
+// Мораль после гибели (checkForCasualties :672-729, модификатор званий — 100): убийце +20 за врага,
+// −20 за своего, за мирного — бойцу −10, пришельцу +10; если погиб не мирный — его сторона теряет
+// 2 · (110 − храбрость) / 10, остальные получают +10 (живые, 1x1). m — убийца (#FF — неизвестен)
+void ba_morale(uint8_t victim, uint8_t m, uint8_t n) __banked
+{
+	unit_t v, x;
+	u_get(victim, &v);
+	if (m < n) {
+		u_get(m, &x);
+		uint8_t vf = v.faction, mf = x.faction;
+		if (vf == FACTION_NEUTRAL) mor_add(&x, mf == FACTION_PLAYER ? -10 : 10);
+		else if (vf == mf) mor_add(&x, -20);
+		else mor_add(&x, 20);
+		u_set(m, &x);
+	}
+	if (v.faction == FACTION_NEUTRAL) return;
+	for (uint8_t i = 0; i < n; i++) {
+		if (i == victim) continue;
+		u_get(i, &x);
+		if (!x.alive || x.size != 1) continue;
+		if (x.faction == v.faction) mor_add(&x, (int8_t)-(2 * ((110 - x.bravery) / 10)));
+		else mor_add(&x, 10);
+		u_set(i, &x);
+	}
+}
+
 // Попадание по юниту h (TileEngine::hit): урон с бронёй по стороне — от точки удара (vx, vy, vz),
 // мораль; выбывший — со сцены. Стрелок замечен пришельцами и помнится раненым (gotHit)
 static void hurt(uint8_t page, uint8_t n, uint8_t shooter, uint8_t h, int16_t vx, int16_t vy, int16_t vz,
@@ -90,7 +122,10 @@ static void hurt(uint8_t page, uint8_t n, uint8_t shooter, uint8_t h, int16_t vx
 		if (shooter < 16) ai_hitby[h] |= (uint16_t)1 << shooter;   // setWasHitBy
 	} else ai_hitby[h] = 1;                      // hitState
 	u_set(h, &v);
-	if (dead) ba_kill(page, h, n);
+	if (dead) {
+		if (!v.hp) ba_morale(h, shooter, n);     // гибель, не оглушение
+		ba_kill(page, h, n);
+	}
 }
 
 uint8_t ba_shot(const bashot_t *q) __banked

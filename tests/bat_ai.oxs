@@ -42,4 +42,8 @@ shot tmp/shots/bat_ai/07.png
 wait 100
 shot tmp/shots/bat_ai/08.png
 expect 4E:3888 0
+# мораль после гибели (checkForCasualties): бойцы — 100 - 2·(110 - 50)/10 = 88, пришелец — 100
+expect 4E:38BB 88
+expect 4E:38EB 88
+expect 4E:39AB 100
 exit 0
