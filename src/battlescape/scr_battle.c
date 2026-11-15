@@ -214,12 +214,7 @@ static void see_update(void)
 {
 	uint8_t list[16];
 	vu_t v[MAX_BUNITS];                  // копия на стеке: банку 32 память банка 31 не видна
-	for (uint8_t i = 0; i < nunits; i++) {
-		const unit_t *u = &units[i];
-		v[i].x = u->x; v[i].y = u->y; v[i].z = u->z; v[i].dir = u->dir;
-		v[i].flags = (u->alive ? VU_ALIVE : 0) | (u->size > 1 ? VU_BIG : 0) | (u->seen ? VU_SEEN : 0)
-			| VU_H(UNIT_H(u));
-	}
+	vis_fill(v, nunits, 1);              // (bloot.c, банк 40)
 	int16_t r[4];                        // туман войны: перерисовать открытое в нарисованной области
 	r[0] = vx_lo; r[1] = vx_hi; r[2] = vy_lo; r[3] = vy_hi;
 	vis_view(dl_ok ? r : 0);

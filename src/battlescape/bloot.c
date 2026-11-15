@@ -10,7 +10,22 @@
 #include "state.h"
 #include "loader.h"
 #include "mapgen.h"
+#include "units.h"
+#include "vision.h"
 #include "bstage.h"
+
+// Юниты для обзора (vu_t) из units[] экрана боя — дальним чтением; seen — ставить VU_SEEN замеченным
+// (вынесено из see_update банка 31)
+void vis_fill(vu_t *v, uint8_t n, uint8_t seen) __banked
+{
+	unit_t u;
+	for (uint8_t i = 0; i < n; i++) {
+		far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
+		v[i].x = u.x; v[i].y = u.y; v[i].z = u.z; v[i].dir = u.dir;
+		v[i].flags = (u.alive ? VU_ALIVE : 0) | (u.size > 1 ? VU_BIG : 0) | (seen && u.seen ? VU_SEEN : 0)
+			| VU_H(UNIT_H(&u));
+	}
+}
 
 // targetType части пола/стены/объекта (loader.h TV_PROPS, байт 10)
 static uint8_t special(uint8_t page, uint8_t part)
