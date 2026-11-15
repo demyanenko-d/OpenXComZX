@@ -75,6 +75,8 @@
 // страница полна — было 28 мест, террор TFTD (22 пришельца и до 16 мирных) не помещался
 #define TV_AUNITS 10240
 #define TL_AMAX   40
+#define TV_TYPE   12288        // 256 байт: слот части в клетке (MCD.Tile_Type: 0 пол, 1 западная стена,
+                               //   2 северная, 3 объект) — куда класть Die_MCD (bexpl.c detonate)
 
 typedef struct {
 	uint16_t set[TL_SETS];     // ресурсы MCDSET наборов миссии

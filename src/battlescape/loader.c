@@ -126,6 +126,7 @@ uint16_t tiles_load(const tiles_req_t *q, uint8_t *pages, uint8_t *nps,
 	far_fill(FAR(q->page + 1, TL_UDIDX), 0, 256);
 	far_fill(FAR(q->page + 1, TL_BIGW), 0, 256);
 	far_fill(FAR(q->page + 2, 0), 0, TV_PROPS + 256 * TV_PSIZE);
+	far_fill(FAR(q->page + 2, TV_TYPE), 0, 256);
 	door_an_n = 0;                            // створки прошлой миссии больше не едут (doors.c)
 	sdres_flush();                       // кэш ресурсов отдаёт страницы: тайлсеты важнее
 	// Двери НЛО открываются заменой на свою часть с открытым кадром (Frame[7]), а пока створка едет
@@ -177,6 +178,7 @@ uint16_t tiles_load(const tiles_req_t *q, uint8_t *pages, uint8_t *nps,
 			far_write(FAR(q->page + 2, TV_LOFT) + (uint16_t)part * 12, &mc[16], 12);
 			if (mc[30]) mc[30] = base + mc[30] < 256 ? (uint8_t)(base + mc[30]) : 0;   // Die_MCD -> часть миссии
 			far_write(FAR(q->page + 2, TV_PROPS) + (uint16_t)part * TV_PSIZE, &mc[28], TV_PSIZE);
+			{ uint8_t ty = mc[5] & 3; far_write(FAR(q->page + 2, TV_TYPE) + part, &ty, 1); }   // слот части
 			if ((mc[3] & 8) && mc[8] && base + mc[8] < 256) {
 				uint8_t v = (uint8_t)(base + mc[8]);
 				far_write(FAR(q->page, PF_ALT) + part, &v, 1);

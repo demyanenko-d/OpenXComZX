@@ -8,7 +8,7 @@
 // battleExplosionHeight 0 гаснут на соседнем этаже), мощность −10 за клетку и −2 · блокировку
 // (heBlock стен и объектов, horizontalBlockage); клетку берёт первый дошедший луч: юниту — урон
 // (вблизи и сверху — снизу, иначе — со стороны центра), предметы с бронёй меньше мощности — в пыль.
-// Чего нет: разрушения местности (setExplosive / detonate), дыма и огня, юнита из клетки снизу,
+// Местность — detonate ниже. Чего нет: дыма и огня, юнита из клетки снизу,
 // глубины TFTD (подводные кадры), камеры по этажам выше.
 #include <stdint.h>
 #include <string.h>
@@ -31,6 +31,7 @@
 #include "bfx.h"
 #include "bact.h"
 #include "bexpl.h"
+#include "vision.h"
 
 extern volatile uint16_t frames;         // crt0.s
 
@@ -62,6 +63,8 @@ static uint8_t __at(0xB472) ex_te[EXP_N][TE_SIZE];   // кадры X1.PCK во �
 static const exreq_t * __at(0xB4B2) Q;
 static uint8_t __at(0xB4B4) dead[MAX_BUNITS];        // выбыл от этого взрыва
 static uint8_t __at(0xB4DC) ex_np;                  // страница кадров (от BAT_SCRATCH_PAGE)
+static uint16_t __at(0xB500) expl[SIDE * SIDE];      // Tile::setExplosive: наибольшая мощность луча (до #B922)
+static uint8_t __at(0xB930) ex_ndet;                 // клеток с разрушенными частями (последний взрыв; сценарии)
 
 // sin(3° · k), Q8
 static const int16_t sin8[120] = {
@@ -284,6 +287,7 @@ static void explode(int16_t vx, int16_t vy, int16_t vz, int16_t power, uint8_t t
 	int16_t tx = vx >> 4, ty = vy >> 4;
 	uint8_t tz = (uint8_t)(vz / 24);
 	memset(seen, 0, sizeof seen);
+	memset(expl, 0, sizeof expl);
 	uint8_t c[4];
 	cell(tx, ty, tz, c);
 	uint8_t diag = bigw(c[3]);               // диагональная большая стена в клетке взрыва
@@ -297,6 +301,7 @@ static void explode(int16_t vx, int16_t vy, int16_t vz, int16_t power, uint8_t t
 		uint8_t l = 0;
 		while (p > 0 && l <= radius) {
 			uint16_t si = (uint16_t)(x - tx + R_MAX) + (uint16_t)(y - ty + R_MAX) * SIDE;
+			if (type == DT_HE && (uint16_t)p > expl[si]) expl[si] = (uint16_t)p;   // setExplosive(power_)
 			if (!seen[si]) { seen[si] = 1; hit_cell(x, y, tz, p, type, tx, ty); }
 			l++;
 			ox = x; oy = y;
@@ -314,6 +319,75 @@ static void explode(int16_t vx, int16_t vy, int16_t vz, int16_t power, uint8_t t
 			p -= hblock(ox, oy, x, y, tz, skip) * 2;
 		}
 	}
+}
+
+// ---------------------------------------------------------------- разрушение местности
+// TileEngine::detonate (TileEngine.cpp:1491-1603) и Tile::destroy (Tile.cpp:466-494): по клетке с
+// мощностью e — потолок (пол клетки выше), стены соседей с востока и юга, свои пол, стены и объект,
+// большие стены соседей с севера и запада; часть сносится, пока 2 · броня ≤ остатка (броня 255 —
+// вечная, гравилифт не сносится), остаток −= 2 · броня, на её место — Die_MCD (в слот своего типа).
+// Чего нет: огня и дыма, цепных взрывов частей (HE_Strength), выжженной земли на этаже 0 (пол без
+// Die_MCD там остаётся), падения юнитов и предметов (applyGravity), снесённых целей миссии.
+static uint8_t prop(uint8_t part, uint8_t k)
+{
+	return far_byte(FAR(Q->page + 2, TV_PROPS) + (uint16_t)part * TV_PSIZE + k);
+}
+
+static void detonate(int16_t x, int16_t y, uint8_t z, uint16_t e)
+{
+	static const int8_t dx[9] = { 0, 1, 0, 0, 0, 0, 0, 0, -1 }, dy[9] = { 0, 0, 1, 0, 0, 0, 0, -1, 0 };
+	static const uint8_t slot[9] = { 0, 1, 2, 0, 1, 2, 3, 3, 3 };   // O_FLOOR, O_WESTWALL, O_NORTHWALL, O_OBJECT
+	uint8_t bwd = 1, skipnw = 0;
+	for (int8_t i = 8; i >= 0; i--) {
+		int16_t cx = x + dx[i], cy = y + dy[i];
+		uint8_t cz = (uint8_t)(z + (i == 0));
+		if (cx < 0 || cy < 0 || cx >= Q->sx || cy >= Q->sy || cz >= Q->sz) continue;
+		uint8_t c[4];
+		far_t a = cell_at((uint8_t)cx, (uint8_t)cy, cz);
+		far_read(a, c, 4);
+		uint8_t s = slot[i], p = c[s];
+		if (!p) continue;
+		uint8_t bw = bigw(p);
+		if (i > 6 && !(bw == 1 || bw == 8 || (i == 8 && bw == 6) || (i == 7 && bw == 7))) continue;
+		if (bw) skipnw = 1;
+		if (!bwd && i < 6) continue;
+		if (skipnw && (i == 2 || i == 1)) continue;
+		uint16_t rem = e;
+		if (i == 6 && (bw == 2 || bw == 3) && 2 * (uint16_t)prop(p, 0) > rem) bwd = 0;
+		uint8_t changed = 0;
+		for (;;) {
+			p = c[s];
+			if (!p) break;
+			uint8_t ar = prop(p, 0);
+			if (ar == 255 || 2 * (uint16_t)ar > rem) break;
+			if (far_byte(FAR(Q->page, PF_FLAGS) + p) & 16) break;   // гравилифт
+			if (i == 6) {
+				if (bw == 2 || bw == 3) bwd = 1;
+				if (bw == 6 || bw == 7 || bw == 8) skipnw = 0;
+			}
+			rem -= 2 * (uint16_t)ar;
+			uint8_t die = prop(p, 2);
+			if (!die && s == 0 && cz == 0) break;   // пол земли без Die_MCD — остаётся (выжженной земли нет)
+			c[s] = 0;
+			changed = 1;
+			if (die) { s = far_byte(FAR(Q->page + 2, TV_TYPE) + die) & 3; c[s] = die; }
+		}
+		if (!changed) continue;
+		ex_ndet++;
+		far_write(a, c, 4);
+		bv_cell((uint8_t)cx, (uint8_t)cy, cz);
+		vis_cell(Q->cells, (uint8_t)cx, (uint8_t)cy, cz, Q->page);
+	}
+}
+
+static void detonate_all(int16_t tx, int16_t ty, uint8_t tz)
+{
+	ex_ndet = 0;
+	for (uint16_t si = 0; si < SIDE * SIDE; si++) {
+		if (!expl[si]) continue;
+		detonate(tx - R_MAX + (int16_t)(si % SIDE), ty - R_MAX + (int16_t)(si / SIDE), tz, expl[si]);
+	}
+	bv_redraw();                             // вид — заново (снесённые части)
 }
 
 // Площадной взрыв предмета item в точке (вокселях): экран, затем урон; выбывшие — со сцены
@@ -353,6 +427,7 @@ static void blast(int16_t vx, int16_t vy, int16_t vz, uint16_t item)
 		gi_x[gi_n] = b.x; gi_y[gi_n] = b.y; gi_i[gi_n] = (uint8_t)i; gi_n++;
 	}
 	explode(vx, vy, vz, (int16_t)w.power, w.damage_type, (uint8_t)rad);
+	if (w.damage_type == DT_HE) detonate_all(vx >> 4, vy >> 4, tz);   // местность (только HE)
 	fl_rebuild(Q->page);                     // сгоревшее — с пола
 	bv_sync(Q->n);
 	for (uint8_t k = 0; k < gi_n; k++)
