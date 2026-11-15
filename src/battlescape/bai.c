@@ -31,6 +31,7 @@
 #include "mapgen.h"
 #include "bact.h"
 #include "bai.h"
+#include "bescape.h"
 
 #define STEP_TU   4
 #define PATH_MAX  48
@@ -686,7 +687,13 @@ static uint8_t ai_step(const aictx_t *c)
 			if (hide_check(c, &u)) cells(&u);        // мог убить того, кто его видел
 			return AI_SEE | AI_HIT | rf;
 		}
-		if (ai_pi >= ai_pn && !ai_moved) { ai_moved = 1; plan_patrol(c, &u); }
+		if (ai_pi >= ai_pn && !ai_moved) {
+			ai_moved = 1;
+			uint8_t p[PATH_MAX];                     // мирный на виду у пришельцев — бежит (bescape.c)
+			ai_pn = f == FACTION_NEUTRAL ? ai_escape(c, ai_a, p, PATH_MAX) : 0;
+			if (ai_pn) { memcpy(ai_path, p, ai_pn); ai_pi = 0; }
+			else plan_patrol(c, &u);
+		}
 		if (ai_pi < ai_pn && step(c, &u)) {
 			uint8_t rf = 0;
 			if (!ai_walk) {                          // шаг без анимации — сразу ответ и проверка вида
