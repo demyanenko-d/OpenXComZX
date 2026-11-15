@@ -413,7 +413,7 @@ static void gravity(void)
 		u_set(i, &v);
 		runit_t r;                           // запись для вида (как ru_write в bact.c)
 		r.x = v.x; r.y = v.y; r.z = v.z; r.dir = v.dir;
-		r.flags = (v.seen && (v.sheet || v.faction == FACTION_PLAYER) ? RU_ALIVE : 0) | (v.kneel ? RU_KNEEL : 0);
+		r.flags = (v.seen && (v.sheet || v.type == 0xFFFF) ? RU_ALIVE : 0) | (v.kneel ? RU_KNEEL : 0);
 		r.sheet = v.sheet;
 		r.pad[0] = r.pad[1] = 0;
 		far_write(FAR(Q->page + 1, TL_RUNITS) + (uint16_t)i * sizeof r, &r, sizeof r);

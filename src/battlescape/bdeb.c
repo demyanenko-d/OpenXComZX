@@ -297,7 +297,7 @@ static void score(const debreq_t *q, uint8_t success, uint8_t i0)
 			continue;
 		}
 		if (u.alive) continue;
-		if (f == FACTION_HOSTILE) {
+		if (f == FACTION_HOSTILE && u.type != 0xFFFF) {   // боец под контролем пришельцев — всё равно боец
 			int16_t value = u.type < tu.n ? (int16_t)rtab_word(&tu, u.type, offsetof(r_units_t, value)) : 0;
 			if (!u.hp) {                             // убит (killedBy FACTION_PLAYER)
 				add_stat(D_KILLED, value);
@@ -311,7 +311,7 @@ static void score(const debreq_t *q, uint8_t success, uint8_t i0)
 					}
 				}
 			} else if (success) add_stat(D_LIVE, value * 2);   // оглушён и подобран
-		} else if (u.faction == FACTION_PLAYER && !u.hp) {    // погиб боец
+		} else if (u.type == 0xFFFF && !u.hp) {    // погиб боец
 			uint8_t st = 0;
 			rtab_t ts;
 			if (u.sol != 0xFF) far_read(FAR(SOLDIER_PAGE, 0) + (uint16_t)u.sol * sizeof(soldier_t) + offsetof(soldier_t, type), &st, 1);

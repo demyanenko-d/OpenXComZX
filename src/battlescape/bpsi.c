@@ -36,7 +36,8 @@ uint8_t ai_psi(const aictx_t *c, uint8_t a) __banked
 	r_items_t w;
 	unit_t u, x;
 	far_read(UNITS_FAR + (uint16_t)a * sizeof u, &u, sizeof u);
-	if (!u.psi_skill || !rtab_open(RES_RULE_ITEMS, &t)) return 0;
+	// под контролем (боец за пришельцев) — не атакует пси (originalFaction == faction)
+	if (!u.psi_skill || u.type == 0xFFFF || !rtab_open(RES_RULE_ITEMS, &t)) return 0;
 	uint16_t pw;
 	for (pw = 0; pw < t.n; pw++) {           // ALIEN_PSI_WEAPON
 		rtab_get(&t, pw, &w);
@@ -69,16 +70,32 @@ uint8_t ai_psi(const aictx_t *c, uint8_t a) __banked
 			armed = 1;
 		}
 	if (!armed && (int16_t)rng_range(35, 155) >= best) return 0;
+	far_read(UNITS_FAR + (uint16_t)tg * sizeof x, &x, sizeof x);
+	uint8_t mc = 0;                          // контроль или паника (:1953-1986)
+	if (best >= 30) {
+		int8_t odds = 40;
+		uint8_t br = (uint8_t)((110 - x.bravery) / 10), m = x.mor;
+		if (br > 6) odds -= 15;
+		if (br < 4) odds += 15;
+		if (m >= 40) { if ((int16_t)m - 10 * br < 50) odds -= 15; }
+		else odds += 15;
+		if (!m) odds = 100;
+		mc = rng_percent((uint8_t)odds);
+	}
 	u.tu -= cost;
 	far_write(UNITS_FAR + (uint16_t)a * sizeof u, &u, sizeof u);
-	far_read(UNITS_FAR + (uint16_t)tg * sizeof x, &x, sizeof x);
 	int16_t dx = (int16_t)x.x - u.x, dy = (int16_t)x.y - u.y, dz = (int16_t)x.z - u.z;
 	int16_t s = atk - (int16_t)isqrt16((uint16_t)(dx * dx + dy * dy + dz * dz)) + (int16_t)rng_range(0, 55);
-	int16_t def = x.psi_str + (x.psi_skill ? 10 + x.psi_skill / 5 : 10);
-	if (s > def) {                           // паника: мораль − (110 − храбрость)
+	int16_t def = x.psi_str + (x.psi_skill ? 10 + x.psi_skill / 5 : 10) + (mc ? 20 : 0);
+	if (s <= def) return 1;
+	if (mc) {                                // convertToFaction: за пришельцев, время заново
+		x.faction = FACTION_HOSTILE;
+		x.tu = x.tu_max;
+		x.kneel = 0;
+	} else {                                 // паника: мораль − (110 − храбрость)
 		int16_t loss = 110 - x.bravery;
 		x.mor = loss >= x.mor ? 0 : (uint8_t)(x.mor - loss);
-		far_write(UNITS_FAR + (uint16_t)tg * sizeof x, &x, sizeof x);
 	}
+	far_write(UNITS_FAR + (uint16_t)tg * sizeof x, &x, sizeof x);
 	return 1;
 }

@@ -1,0 +1,43 @@
+# Контроль разума пришельцем (psiAction: мораль цели 0 — controlOdds 100; PsiAttackBState: convertToFaction;
+# bpsi.c): расстановка bat_psi, у бойцов мораль 0 (#4E:388B, #38BB). В ход пришельцев боец 0 — за
+# пришельцев (faction #388C = 1, время заново, ходит во втором проходе ИИ), боец 1 — свой; в начале
+# хода X-COM (ход 4, окно хода) — снова X-COM (prepareNewTurn: revert, без времени).
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_mc.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _bat_still 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+expect D1:2D46 6
+expect D1:2D4A 58
+poke 4E:3880 8
+poke 4E:3881 34
+poke 4E:3883 2
+poke 4E:3886 0
+poke 4E:38B0 8
+poke 4E:38B1 35
+poke 4E:38B3 2
+poke 4E:38B6 0
+poke 4E:39A0 3
+poke 4E:39A1 34
+poke 4E:39A3 2
+poke 4E:39BC 100
+poke 4E:39BD 100
+poke 4E:388B 0
+poke 4E:38BB 0
+poke scr_battle$bt_turn 3
+pokew _cursor_x 250
+pokew _cursor_y 150
+click L
+wait 60
+click L
+wait 120
+expect 4E:388C 1
+expect 4E:38BC 0
+waitmark 249 3000
+expect scr_battle$bt_turn 4
+expect 4E:388C 0
+exit 0

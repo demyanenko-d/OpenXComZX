@@ -185,7 +185,7 @@ static void ru_put(uint8_t i)
 	runit_t r;
 	r.x = u->x; r.y = u->y; r.z = u->z; r.dir = u->dir;
 	// без своего листа рисуется только боец X-COM (лист по частям)
-	r.flags = (u->alive && u->seen && (u->sheet || u->faction == FACTION_PLAYER) ? RU_ALIVE : 0)
+	r.flags = (u->alive && u->seen && (u->sheet || u->type == 0xFFFF) ? RU_ALIVE : 0)
 		| (u->kneel ? RU_KNEEL : 0) | (u->size > 1 ? RU_BIG : 0);
 	r.sheet = u->sheet;
 	r.pad[0] = r.pad[1] = 0;

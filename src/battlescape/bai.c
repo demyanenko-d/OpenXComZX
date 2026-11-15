@@ -54,6 +54,7 @@ static uint8_t __at(0xBF3A) ai_dtm;      //   кадр (frames), когда см
 // Сценарии: путь патруля задан извне — ED:3F3B число шагов (до 4), ED:3F3C.. направления; берётся
 // вместо случайного узла первым же патрулём (tests/bat_aidoor.oxs) и сбрасывается
 static uint8_t __at(0xBF3B) ai_dbgn;
+static uint8_t __at(0xBFF4) ai_mcp;      // второй проход хода: бойцы под контролем пришельцев
 #define AI_DBGP ((uint8_t *)0xBF3C)
 extern volatile uint16_t frames;         // crt0.s
 // #BF40..#BF67 — ai_tss[MAX_BUNITS], turnsSinceSpotted (bai.h)
@@ -70,7 +71,7 @@ static void show(const aictx_t *c, uint8_t i, const unit_t *u)
 {
 	runit_t r;
 	r.x = u->x; r.y = u->y; r.z = u->z; r.dir = u->dir;
-	r.flags = (u->alive && u->seen && (u->sheet || u->faction == FACTION_PLAYER) ? RU_ALIVE : 0)
+	r.flags = (u->alive && u->seen && (u->sheet || u->type == 0xFFFF) ? RU_ALIVE : 0)
 		| (u->kneel ? RU_KNEEL : 0) | (u->size > 1 ? RU_BIG : 0);
 	r.sheet = u->sheet;
 	r.pad[0] = r.pad[1] = 0;
@@ -194,6 +195,7 @@ void ai_start(const aictx_t *c) __banked
 {
 	spot_all(c);                                     // recalculateFOV в endTurn
 	ai_a = 0;
+	ai_mcp = 0;
 	ai_pn = ai_pi = ai_moved = ai_atk = ai_walk = ai_aim = ai_door = 0;
 }
 
@@ -676,10 +678,18 @@ static uint8_t ai_step(const aictx_t *c)
 		bv_walk_done();
 		return AI_SEE | rf;
 	}
-	while (ai_a < c->n) {
+	for (;;) {
+		// второй проход — бойцы под контролем пришельцев (convertToFaction: ходят в тот же ход)
+		if (ai_a >= (ai_mcp ? c->nsold : c->n)) {
+			if (ai_mcp) break;
+			ai_mcp = 1;
+			ai_a = 0xFF;
+			next_alien();
+			continue;
+		}
 		u_get(ai_a, &u);
 		uint8_t f = u.faction;                       // сравнения — с копиями (SDCC 4.5)
-		if (!u.alive || f == FACTION_PLAYER || ai_a < c->nsold) { next_alien(); continue; }
+		if (!u.alive || f == FACTION_PLAYER || (!ai_mcp && ai_a < c->nsold)) { next_alien(); continue; }
 		if (!ai_moved && !ai_atk && !ai_aim && hide_check(c, &u)) cells(&u);   // начал действовать
 		// пси-атака — раз за ход, прежде всего прочего (psiAction, bpsi.c)
 		if (f == FACTION_HOSTILE && !ai_atk && !ai_aim && !ai_moved && ai_psi(c, ai_a)) { ai_atk++; return AI_SEE | AI_HIT; }

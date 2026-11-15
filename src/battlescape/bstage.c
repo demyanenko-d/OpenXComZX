@@ -41,11 +41,17 @@ uint16_t st_ufo_deploy(uint8_t utype) __banked
 
 void st_side_prepare(uint8_t side, uint8_t n, uint8_t page) __banked
 {
+	uint8_t xcom = side == FACTION_PLAYER;   // копия до вызовов (SDCC 4.5: сравнение параметра-байта)
 	for (uint8_t i = 0; i < n; i++) {
 		unit_t u;
 		far_t a = UNITS_FAR + (uint16_t)i * sizeof u;
 		far_read(a, &u, sizeof u);
 		uint8_t f = u.faction;               // сравнения — с копиями (SDCC 4.5)
+		if (u.alive && xcom && f == FACTION_HOSTILE && u.type == 0xFFFF) {
+			u.faction = FACTION_PLAYER;      // боец из-под контроля — назад к X-COM, времени в этот
+			far_write(a, &u, sizeof u);      //   ход не получает (prepareNewTurn: revert, return)
+			continue;
+		}
 		if (!u.alive || f != side) continue;
 		u.done = 0;                          // _dontReselect = false
 		uint8_t w[6] = { 0, 0, 0, 0, 0, 0 };
@@ -256,50 +262,7 @@ static uint8_t abort_get(sdef_t *s, wdef_t *w, uint8_t page, uint16_t dep)
 	return 1;
 }
 
-void st_specials(uint8_t page, uint16_t *cnt) __banked
-{
-	uint8_t sp[256];                         // targetType каждой части миссии
-	for (uint16_t p = 0; p < 256; p++) sp[p] = special(page, (uint8_t)p);
-	memset(cnt, 0, 16 * 2);
-	far_t c = mapgen_cells();
-	uint16_t n = (uint16_t)mapgen_sx() * mapgen_sy() * mapgen_sz();
-	uint8_t buf[128];                        // клетки — по 32 за чтение, 4 части в каждой
-	while (n) {
-		uint8_t k = n > 32 ? 32 : (uint8_t)n;
-		far_read(c, buf, (uint16_t)k * 4);
-		for (uint16_t j = 0; j < (uint16_t)k * 4; j++) {
-			uint8_t t = sp[buf[j]];
-			if (t > 1 && t < 16) cnt[t]++;
-		}
-		c += (uint16_t)k * 4;
-		n -= k;
-	}
-}
-
-// Части НЛО на карте (DebriefingState.cpp:788-799, 1378-1392, 1446-1463): предметы со specialType > 1
-// — строкой каждый, в порядке правил; клетка — recoveryPoints; сплавы (ALIEN_ALLOYS, 10) — /10 у
-// НЛО, иначе /150; на склад базы корабля craft
-uint8_t st_recovery(uint8_t page, uint8_t ufo, uint16_t craft, strow_t *out, uint8_t max) __banked
-{
-	uint16_t cnt[16];
-	rtab_t ti;
-	st_specials(page, cnt);
-	if (!rtab_open(RES_RULE_ITEMS, &ti)) return 0;
-	uint8_t k = 0, b = NONE8;
-	if (craft < MAX_CRAFTS && ST->craft[(uint8_t)craft].type != NONE8) b = ST->craft[(uint8_t)craft].base;
-	for (uint16_t i = 0; i < ti.n && k < max; i++) {
-		uint8_t sp = (uint8_t)rtab_word(&ti, i, offsetof(r_items_t, special_type));
-		if (sp < 2 || sp > 15 || !cnt[sp]) continue;
-		uint16_t n = cnt[sp], div = sp == 10 ? (ufo ? 10 : 150) : 1;
-		int16_t v = (int16_t)((int32_t)n * (int16_t)rtab_word(&ti, i, offsetof(r_items_t, recovery_points)) / div);
-		n /= div;
-		if (!n) continue;
-		out[k].str = rtab_word(&ti, i, 0); out[k].qty = n > 255 ? 255 : (uint8_t)n; out[k].score = v;
-		k++;
-		if (b < MAX_BASES && i < MAX_ITEMS) ST->base[b].items[i] += n;
-	}
-	return k;
-}
+// st_specials, st_recovery — в bloot.c (банк 40: этот полон)
 
 uint8_t st_zone(uint8_t page, uint8_t i) __banked
 {
