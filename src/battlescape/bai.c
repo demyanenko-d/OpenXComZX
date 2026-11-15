@@ -32,6 +32,7 @@
 #include "bact.h"
 #include "bai.h"
 #include "bescape.h"
+#include "bpsi.h"
 
 #define STEP_TU   4
 #define PATH_MAX  48
@@ -680,6 +681,8 @@ static uint8_t ai_step(const aictx_t *c)
 		uint8_t f = u.faction;                       // сравнения — с копиями (SDCC 4.5)
 		if (!u.alive || f == FACTION_PLAYER || ai_a < c->nsold) { next_alien(); continue; }
 		if (!ai_moved && !ai_atk && !ai_aim && hide_check(c, &u)) cells(&u);   // начал действовать
+		// пси-атака — раз за ход, прежде всего прочего (psiAction, bpsi.c)
+		if (f == FACTION_HOSTILE && !ai_atk && !ai_aim && !ai_moved && ai_psi(c, ai_a)) { ai_atk++; return AI_SEE | AI_HIT; }
 		// мирные (ход FACTION_NEUTRAL — после пришельцев: они за ними в списке) только патрулируют
 		if (f == FACTION_HOSTILE && attack(c, &u)) {                         // стрелял — в следующем такте думает снова
 			if (ai_aim) return AI_SEE | AI_HIT;

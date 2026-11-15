@@ -1,0 +1,38 @@
+# Пси-паника пришельца (AIModule::psiAction, PsiAttackBState::psiAttack; bpsi.c): расстановка как в
+# bat_agren (пришелец units[6] в (3,34) видит двух бойцов в (8,34) и (8,35)), пришельцу — пси-сила и
+# навык 100 (#4E:39BC, #39BD; без гранаты). В его ход — пси-атака раз за ход по бойцу с лучшим шансом:
+# мораль бойца 0 100 -> 40 (110 − храбрость 50), у бойца 1 — 100 (ГСЧ сценария воспроизводим).
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_psi.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _bat_still 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+expect D1:2D46 6
+expect D1:2D4A 58
+poke 4E:3880 8
+poke 4E:3881 34
+poke 4E:3883 2
+poke 4E:3886 0
+poke 4E:38B0 8
+poke 4E:38B1 35
+poke 4E:38B3 2
+poke 4E:38B6 0
+poke 4E:39A0 3
+poke 4E:39A1 34
+poke 4E:39A3 2
+poke 4E:39BC 100
+poke 4E:39BD 100
+poke scr_battle$bt_turn 3
+pokew _cursor_x 250
+pokew _cursor_y 150
+click L
+wait 60
+click L
+wait 660
+expect 4E:388B 40
+expect 4E:38BB 100
+exit 0
