@@ -202,6 +202,32 @@ uint8_t bi_spend(uint8_t page, uint8_t unit, uint8_t right) __banked
 	return 0;
 }
 
+uint16_t bi_grenade(uint8_t page, uint8_t unit, uint8_t *hand) __banked
+{
+	rtab_t t;
+	bitem_t b;
+	uint8_t rh = sec_named(STR_RIGHT_HAND), lh = sec_named(STR_LEFT_HAND), gi = 0xFF, fr = 0, fl = 0;
+	if (rh == 0xFF || lh == 0xFF || !rtab_open(RES_RULE_ITEMS, &t)) return 0xFFFF;
+	for (uint8_t i = 0; i < bi_n; i++) {
+		far_read(bi_at(page, i), &b, sizeof b);
+		if (b.owner != unit) continue;
+		uint8_t s = b.slot;                  // сравнения — с копией (SDCC 4.5)
+		if (s == rh) fr = 1;
+		else if (s == lh) fl = 1;
+		else if (gi == 0xFF && b.item < t.n
+			 && (uint8_t)rtab_word(&t, b.item, offsetof(r_items_t, battle_type)) == BT_GRENADE) gi = i;
+	}
+	if (gi == 0xFF || (fl && fr)) return 0xFFFF;
+	far_read(bi_at(page, gi), &b, sizeof b);
+	if (hand) {                              // взять в руку
+		*hand = fl ? 1 : 0;
+		b.slot = fl ? rh : lh;
+		b.x = b.y = 0;
+		far_write(bi_at(page, gi), &b, sizeof b);
+	}
+	return b.item;
+}
+
 uint16_t bi_hand(uint8_t page, uint8_t unit, uint8_t right, bitem_t *out) __banked
 {
 	uint8_t h = sec_named(right ? STR_RIGHT_HAND : STR_LEFT_HAND);

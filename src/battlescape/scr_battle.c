@@ -697,6 +697,7 @@ static uint8_t battle_end(uint8_t aborted)
 static void ai_ctx(aictx_t *c)
 {
 	c->page = pf_page; c->cells = cells; c->sx = m_sx; c->sy = m_sy; c->sz = m_sz; c->n = nunits; c->nsold = nsold;
+	c->turn = (uint8_t)bt_turn;
 }
 
 // Огонь в ответ на действие юнита m (bai.c ai_react): 1 — кто-то стрелял (конец боя — у вызывающего)

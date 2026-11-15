@@ -256,6 +256,52 @@ static void fire(const aictx_t *c, uint8_t a, unit_t *u, const vu_t *t, uint8_t 
 	}
 }
 
+// Граната (AIModule::grenadeAction, explosiveEfficacy :1522-1614, :1839-1874): с хода 3
+// (turnAIUseGrenade), времени хватает (4 — достать, взвод 50 % и бросок 25 % времени), выгода:
+// отчаяние (мораль, раны) + сложность/2, по +1 за каждого известного врага в радиусе на том же этаже
+// (цель — тоже), по −2 за своего, −4, если сам в радиусе; врагов меньше двух — только в отчаянии.
+// Упрощено: без трассы от взрыва до каждого и без узла лучшей выгоды (getNodeOfBestEfficacy).
+// Бросок — сразу взведённой (bact.c throw_it), взрыв — в конце хода. 1 — бросил
+static uint8_t gren(const aictx_t *c, unit_t *u, const vu_t *v, uint8_t tg, uint8_t intel)
+{
+	if (c->turn < 3) return 0;
+	uint8_t cost = (uint8_t)(4 + (uint16_t)u->tu_max * 75 / 100);
+	if (u->tu < cost) return 0;
+	uint16_t gi = bi_grenade(c->page, ai_a, 0);
+	rtab_t t;
+	r_items_t w;
+	if (gi == 0xFFFF || !rtab_open(RES_RULE_ITEMS, &t) || gi >= t.n) return 0;
+	rtab_get(&t, gi, &w);
+	int16_t rad = w.blast_radius;
+	if (rad < 0) rad = w.damage_type == 2 ? w.power / 30 + 1 : (w.damage_type == 3 || w.damage_type == 6 || w.damage_type == 9) ? w.power / 20 : 0;
+	if (rad > 11) rad = 11;
+	const vu_t *p = &v[tg];
+	int8_t desp = (int8_t)((100 - u->mor) / 10);
+	if (u->hp_max - u->hp > u->hp_max / 3 * 2) desp += 3;
+	int8_t eff = (int8_t)(desp + ST->difficulty / 2), en = 1;
+	eff++;                                           // цель
+	for (uint8_t i = 0; i < c->n; i++) {
+		if (i == tg || !(v[i].flags & VU_ALIVE) || v[i].z != p->z) continue;
+		int16_t dx = (int16_t)v[i].x - p->x, dy = (int16_t)v[i].y - p->y;
+		if ((uint16_t)(dx * dx + dy * dy) > (uint16_t)(rad * rad)) continue;
+		if (i == ai_a) { eff -= 4; continue; }       // сам под взрывом
+		if (hostile(i)) eff -= 2;
+		else if (ai_tss[i] <= intel) { en++; eff++; }
+	}
+	if ((desp < 6 && en < 2) || (eff <= 0 && en < 10)) return 0;
+	uint8_t hand;
+	if (bi_grenade(c->page, ai_a, &hand) == 0xFFFF) return 0;
+	bi_hands(c->page, c->n);
+	bafire_t q;
+	q.s.page = c->page; q.s.cells = c->cells; q.s.sx = c->sx; q.s.sy = c->sy; q.s.sz = c->sz;
+	q.s.shooter = ai_a; q.s.n = c->n; q.s.tx = p->x; q.s.ty = p->y; q.s.tz = p->z;
+	q.s.action = BA_THROW; q.s.acc = u->throwing;
+	q.hand = hand; q.tu = cost;
+	if (ba_fire(&q)) return 0;                       // далеко или некуда (validateThrow)
+	u_get(ai_a, u);
+	return 1;
+}
+
 // Атака видимого бойца: 1 — выстрелил
 static uint8_t attack(const aictx_t *c, unit_t *u)
 {
@@ -278,7 +324,9 @@ static uint8_t attack(const aictx_t *c, unit_t *u)
 		uint16_t d2 = (uint16_t)(dx * dx + dy * dy);
 		if (d2 < best && vis_pair(v, ai_a, i, 0)) { best = d2; tg = i; }
 	}
-	if (tg == 0xFF || best > (uint16_t)w.max_range * w.max_range) return 0;
+	if (tg == 0xFF) return 0;
+	if (!ai_aim && gren(c, u, v, tg, intel)) { ai_atk++; return 1; }   // граната — раньше оружия
+	if (best > (uint16_t)w.max_range * w.max_range) return 0;
 	uint16_t dist = isqrt(best);
 	if (dist * dist < best) dist++;                   // TileEngine::distance — вверх
 	uint8_t tu_a = tu_cost(u, &w, w.tu_auto), tu_s = tu_cost(u, &w, w.tu_snap), tu_m = tu_cost(u, &w, w.tu_aimed);

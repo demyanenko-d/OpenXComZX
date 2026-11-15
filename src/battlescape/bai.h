@@ -11,6 +11,7 @@ typedef struct {
 	uint8_t page;
 	far_t cells;
 	uint8_t sx, sy, sz, n, nsold;
+	uint8_t turn;              // ход боя (гранаты — с turnAIUseGrenade)
 } aictx_t;
 
 #define AI_DONE 1              // все пришельцы походили — ход X-COM

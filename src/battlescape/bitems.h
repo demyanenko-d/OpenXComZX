@@ -31,6 +31,10 @@ typedef struct {
 uint8_t bi_crew(uint8_t page, const uint8_t *sol, uint8_t n) __banked;
 // Предмет в руке юнита (right — правая): номер записи + 1 (0 — пусто), копия в *out
 uint16_t bi_hand(uint8_t page, uint8_t unit, uint8_t right, bitem_t *out) __banked;
+// Граната юнита не в руках (BattleUnit::getGrenadeFromBelt: любая в инвентаре) при свободной руке:
+// правило items (#FFFF — нет или обе руки заняты); hand не 0 — взять её в руку (левую, иначе правую),
+// в *hand — какую (1 — правая)
+uint16_t bi_grenade(uint8_t page, uint8_t unit, uint8_t *hand) __banked;
 // Выстрел: патрон из обоймы оружия в руке (BattleItem::spendBullet); вернёт, сколько осталось
 uint8_t bi_spend(uint8_t page, uint8_t unit, uint8_t right) __banked;
 void bi_used(uint8_t n) __banked;               // записей занято не меньше n
