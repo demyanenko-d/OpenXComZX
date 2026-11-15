@@ -219,16 +219,16 @@ static void see_update(void)
 	int16_t r[4];                        // туман войны: перерисовать открытое в нарисованной области
 	r[0] = vx_lo; r[1] = vx_hi; r[2] = vy_lo; r[3] = vy_hi;
 	vis_view(dl_ok ? r : 0);
-	uint8_t n = vis_seen(v, nunits, nsold, list, sizeof list);
+	uint8_t n = vis_seen(v, nunits, list, sizeof list);
 	if (vis_fog_rect(r)) bv_repaint(r[0], r[1], r[2], r[3]);
-	if (bt_side == FACTION_PLAYER && sel < nsold) {   // выбранный сдвинулся — видят ли его пришельцы
+	if (bt_side == FACTION_PLAYER) {     // выбранный сдвинулся — видят ли его пришельцы
 		aictx_t c;
 		ai_ctx(&c);
 		ai_spot(&c, sel);
 	}
 	// значки над панелью — кого видит выбранный боец (updateSoldierInfo: getVisibleUnits)
 	for (uint8_t i = 0; i < nunits; i++) if (units[i].seen) v[i].flags |= VU_SEEN;
-	nmarks = sel < nsold ? vis_list(v, nunits, nsold, sel, marks_u, sizeof marks_u) : 0;
+	nmarks = vis_list(v, nunits, sel, marks_u, sizeof marks_u);
 	if (bt_side == FACTION_PLAYER && ai_spotted(sel, marks_u, nmarks)) wl_spot = 1;   // новые для него
 	marks_on();
 	if (!n) return;
@@ -247,7 +247,11 @@ static void see_update(void)
 static void hide_aliens(void)
 {
 	uint8_t was[MAX_BUNITS];
-	for (uint8_t i = nsold; i < nunits; i++) { was[i] = units[i].seen; units[i].seen = 0; ru_put(i); }
+	for (uint8_t i = nsold; i < nunits; i++) {   // захваченный пришелец — свой, виден всегда
+		was[i] = units[i].seen;
+		if (units[i].faction != FACTION_PLAYER) units[i].seen = 0;
+		ru_put(i);
+	}
 	bv_sync(nunits);
 	see_update();
 	for (uint8_t i = nsold; i < nunits; i++) {
@@ -282,7 +286,7 @@ static uint8_t unit_no(uint8_t z, uint8_t y, uint8_t x)
 static void center_on_unit(void)
 {
 	if (!nunits) return;
-	const unit_t *u = &units[sel < nunits ? sel : 0];
+	const unit_t *u = &units[sel];
 	bv_center(u->x, u->y);
 }
 
@@ -305,12 +309,14 @@ static const int8_t dir_dy[8] = { -1, -1, 0, 1, 1, 1, 0, -1 };
 // Следующий и предыдущий боец отряда: выбор, камера на него и отмена начатого пути
 // (BattlescapeState::btnNextSoldierClick — в оригинале камера тоже переезжает)
 // SavedBattleGame::selectNextPlayerUnit (checkReselect): живой, не отмеченный «больше не выбирать»
+// Свой — и захваченный пришелец (getFaction() == FACTION_PLAYER)
 static void sel_step(uint8_t back)
 {
 	uint8_t s = sel;
-	for (uint8_t k = 0; k < nsold; k++) {
-		s = (uint8_t)(back ? (s + nsold - 1) % nsold : (s + 1) % nsold);
-		if (units[s].alive && !units[s].done) break;
+	for (uint8_t k = 0; k < nunits; k++) {
+		s = (uint8_t)(back ? (s ? s : nunits) - 1 : s + 1 < nunits ? s + 1 : 0);
+		const unit_t *u = &units[s];
+		if (u->alive && !u->done && u->faction == FACTION_PLAYER) break;
 	}
 	sel = s;
 }
@@ -394,7 +400,7 @@ static uint8_t floor_flags(uint8_t x, uint8_t y, uint8_t z, uint8_t *part)
 static void unit_updown(uint8_t up)
 {
 	if (!nsold || bv_walking() != 0xFF || bt_side != FACTION_PLAYER) return;
-	uint8_t i = sel < nsold ? sel : 0;
+	uint8_t i = sel;
 	unit_t *u = &units[i];
 	if (up ? u->z + 1 >= m_sz : !u->z) return;
 	uint8_t nz = up ? u->z + 1 : u->z - 1, ps, pd;
@@ -429,8 +435,9 @@ static uint8_t reserve_ok(uint8_t i, uint8_t cost)
 static void do_kneel(void)
 {
 	if (!nunits || bv_walking() != 0xFF) return;
-	uint8_t i = sel < nunits ? sel : 0;
+	uint8_t i = sel;
 	unit_t *u = &units[i];
+	if (u->type != 0xFFFF) return;       // только солдат (getType() == "SOLDIER")
 	uint8_t cost = u->kneel ? KNEEL_TU_UP : KNEEL_TU_DOWN;
 	// BattlescapeGame::kneel: присесть при резерве «на колено» можно всегда, иначе — резерв
 	if (!(!u->kneel && bt_res_kneel) && !reserve_ok(i, cost)) return;
@@ -458,7 +465,7 @@ static void turn_to(uint8_t i, uint8_t d)
 static void step_unit(void)
 {
 	if (!nunits || path_i >= path_n) { path_n = 0; return; }
-	uint8_t i = sel < nunits ? sel : 0;
+	uint8_t i = sel;
 	unit_t *u = &units[i];
 	uint8_t d = path[path_i];
 	if (u->kneel) {                                  // идти на коленях нельзя — сперва встать
@@ -590,7 +597,7 @@ static uint8_t load_gen(uint16_t terrain)
 static void draw_panel(void)
 {
 	bhud_t p;
-	uint8_t i = sel < nsold ? sel : 0;
+	uint8_t i = sel;
 	const unit_t *u = &units[i];
 	p.on = nsold && u->alive;
 	p.level = bv_level();
@@ -750,7 +757,8 @@ static void ai_run(void)
 	side_prepare(FACTION_PLAYER);
 	panic_roll(FACTION_PLAYER);          // prepareNewTurn
 	ai_round(&c, bt_turn);               // что пришельцы знают об отряде (turnsSinceSpotted)
-	if (sel < nsold && !units[sel].alive) sel_step(0);   // выбранного убили — следующий живой
+	// выбранного убили или он вернулся к пришельцам (контроль разума кончился) — следующий свой
+	if (!units[sel].alive || units[sel].faction != FACTION_PLAYER) sel_step(0);
 	hide_aliens();                       // ушедшие из вида за свой ход — невидимы (endTurn)
 	if (hid_on) hidden_show(0);
 	bv_pause();
@@ -762,7 +770,7 @@ static void ai_run(void)
 // ---------------------------------------------------------------- характеристики
 static void uinfo_draw(void)
 {
-	stats_unit(sel < nsold ? sel : 0);       // показатели — из юнита (bstats.c)
+	stats_unit(sel);                     // показатели — из юнита (bstats.c)
 }
 
 // ---------------------------------------------------------------- выстрел и бросок
@@ -797,13 +805,14 @@ static void panic_show(void)
 
 static void shoot(uint8_t tx, uint8_t ty)
 {
-	uint8_t i = sel < nsold ? sel : 0;
+	uint8_t i = sel;
 	if (bt_action == BA_PANIC || bt_action == BA_MINDCONTROL) {   // пси-усилитель (bpsi.c)
 		uint16_t s = psi_player(i, tx, ty, bv_level(), bt_action, bt_action_tu, nunits);
 		aim_off();
 		if (s == STR_NOT_ENOUGH_TIME_UNITS) { hud_warn(s); return; }
 		if (!s) { ui_dirty(0); return; }     // при успехе — без: перерисовка карты вернула бы сплит над окном
 		str_copy(s, ui_msg, sizeof ui_msg);  // InfoboxState: «Morale attack / Mind control successful»
+		see_update();                        // захваченный смотрит за отряд (calculateFOV(target))
 		bv_snapshot();
 		marks_show(0, 0);
 		UI_GO(A_PUSH, SCR_INFOBOX);
@@ -832,7 +841,7 @@ static uint8_t am_hl = 0xFF;             // пункт под курсором
 static void amenu_open(uint8_t right)
 {
 	if (!nsold || bv_walking() != 0xFF || bt_side != FACTION_PLAYER) return;
-	uint8_t i = sel < nsold ? sel : 0;
+	uint8_t i = sel;
 	const unit_t *u = &units[i];
 	amreq_t r;
 	r.unit = i; r.right = right; r.tu_max = u->tu_max; r.firing = u->firing; r.throwing = u->throwing;
@@ -851,7 +860,7 @@ static void amenu_open(uint8_t right)
 // BattlescapeGame::handleNonTargetAction, BA_PRIME: время есть — взвести, «граната активирована»
 static void prime(uint8_t fuse)
 {
-	uint8_t i = sel < nsold ? sel : 0;
+	uint8_t i = sel;
 	if (units[i].tu < bt_action_tu) { hud_warn(STR_NOT_ENOUGH_TIME_UNITS); return; }
 	units[i].tu -= bt_action_tu;
 	gr_prime(pf_page, i, bt_hand, fuse);
@@ -887,12 +896,12 @@ static void amenu_event(uint8_t ev, uint8_t arg)
 		if (h == 0xFF) break;
 		bt_action = am_action(h, &bt_action_tu, &bt_acc);
 		if (bt_action == BA_PRIME) {         // таймер — окном поверх меню (бесконтактная — сразу 0)
-			if (gr_window(pf_page, sel < nsold ? sel : 0, bt_hand)) UI_GO(A_PUSH, SCR_PRIME);
+			if (gr_window(pf_page, sel, bt_hand)) UI_GO(A_PUSH, SCR_PRIME);
 			else { UI_GO(A_POP, 0); prime(0); }
 			break;
 		}
 		if (bt_action == BA_USE) {           // аптечка — своё окно (bmedi.c), прочее — пока ничего
-			UI_GO(md_open(pf_page, sel < nsold ? sel : 0, bt_hand, bt_action_tu, nunits) ? A_POP_PUSH : A_POP, SCR_MEDIKIT);
+			UI_GO(md_open(pf_page, sel, bt_hand, bt_action_tu, nunits) ? A_POP_PUSH : A_POP, SCR_MEDIKIT);
 			break;
 		}
 		if (bt_action == BA_HIT) {           // удар — сразу в клетку перед бойцом (ActionMenuState:306)
@@ -920,7 +929,7 @@ static uint8_t bt_intro;                 // 1 — брифинг закрыт: �
 
 static void inv_open(void)
 {
-	inv_battle(pf_page, sel < nsold ? sel : 0, nsold, nunits, !bt_intro);   // после брифинга — InventoryState(false)
+	inv_battle(pf_page, sel, nsold, nunits, !bt_intro);   // после брифинга — InventoryState(false)
 	bv_suspend();
 	marks_show(0, 0);
 	UI_GO(A_PUSH, SCR_INVENTORY);
@@ -1070,13 +1079,13 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		if (pn_i < pn_n && !path_n && bv_walking() == 0xFF) { panic_show(); break; }   // сперва — окна паники
 		if (bt_side == FACTION_HOSTILE) { ai_run(); break; }
 		if (hit_pend) {                      // удар в клетку перед бойцом
-			const unit_t *u = &units[sel < nsold ? sel : 0];
+			const unit_t *u = &units[sel];
 			hit_pend = 0;
 			shoot((uint8_t)(u->x + dir_dx[u->dir & 7]), (uint8_t)(u->y + dir_dy[u->dir & 7]));
 			break;
 		}
 		if (turn_dir != 0xFF && nunits) {    // правая кнопка: разворот по одной восьмой,
-			uint8_t i = sel < nunits ? sel : 0;   // в конце — попытка открыть дверь
+			uint8_t i = sel;   // в конце — попытка открыть дверь
 			if (move_wait) move_wait--;
 			else if (units[i].dir != turn_dir) { turn_to(i, turn_dir); move_wait = 2; }
 			else { door_try(&units[i], turn_dir, 1); turn_dir = 0xFF; ui_dirty(0); }
@@ -1165,7 +1174,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				if (ui_arrow_max) aim_off(); else shoot(tx, ty);
 				break;
 			}
-			unit_t *u = &units[sel < nunits ? sel : 0];
+			unit_t *u = &units[sel];
 			if (ui_arrow_max) {              // правая кнопка: развернуться туда и открыть дверь
 				path_n = 0;
 				turn_dir = dir_to((int16_t)tx - (int16_t)u->x, (int16_t)ty - (int16_t)u->y);
@@ -1173,7 +1182,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				break;
 			}
 			uint8_t no = unit_no(u->z, ty, tx);
-			if (no && no - 1 != sel && no <= nsold) {   // свой боец — выбрать его (primaryAction оригинала)
+			if (no && no - 1 != sel && units[no - 1].faction == FACTION_PLAYER) {   // свой — выбрать (primaryAction)
 				sel = (uint8_t)(no - 1);
 				path_n = 0;
 				see_update();
@@ -1188,16 +1197,16 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		}
 		case 1: case 2: unit_updown(arg == 1); break;   // этаж выше / ниже (moveUpDown)
 		case 20:                             // NextStop: этого больше не выбирать, следующий
-			if (sel < nsold) units[sel].done = 1;
+			units[sel].done = 1;
 			sel_next();
 			break;
 		case 21:                             // правой кнопкой — время выбранного бойца в ноль
-			if (ui_arrow_max && sel < nsold && bv_walking() == 0xFF) { units[sel].tu = 0; path_n = 0; ui_dirty(0); }
+			if (ui_arrow_max && bv_walking() == 0xFF) { units[sel].tu = 0; path_n = 0; ui_dirty(0); }
 			break;
 		case 3: { uint8_t l = bv_level(); if (l + 1 < m_sz) { bv_set_level(l + 1, 1); ui_dirty(0); } break; }
 		case 4: { uint8_t l = bv_level(); if (l) { bv_set_level(l - 1, 1); ui_dirty(0); } break; }
 		case 5:                              // инвентарь
-			if (!nsold || bv_walking() != 0xFF) break;
+			if (units[sel].type != 0xFFFF || bv_walking() != 0xFF) break;   // захваченному — пока нет
 			inv_open();
 			break;
 		case 6: center_on_unit(); ui_dirty(0); break;
@@ -1250,7 +1259,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		case 'd': case 'D': {               // отладка: поставить бойца к первой двери
 			uint8_t dx, dy, ds, l = bv_level();
 			if (!gen_mode || !nunits || bv_walking() != 0xFF || !door_find(&bmap, l, &dx, &dy, &ds)) break;
-			uint8_t i = sel < nunits ? sel : 0;
+			uint8_t i = sel;
 			unit_t *u = &units[i];
 			u->x = dx; u->y = dy; u->z = l;
 			u->dir = ds == 1 ? 6 : 0;         // западная стена — лицом на запад, северная — на север
@@ -1267,7 +1276,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			if (dbg_al < nsold || dbg_al >= nunits) dbg_al = nsold;
 			unit_t *a = &units[dbg_al];
 			if (arg == 'J' && nsold) {
-				uint8_t i = sel < nsold ? sel : 0;
+				uint8_t i = sel;
 				unit_t *u = &units[i];
 				u->x = a->x + 3 < m_sx ? a->x + 3 : a->x - 3; u->y = a->y; u->z = a->z;
 				u->dir = dir_to((int16_t)a->x - u->x, 0);

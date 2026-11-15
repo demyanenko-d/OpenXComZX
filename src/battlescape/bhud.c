@@ -23,6 +23,9 @@
 #include "state.h"
 #include "bitems.h"
 #include "bhud.h"
+#include "bstats.h"
+#include "units.h"
+#include <stddef.h>
 #include "str_ids.h"
 
 #define BA_AUTO  5                       // BattleActionType (bmenu.h)
@@ -212,13 +215,15 @@ void hud_draw(const bhud_t *h) __banked
 	if (res_game() != 2) gfx_sprite(RES_KNEELBTN, h->on && h->kneel, 112, PY + 16);
 	else if (h->on && h->kneel) invert(112, PY + 16, 32, 16, 0);
 	if (!h->on) return;
-	if (h->sol != 0xFF) {
-		soldier_t s;
-		far_read(FAR(SOLDIER_PAGE, 0) + (uint16_t)h->sol * sizeof s, &s, sizeof s);
-		gfx_sprite(RES_SMOKE_PCK, 20 + s.rank, 107, PY + 33);
-		char name[SOLDIER_NAME + 1];
-		memcpy(name, s.name, SOLDIER_NAME);
-		name[SOLDIER_NAME] = 0;
+	{                                    // updateSoldierInfo: звание — только у солдата, имя — у всех
+		char name[48];                   //   (захваченный пришелец — название из units, bstats.c)
+		uint16_t ty = far_word(UNITS_FAR + (uint16_t)h->unit * sizeof(unit_t) + offsetof(unit_t, type));
+		stats_name(h->sol, ty, 0, name);
+		if (h->sol != 0xFF) {
+			soldier_t s;
+			far_read(FAR(SOLDIER_PAGE, 0) + (uint16_t)h->sol * sizeof s, &s, sizeof s);
+			gfx_sprite(RES_SMOKE_PCK, 20 + s.rank, 107, PY + 33);
+		}
 		tbox_t tb = { 135, PY + 32, 136, 10, FNT_SMALL, 0, 0, 0 };
 		tb.color = tb.color2 = ui_color_in(ui, UI_EL_TEXTNAME, 0);
 		text_draw(&tb, name);

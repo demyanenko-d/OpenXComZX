@@ -201,7 +201,8 @@ static void loot(const debreq_t *q)
 	rtab_open(RES_RULE_ARMORS, &ta);
 	for (uint8_t i = q->nsold; i < q->n; i++) {     // трупы
 		far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
-		if (u.alive || u.hp || u.faction != FACTION_HOSTILE || u.armor_rule >= ta.n) continue;
+		// пришелец (и захваченный разумом — FACTION_PLAYER), не мирный
+		if (u.alive || u.hp || u.faction == FACTION_NEUTRAL || u.armor_rule >= ta.n) continue;
 		r_armors_t a;
 		uint16_t corpse;
 		rtab_get(&ta, u.armor_rule, &a);
@@ -296,8 +297,10 @@ static void score(const debreq_t *q, uint8_t success, uint8_t i0)
 			else add_stat(D_CIV_A, -value);
 			continue;
 		}
-		if (u.alive) continue;
-		if (f == FACTION_HOSTILE && u.type != 0xFFFF) {   // боец под контролем пришельцев — всё равно боец
+		// захваченный разумом пришелец (FACTION_PLAYER) в конце боя — пленный, как оглушённый
+		// (оригинал; OpenXcom — allowPsionicCapture: DebriefingState recoverAlien)
+		if (u.alive && (f != FACTION_PLAYER || u.type == 0xFFFF)) continue;
+		if (u.type != 0xFFFF) {                  // пришелец; боец под контролем пришельцев — всё равно боец
 			int16_t value = u.type < tu.n ? (int16_t)rtab_word(&tu, u.type, offsetof(r_units_t, value)) : 0;
 			if (!u.hp) {                             // убит (killedBy FACTION_PLAYER)
 				add_stat(D_KILLED, value);

@@ -46,8 +46,9 @@ static uint8_t *const vm = (uint8_t *)0xC000;   // подключённая ст
 static uint16_t __at(0xBC00) ytab[VM_MAXW];     // y * sx (до #BC9F)
 static uint16_t __at(0xBCA0) ztab[8];           // z * sx * sy
 // Туман войны: где каждый боец смотрел в прошлый раз (x, y, z, dir) — сектор пересчитывается
-// только у сдвинувшегося или повернувшегося (UnitWalkBState / UnitTurnBState оригинала)
-static uint8_t __at(0xBD00) fl_last[MAX_UNITS * 4];
+// только у сдвинувшегося или повернувшегося (UnitWalkBState / UnitTurnBState оригинала); на всех
+// юнитов миссии — смотрит и захваченный пришелец (до #BD9F)
+static uint8_t __at(0xBD00) fl_last[MAX_BUNITS * 4];
 // Прямоугольник вновь открытого (в осях вида: x - y, x + y, этаж) — его надо перерисовать
 static int16_t __at(0xBCC0) bb_d0;
 static int16_t __at(0xBCC2) bb_d1;
@@ -393,15 +394,16 @@ static void fov_unit(uint8_t ux, uint8_t uy, uint8_t uz, uint8_t dir)
 
 // Туман: сектора бойцов, сдвинувшихся или повернувшихся с прошлого раза (у крупного — с каждой
 // из четырёх клеток, «четыре пары глаз»)
-static void fog_update(const vu_t *u, uint8_t nsold)
+static void fog_update(const vu_t *u, uint8_t n)
 {
 	if (fog_pg == PG_NONE) return;
 	uint8_t all = fog_all, nu = 0;
 	uint16_t f0 = frames;
-	for (uint8_t s = 0; s < nsold && s < MAX_UNITS; s++) {
+	for (uint8_t s = 0; s < n && s < MAX_BUNITS; s++) {
 		const vu_t *v = &u[s];
-		if (!(v->flags & VU_ALIVE)) continue;
 		uint8_t *l = fl_last + s * 4;
+		// не смотрит за отряд — сектор забыт: станет своим (контроль разума) — посчитать заново
+		if (!(v->flags & VU_ALIVE) || !(v->dir & VU_XD)) { l[3] = 0xFF; continue; }
 		// глаза высокого — этажом выше: в fl_last этаж глаз (присел / встал — сектор заново)
 		uint8_t x = v->x, y = v->y, z = (uint8_t)(v->z + (eye_bits(v) & EYE_FOG)), d = v->dir & 7;
 		uint8_t l0 = l[0], l1 = l[1], l2 = l[2], l3 = l[3];
@@ -485,26 +487,29 @@ static uint8_t sees_u(const vu_t *v, uint8_t ey, const vu_t *a)
 	return 0;
 }
 
-uint8_t vis_seen(vu_t *u, uint8_t n, uint8_t nsold, uint8_t *list, uint8_t max) __banked
+// Смотрит ли юнит за отряд: живой и на стороне игрока
+#define XEYE(v) (((v)->flags & VU_ALIVE) && ((v)->dir & VU_XD))
+
+uint8_t vis_seen(vu_t *u, uint8_t n, uint8_t *list, uint8_t max) __banked
 {
 	uint8_t old = pg_win3(), cnt = 0;
 	vm_cur = old;
 	if (vm_page == PG_NONE) {            // маски нет (не хватило страниц) — видны все
-		for (uint8_t i = nsold; i < n; i++)
-			if ((u[i].flags & (VU_ALIVE | VU_SEEN)) == VU_ALIVE) { u[i].flags |= VU_SEEN; if (cnt < max) list[cnt++] = i; }
+		for (uint8_t i = 0; i < n; i++)
+			if ((u[i].flags & (VU_ALIVE | VU_SEEN)) == VU_ALIVE && !(u[i].dir & VU_XD)) { u[i].flags |= VU_SEEN; if (cnt < max) list[cnt++] = i; }
 		return cnt;
 	}
-	fog_update(u, nsold);
-	uint8_t ey[MAX_UNITS];               // глаза бойцов — раз на вызов
-	for (uint8_t s = 0; s < nsold && s < MAX_UNITS; s++)
-		ey[s] = (u[s].flags & VU_ALIVE) ? eye_bits(&u[s]) | EYE_CONE : 0;
-	vis_eye_dbg = nsold ? ey[0] & ~EYE_CONE : 0;
-	for (uint8_t i = nsold; i < n; i++) {
+	fog_update(u, n);
+	uint8_t vw[MAX_BUNITS], ey[MAX_BUNITS], nv = 0;   // свои смотрящие и их глаза — раз на вызов
+	for (uint8_t s = 0; s < n; s++)
+		if (XEYE(&u[s])) { vw[nv] = s; ey[nv++] = eye_bits(&u[s]) | EYE_CONE; }
+	vis_eye_dbg = nv && !vw[0] ? ey[0] & ~EYE_CONE : 0;
+	for (uint8_t i = 0; i < n; i++) {
 		vu_t *a = &u[i];
-		if ((a->flags & (VU_ALIVE | VU_SEEN)) != VU_ALIVE) continue;   // в свой ход отряд не теряет замеченных
+		if ((a->flags & (VU_ALIVE | VU_SEEN)) != VU_ALIVE || (a->dir & VU_XD)) continue;   // в свой ход отряд не теряет замеченных
 		uint8_t seen = 0;
-		for (uint8_t s = 0; s < nsold && s < MAX_UNITS && !seen; s++)
-			if (u[s].flags & VU_ALIVE) seen = sees_u(&u[s], ey[s], a);
+		for (uint8_t k = 0; k < nv && !seen; k++)
+			seen = sees_u(&u[vw[k]], ey[k], a);
 		if (!seen) continue;
 		a->flags |= VU_SEEN;
 		if (cnt < max) list[cnt++] = i;
@@ -515,28 +520,28 @@ uint8_t vis_seen(vu_t *u, uint8_t n, uint8_t nsold, uint8_t *list, uint8_t max) 
 
 // Кого из пришельцев видит юнит sel прямо сейчас (BattleUnit::getVisibleUnits после calculateFOV):
 // номера — в list (до max), вернёт их число
-uint8_t vis_list(vu_t *u, uint8_t n, uint8_t nsold, uint8_t sel, uint8_t *list, uint8_t max) __banked
+uint8_t vis_list(vu_t *u, uint8_t n, uint8_t sel, uint8_t *list, uint8_t max) __banked
 {
 	uint8_t old = pg_win3(), cnt = 0;
 	vm_cur = old;
 	const vu_t *v = &u[sel];
 	if (vm_page == PG_NONE || !(v->flags & VU_ALIVE)) return 0;
 	uint8_t ey = eye_bits(v) | EYE_CONE;
-	for (uint8_t i = nsold; i < n && cnt < max; i++) {
-		if ((u[i].flags & VU_ALIVE) && sees_u(v, ey, &u[i])) list[cnt++] = i;
+	for (uint8_t i = 0; i < n && cnt < max; i++) {
+		if ((u[i].flags & VU_ALIVE) && !(u[i].dir & VU_XD) && sees_u(v, ey, &u[i])) list[cnt++] = i;
 	}
 	if (vm_cur != old) pg_map3(old);
 	return cnt;
 }
 
-// Видит ли кто-то из отряда (u[0..nsold)) юнита a (calculateFOV после шага пришельца)
-uint8_t vis_by_xcom(vu_t *u, uint8_t nsold, uint8_t a) __banked
+// Видит ли кто-то из своих (VU_XD) юнита a (calculateFOV после шага пришельца)
+uint8_t vis_by_xcom(vu_t *u, uint8_t n, uint8_t a) __banked
 {
 	uint8_t old = pg_win3(), seen = 0;
 	vm_cur = old;
 	if (vm_page == PG_NONE) return 1;
-	for (uint8_t s = 0; s < nsold && s < MAX_UNITS && !seen; s++)
-		if (u[s].flags & VU_ALIVE) seen = sees_u(&u[s], eye_bits(&u[s]) | EYE_CONE, &u[a]);
+	for (uint8_t s = 0; s < n && !seen; s++)
+		if (XEYE(&u[s])) seen = sees_u(&u[s], eye_bits(&u[s]) | EYE_CONE, &u[a]);
 	if (vm_cur != old) pg_map3(old);
 	return seen;
 }

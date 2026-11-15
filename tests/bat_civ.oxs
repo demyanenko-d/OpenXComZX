@@ -42,6 +42,9 @@ click L
 waitmark 254 600
 wait 100
 shot tmp/shots/bat_civ/02_debriefing.png
-peek EE:3000 5
-expect EE:3002 12
+peek EE:3000 10
+# строки по 5 байт (str, qty, score): ход боя зависит от кадров — в этом прогоне пришельцы
+# убили и одного своего (Aliens killed 1), строка мирных — вторая (#EE:3005)
+expect EE:3005 161
+expect EE:3007 12
 exit 0

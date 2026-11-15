@@ -149,8 +149,8 @@ static void spot_reset(const aictx_t *c)
 	uint8_t list[16];
 	memset(AI_SPOT, 0, MAX_UNITS * SPOT_W);
 	fill_vu(c, v);
-	for (uint8_t s = 0; s < c->nsold && s < MAX_UNITS; s++)
-		ai_spotted(s, list, vis_list(v, c->n, c->nsold, s, list, sizeof list));
+	for (uint8_t s = 0; s < c->n && s < MAX_UNITS; s++)   // свои (захваченные пришельцы — за MAX_UNITS: без учёта)
+		if (v[s].dir & VU_XD) ai_spotted(s, list, vis_list(v, c->n, s, list, sizeof list));
 }
 
 void ai_tss_init(const aictx_t *c) __banked
@@ -234,7 +234,7 @@ static void fill_vu(const aictx_t *c, vu_t *v)
 	unit_t x;
 	for (uint8_t i = 0; i < c->n; i++) {
 		u_get(i, &x);
-		v[i].x = x.x; v[i].y = x.y; v[i].z = x.z; v[i].dir = x.dir;
+		v[i].x = x.x; v[i].y = x.y; v[i].z = x.z; v[i].dir = x.dir | (x.faction == FACTION_PLAYER ? VU_XD : 0);
 		v[i].flags = (x.alive ? VU_ALIVE : 0) | (x.size > 1 ? VU_BIG : 0) | VU_H(UNIT_H(&x));
 	}
 }
@@ -621,7 +621,7 @@ static uint8_t hide_check(const aictx_t *c, unit_t *u)
 	if (!u->seen || !u->alive) return 0;
 	vu_t v[MAX_BUNITS];
 	fill_vu(c, v);
-	if (vis_by_xcom(v, c->nsold, ai_a)) return 0;
+	if (vis_by_xcom(v, c->n, ai_a)) return 0;
 	u->seen = 0;
 	u_set(ai_a, u);
 	show(c, ai_a, u);

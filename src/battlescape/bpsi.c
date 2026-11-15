@@ -57,7 +57,9 @@ uint16_t psi_player(uint8_t a, uint8_t tx, uint8_t ty, uint8_t tz, uint8_t act, 
 	if (s <= def) return 0;
 	if (act == 11) {                         // convertToFaction: к X-COM до начала следующего хода X-COM
 		x.faction = FACTION_PLAYER;
-		x.tu = x.tu_max;
+		x.tu = x.tu_max;                     // recoverTimeUnits, allowReselect, abortTurn (встал)
+		x.done = 0;
+		x.kneel = 0;
 	} else {
 		int16_t loss = 110 - x.bravery;
 		x.mor = loss >= x.mor ? 0 : (uint8_t)(x.mor - loss);

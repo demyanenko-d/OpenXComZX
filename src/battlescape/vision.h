@@ -14,19 +14,22 @@
 // поднимаются на этаж (TileEngine::calculateFOV:255, getSightOriginVoxel:362)
 #define VU_H(h) ((uint8_t)(((h) > 31 ? 31 : (h)) << 3))
 typedef struct { uint8_t x, y, z, dir, flags; } vu_t;
+// Бит 7 dir — юнит на стороне игрока (FACTION_PLAYER: бойцы и захваченные пришельцы): он смотрит
+// за отряд (туман, замеченные), остальные — цели. Направление — dir & 7.
+#define VU_XD 0x80
 
 // Маска обзора карты (байт на клетку) — в своих страницах пула; page — рабочая страница боя
 // (свойства частей, loader.h / pathfind.h). 0 — страниц не нашлось (тогда видны все).
 uint8_t vis_build(far_t cells, uint8_t sx, uint8_t sy, uint8_t sz, uint8_t page) __banked;
 void vis_cell(far_t cells, uint8_t x, uint8_t y, uint8_t z, uint8_t page) __banked;   // клетка сменилась (дверь)
 void vis_free(void) __banked;
-// Пришельцы (u[nsold..n)), которых сейчас видит кто-то из отряда (u[0..nsold)): им ставится
-// VU_SEEN, номера впервые замеченных — в list (до max); вернёт их число
-uint8_t vis_seen(vu_t *u, uint8_t n, uint8_t nsold, uint8_t *list, uint8_t max) __banked;
-// Кого из пришельцев видит юнит sel сейчас (getVisibleUnits): номера в list, вернёт их число
-uint8_t vis_list(vu_t *u, uint8_t n, uint8_t nsold, uint8_t sel, uint8_t *list, uint8_t max) __banked;
-// Видит ли кто-то из отряда (u[0..nsold)) юнита a сейчас — после шага и выстрела пришельца
-uint8_t vis_by_xcom(vu_t *u, uint8_t nsold, uint8_t a) __banked;
+// Чужие (без VU_XD), которых сейчас видит кто-то из своих (VU_XD): им ставится VU_SEEN, номера
+// впервые замеченных — в list (до max); вернёт их число
+uint8_t vis_seen(vu_t *u, uint8_t n, uint8_t *list, uint8_t max) __banked;
+// Кого из чужих видит юнит sel сейчас (getVisibleUnits): номера в list, вернёт их число
+uint8_t vis_list(vu_t *u, uint8_t n, uint8_t sel, uint8_t *list, uint8_t max) __banked;
+// Видит ли кто-то из своих (VU_XD) юнита a сейчас — после шага и выстрела пришельца
+uint8_t vis_by_xcom(vu_t *u, uint8_t n, uint8_t a) __banked;
 // Видит ли юнит s юнита t: cone — в секторе обзора (calculateFOV), 0 — без сектора, только
 // дальность 20 и линия взгляда (TileEngine::visible — так ИИ выбирает цель)
 uint8_t vis_pair(vu_t *u, uint8_t s, uint8_t t, uint8_t cone) __banked;

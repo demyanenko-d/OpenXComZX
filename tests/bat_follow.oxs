@@ -26,7 +26,7 @@ wait 150
 pokew _cursor_x 160
 pokew _cursor_y 100
 wait 10
-expectw bview$cam_x 65116
+expectw bview$cam_x 65106
 shot tmp/shots/bat_follow/00_away.png
 pokew _cursor_x 250
 pokew _cursor_y 150
