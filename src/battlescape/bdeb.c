@@ -224,7 +224,7 @@ static void campaign(const debreq_t *q, uint8_t alive_x, uint8_t success)
 	uint8_t dk = cr->dest_kind, di = cr->dest;
 	geo_t pos = cr->pos;
 	if (success) loot(q);
-	craft_return(c);                             // returnToBase: цель кораблю меняет — взята раньше
+	if (alive_x) craft_return(c);                             // returnToBase: цель кораблю меняет — взята раньше
 	if (dk == DK_SITE && di < MAX_SITES && ST->site[di].id) { ST->site[di].id = 0; ST->nsites--; }
 	if (dk == DK_UFO && di < MAX_UFOS && ST->ufo[di].type != NONE8) {
 		if (ST->ufo[di].status == US_LANDED && (q->aborted || !alive_x)) ST->ufo[di].secs = 5;
@@ -241,6 +241,10 @@ static void campaign(const debreq_t *q, uint8_t alive_x, uint8_t success)
 		if (u.sol == 0xFF) continue;
 		if (!u.alive && !u.hp) soldier_delete(u.sol);
 		else post_soldier(&u, i);
+	}
+	if (!alive_x) {                              // отряд не вернулся: корабль потерян (removeCraft) —
+		if (cr->status == CS_OUT && ST->ncraft_out) ST->ncraft_out--;   //   с экипажем и грузом
+		craft_lost(c);
 	}
 	promotions();
 	for (uint8_t i = 0; i < ST->nsoldiers; i++) {   // кого показать в окне повышений
@@ -339,7 +343,13 @@ void deb_start(const debreq_t *q) __banked
 	}
 	uint8_t success = !q->aborted && alive_x;
 	score(q, success, 0);
-	if (!alive_x) add_stat(D_CRAFT, 0);          // отряд не вернулся (очки корабля — когда будет кампания)
+	if (!alive_x) {                              // отряд не вернулся: корабль потерян — минус crafts.score
+		int16_t sc = 0;
+		rtab_t tc;
+		uint8_t ct = q->craft < MAX_CRAFTS ? ST->craft[(uint8_t)q->craft].type : NONE8;
+		if (ct != NONE8 && rtab_open(RES_RULE_CRAFTS, &tc) && ct < tc.n) sc = (int16_t)rtab_word(&tc, ct, offsetof(r_crafts_t, score));
+		add_stat(D_CRAFT, -sc);
+	}
 	if (success) d_title = q->ufo ? STR_UFO_IS_RECOVERED : STR_ALIENS_DEFEATED;
 	else if (!alive_x) d_title = STR_CRAFT_IS_LOST;
 	else d_title = q->ufo ? STR_UFO_IS_NOT_RECOVERED : STR_TERROR_CONTINUES;
