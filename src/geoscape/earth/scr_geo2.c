@@ -533,7 +533,7 @@ uint8_t geo2_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				// сбитого НЛО — карта его типа. Разбора после боя ещё нет.
 				craft_t *cr = &ST->craft[ctx.craft];
 				uint16_t dep = 0xFFFF, ufo = 0xFFFF;
-				uint8_t utype = 0xFF, race = 0xFF;
+				uint8_t utype = 0xFF, race = 0xFF, crash = 0;
 				if (cr->dest_kind == TGT_SITE) {
 					uint8_t s = cr->dest;
 					if (s < MAX_SITES && ST->site[s].id) { dep = ST->site[s].deployment; race = ST->site[s].race; }
@@ -542,12 +542,13 @@ uint8_t geo2_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 					if (u < MAX_UFOS && ST->ufo[u].id) {
 						ufo = mapgen_kind_nth(2, ST->ufo[u].type);
 						utype = ST->ufo[u].type;
+						crash = ST->ufo[u].status == US_CRASHED;   // explodePowerSources
 						uint8_t m = ST->ufo[u].mission;   // раса — от миссии НЛО (Ufo::getAlienRace)
 						if (m < MAX_MISSIONS && ST->mission[m].type != NONE8) race = ST->mission[m].race;
 					}
 				}
 				// Карта корабля отряда — по его типу (как карта НЛО по типу НЛО), отряд — его экипаж
-				bat_mission(dep, ufo, mapgen_kind_nth(1, cr->type), ctx.craft, utype, race);
+				bat_mission(dep, ufo, mapgen_kind_nth(1, cr->type), ctx.craft, utype, race, crash);
 				UI_GO(A_POP_PUSH, SCR_BRIEFING);   // BriefingState, его OK — бой
 			}
 		}

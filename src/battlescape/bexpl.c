@@ -65,6 +65,10 @@ static uint8_t __at(0xB4B4) dead[MAX_BUNITS];        // выбыл от этог
 static uint8_t __at(0xB4DC) ex_np;                  // страница кадров (от BAT_SCRATCH_PAGE)
 static uint16_t __at(0xB500) expl[SIDE * SIDE];      // Tile::setExplosive: наибольшая мощность луча (до #B922)
 static uint8_t __at(0xB930) ex_ndet;                 // клеток с разрушенными частями (последний взрыв; сценарии)
+static uint8_t __at(0xB940) eq[8][4];                // цепные взрывы местности: x, y, z, мощность (HE_Strength)
+static uint8_t __at(0xB960) eq_n;
+static uint8_t __at(0xB961) ex_quiet;                // без экрана (крушение НЛО при сборке карты)
+static uint8_t __at(0xB962) ex_ncrash;               // взорвалось источников питания (сценарии)
 
 // sin(3° · k), Q8
 static const int16_t sin8[120] = {
@@ -366,7 +370,11 @@ static void detonate(int16_t x, int16_t y, uint8_t z, uint16_t e)
 				if (bw == 6 || bw == 7 || bw == 8) skipnw = 0;
 			}
 			rem -= 2 * (uint16_t)ar;
-			uint8_t die = prop(p, 2);
+			uint8_t he = prop(p, 6), die = prop(p, 2);
+			if (he && eq_n < 8) {                // часть взрывчатая (HE_Strength) — взорвётся следом
+				uint8_t *q = eq[eq_n++];
+				q[0] = (uint8_t)cx; q[1] = (uint8_t)cy; q[2] = cz; q[3] = he;
+			}
 			if (!die && s == 0 && cz == 0) break;   // пол земли без Die_MCD — остаётся (выжженной земли нет)
 			c[s] = 0;
 			changed = 1;
@@ -390,26 +398,17 @@ static void detonate_all(int16_t tx, int16_t ty, uint8_t tz)
 	bv_redraw();                             // вид — заново (снесённые части)
 }
 
-// Площадной взрыв предмета item в точке (вокселях): экран, затем урон; выбывшие — со сцены
-static void blast(int16_t vx, int16_t vy, int16_t vz, uint16_t item)
+// Площадной взрыв мощностью power (тип, радиус, первый кадр X1.PCK) в точке (вокселях): экран
+// (quiet — без него: крушение НЛО при сборке карты), затем урон; выбывшие — со сцены
+static void blast_at(int16_t vx, int16_t vy, int16_t vz, uint16_t power, uint8_t type, uint8_t rad, int16_t anim)
 {
-	rtab_t t;
-	r_items_t w;
-	if (!rtab_open(RES_RULE_ITEMS, &t) || item >= t.n) return;
-	rtab_get(&t, item, &w);
-	int16_t rad = w.blast_radius;            // RuleItem::getExplosionRadius
-	if (rad < 0) {
-		rad = w.damage_type == DT_IN ? w.power / 30 + 1
-			: (w.damage_type == DT_HE || w.damage_type == DT_STUN || w.damage_type == 9) ? w.power / 20 : 0;
-		if (rad > R_MAX) rad = R_MAX;
-	}
-	if (rad > R_MAX) rad = R_MAX;
-	if (w.battle_type == BT_MELEE || !rad || !w.power) return;
 	uint8_t tz = (uint8_t)(vz / 24);
-	if (tz != bv_level()) bv_set_level(tz, 0);
-	bv_center((uint8_t)(vx >> 4), (uint8_t)(vy >> 4));   // centerOnPosition
-	bv_draw();
-	show_blast(vx, vy, vz, w.power, w.hit_animation < 0 ? 0 : w.hit_animation);
+	if (!ex_quiet) {
+		if (tz != bv_level()) bv_set_level(tz, 0);
+		bv_center((uint8_t)(vx >> 4), (uint8_t)(vy >> 4));   // centerOnPosition
+		bv_draw();
+		show_blast(vx, vy, vz, power, anim);
+	}
 	// юниты и предметы на земле рядом — в память банка
 	unit_t v;
 	for (uint8_t i = 0; i < Q->n; i++) {
@@ -426,8 +425,8 @@ static void blast(int16_t vx, int16_t vy, int16_t vz, uint16_t item)
 		if (dx < -R_MAX || dx > R_MAX || dy < -R_MAX || dy > R_MAX) continue;
 		gi_x[gi_n] = b.x; gi_y[gi_n] = b.y; gi_i[gi_n] = (uint8_t)i; gi_n++;
 	}
-	explode(vx, vy, vz, (int16_t)w.power, w.damage_type, (uint8_t)rad);
-	if (w.damage_type == DT_HE) detonate_all(vx >> 4, vy >> 4, tz);   // местность (только HE)
+	explode(vx, vy, vz, (int16_t)power, type, rad);
+	if (type == DT_HE) detonate_all(vx >> 4, vy >> 4, tz);   // местность (только HE)
 	fl_rebuild(Q->page);                     // сгоревшее — с пола
 	bv_sync(Q->n);
 	for (uint8_t k = 0; k < gi_n; k++)
@@ -441,11 +440,63 @@ static void blast(int16_t vx, int16_t vy, int16_t vz, uint16_t item)
 	}
 }
 
+// Цепные взрывы местности (Tile::destroy -> setExplosive(HE_Strength); checkForTerrainExplosions ->
+// ExplosionBState: мощность — HE_Strength, радиус — мощность/10, тип — HE): по очереди, пока есть
+static void chain(void)
+{
+	for (uint8_t k = 0; k < 16 && eq_n; k++) {
+		eq_n--;
+		const uint8_t *e = eq[eq_n];
+		blast_at((int16_t)e[0] * 16 + 8, (int16_t)e[1] * 16 + 8, (int16_t)e[2] * 24, e[3], DT_HE,
+			 (uint8_t)(e[3] / 10 > R_MAX ? R_MAX : e[3] / 10), 0);
+	}
+	eq_n = 0;
+}
+
+// Взрыв предмета item (RuleItem::getExplosionRadius, power, damageType, hitAnimation) и цепь за ним
+static void blast(int16_t vx, int16_t vy, int16_t vz, uint16_t item)
+{
+	rtab_t t;
+	r_items_t w;
+	if (!rtab_open(RES_RULE_ITEMS, &t) || item >= t.n) return;
+	rtab_get(&t, item, &w);
+	int16_t rad = w.blast_radius;
+	if (rad < 0)
+		rad = w.damage_type == DT_IN ? w.power / 30 + 1
+			: (w.damage_type == DT_HE || w.damage_type == DT_STUN || w.damage_type == 9) ? w.power / 20 : 0;
+	if (rad > R_MAX) rad = R_MAX;
+	if (w.battle_type == BT_MELEE || !rad || !w.power) return;
+	eq_n = 0;
+	blast_at(vx, vy, vz, w.power, w.damage_type, (uint8_t)rad, w.hit_animation < 0 ? 0 : w.hit_animation);
+	chain();
+}
+
+// BattlescapeGenerator::explodePowerSources (BattlescapeGenerator.cpp:1808-1830): у сбитого НЛО каждый
+// объект UFO_POWER_SOURCE (specialType 2) с шансом 75 % взрывается — HE 180 + 0..70, радиус 10, точка —
+// угол клетки на середине высоты; затем цепь взрывов местности. Без экрана (идёт сборка карты)
+void ex_crash(const exreq_t *q) __banked
+{
+	Q = q;
+	ex_quiet = 1;
+	eq_n = ex_ncrash = 0;
+	for (uint8_t z = 0; z < q->sz; z++)
+		for (uint8_t y = 0; y < q->sy; y++)
+			for (uint8_t x = 0; x < q->sx; x++) {
+				uint8_t o = far_byte(cell_at(x, y, z) + 3);
+				if (!o || prop(o, 10) != 2 || !rng_percent(75)) continue;
+				ex_ncrash++;
+				blast_at((int16_t)x * 16, (int16_t)y * 16, (int16_t)z * 24 + 12, 180 + rng_range(0, 70), DT_HE, 10, 0);
+			}
+	chain();
+	ex_quiet = 0;
+}
+
 uint8_t ex_turn(const exreq_t *q) __banked
 {
 	rtab_t t;
 	uint8_t any = 0;
 	Q = q;
+	ex_quiet = 0;
 	if (!rtab_open(RES_RULE_ITEMS, &t)) return 0;
 	for (uint16_t i = 0; i < BI_MAX; i++) {  // горячие гранаты на земле
 		bitem_t b;

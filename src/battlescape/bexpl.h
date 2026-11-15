@@ -17,5 +17,7 @@ typedef struct {
 // взрыв), таймеры остальных гранат — на ход меньше. 1 — что-то взорвалось (обзор и конец боя —
 // заново)
 uint8_t ex_turn(const exreq_t *q) __banked;
+// Сбитый НЛО: источники питания взрываются (explodePowerSources), без экрана — при сборке карты
+void ex_crash(const exreq_t *q) __banked;
 
 #endif

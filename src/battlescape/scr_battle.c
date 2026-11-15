@@ -54,6 +54,7 @@ static uint16_t gen_terrain;             // какой террейн пробу
 static uint16_t mis_deploy = 0xFFFF, mis_ufo = 0xFFFF, mis_craft = 0xFFFF, mis_crew = 0xFFFF;
 // Пришельцы: тип НЛО (ufos, #FF — миссия без НЛО) — по нему развёртывание с его составом, раса
 static uint8_t mis_utype = 0xFF, mis_race = 0xFF;
+static uint8_t mis_crash;                // НЛО сбит (_DATA — нули: отладочный бой — не сбит)
 static uint8_t m_sx, m_sy, m_sz;
 static uint8_t m_cx, m_cy, m_cw, m_cl, m_cbase;   // корабль отряда: прямоугольник, его первая часть
 static far_t cells;                  // начало клеток карты
@@ -557,6 +558,11 @@ static uint8_t load_gen(uint16_t terrain)
 	bv_load(&v);
 	for (uint8_t i = 0; i < nunits; i++) ru_put(i);
 	bv_sync(nunits);
+	if (mis_crash && !bt_stage) {            // сбитый НЛО: источники питания взрываются (bexpl.c)
+		exreq_t e;
+		e.page = pf_page; e.cells = cells; e.sx = m_sx; e.sy = m_sy; e.sz = m_sz; e.n = nunits;
+		ex_crash(&e);
+	}
 	an_on = 0;
 	bt_turn = 1;
 	pn_n = pn_i = 0;                     // память банка не обнуляется
@@ -909,9 +915,10 @@ static void inv_open(void)
 
 // Геоскейп сообщает, какая миссия начинается: развёртывание (state.h site_t.deployment),
 // террейн НЛО и террейн корабля отряда; #FFFF — не задано. utype — тип НЛО (#FF — не НЛО),
-// race — раса миссии (#FF — из развёртывания).
-void bat_mission(uint16_t deploy, uint16_t ufo, uint16_t craft_map, uint16_t crew, uint8_t utype, uint8_t race) __banked
+// race — раса миссии (#FF — из развёртывания), crash — НЛО сбит (источники питания взрываются).
+void bat_mission(uint16_t deploy, uint16_t ufo, uint16_t craft_map, uint16_t crew, uint8_t utype, uint8_t race, uint8_t crash) __banked
 {
+	mis_crash = crash;
 	mis_utype = utype;
 	mis_race = race;
 	mis_deploy = deploy;
