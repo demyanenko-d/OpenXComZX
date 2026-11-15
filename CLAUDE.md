@@ -31,7 +31,7 @@
   `craft.oxs`, `ufopaedia.oxs`, `month.oxs`,
   `aliens.oxs`, `dogfight.oxs`, `dogfight2.oxs`, `basedefense.oxs`, `ironman.oxs`,
   `globe.oxs` (скорость глобуса по зумам — `tools\globeprof.ps1`), `bat_render.oxs`,
-  `bat_geo.oxs` (вход в бой с геоскейпа — панель на месте), `bat_kill.oxs` (гибель и труп), `bat_ai.oxs` (ход пришельцев), `bat_deb.oxs` (разбор боя), `bat_geo_win.oxs` (победа в кампании), `bat_react.oxs` (огонь в ответ), `bat_inv.oxs` (инвентарь в бою), `bat_gren.oxs` (гранаты; бою отладки — предмет по типу `poke _bi_dbg 4`, адрес из страницы боя `*scr_battle$pf_page:AAAA`), `bat_exact.oxs` (частичная перерисовка боя = полной: команды `shotmark`/`shotsame`),
+  `bat_geo.oxs` (вход в бой с геоскейпа через брифинг `SCR_BRIEFING` 246 — `waitmark 246`, ENTER; панель на месте), `bat_kill.oxs` (гибель и труп), `bat_ai.oxs` (ход пришельцев), `bat_deb.oxs` (разбор боя), `bat_geo_win.oxs` (победа в кампании), `bat_react.oxs` (огонь в ответ), `bat_inv.oxs` (инвентарь в бою), `bat_gren.oxs` (гранаты; бою отладки — предмет по типу `poke _bi_dbg 4`, адрес из страницы боя `*scr_battle$pf_page:AAAA`), `bat_exact.oxs` (частичная перерисовка боя = полной: команды `shotmark`/`shotsame`),
   `bat_fog.oxs` (туман войны: число открытых клеток — слово `0A:3CCE` памяти банка 40; перерисовка
   открывшегося = полной), `bat_eye.oxs` (глаза высокого юнита этажом выше: признак `0A:3CE3`),
   `bat_reveal.oxs` (revealedFloors блоков: карта развёртывания `pokew scr_battle$mis_deploy N` + `key g`, `0A:3CE4`),

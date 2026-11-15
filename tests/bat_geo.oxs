@@ -313,6 +313,11 @@ waitmark 72 300
 pokew _cursor_x 72
 pokew _cursor_y 158
 click L
+# BriefingState (SCR_BRIEFING 246): заголовок, цель, корабль, текст брифинга; OK — бой
+waitmark 246 900
+wait 30
+shot tmp/shots/bat_geo/00_briefing.png
+key ENTER
 waitmark 248 900
 wait 200
 pokew _cursor_x 160

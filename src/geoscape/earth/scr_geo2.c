@@ -548,7 +548,7 @@ uint8_t geo2_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				}
 				// Карта корабля отряда — по его типу (как карта НЛО по типу НЛО), отряд — его экипаж
 				bat_mission(dep, ufo, mapgen_kind_nth(1, cr->type), ctx.craft, utype, race);
-				UI_GO(A_POP_PUSH, SCR_BATTLE);
+				UI_GO(A_POP_PUSH, SCR_BRIEFING);   // BriefingState, его OK — бой
 			}
 		}
 		break;

@@ -25,7 +25,18 @@ uint8_t st_exit(uint8_t page, uint8_t nsold, uint8_t drop) __banked;
 // Окно AbortMissionState (SCR_ABORT; вынесено из банка 31): раскладка — по тому, есть ли зона
 // выхода; тексты DYN(0..2) — бойцы в корабле (у входа), снаружи, в зоне выхода
 #include "ui.h"
-uint8_t st_abort_get(sdef_t *s, wdef_t *w, uint8_t page, uint16_t dep) __banked;
 void st_abort_text(uint8_t slot, char *buf, uint8_t page, uint8_t nsold) __banked;
+// Окно BriefingState (SCR_BRIEFING) развёртывания dep: тексты DYN(0..3) — заголовок, цель корабля
+// craft, корабль, брифинг. st_brief_stage(1) — брифинг следующей фазы поверх боя (OK — назад в бой),
+// 0 — перед боем (OK — бой)
+void st_brief_stage(uint8_t on) __banked;
+// Окно «Hidden Movement» поверх места карты (вынесено из банка 31)
+void st_hidden_draw(void) __banked;
+// Окна SCR_ABORT и SCR_BRIEFING: раскладка (page — рабочая страница боя, dep — развёртывание)
+uint8_t st_get(uint8_t id, sdef_t *s, wdef_t *w, uint8_t page, uint16_t dep) __banked;
+// Начало миссии с геоскейпа: развёртывание (у НЛО — по его типу), брифинг — перед боем
+uint16_t st_mission(uint8_t utype, uint16_t deploy) __banked;
+void st_brief_text(uint8_t slot, char *buf, uint16_t dep, uint16_t craft) __banked;
+uint8_t st_brief_event(uint8_t ev, uint8_t arg, uint16_t dep) __banked;
 
 #endif

@@ -38,7 +38,13 @@ poke 4E:3A38 0
 pokew _cursor_x 250
 pokew _cursor_y 150
 click L
-wait 900
+# брифинг фазы 2 поверх боя (BriefingState: STR_SHIP_RESCUE_MISSION, фон BACK01.SCR), OK — в бой
+waitmark 246 900
+wait 30
+shot tmp/shots/bat_stage/01_briefing.png
+key ENTER
+waitmark 248 300
+wait 60
 expect 4E:3810 11
 expect scr_battle$nsold 6
 expect scr_battle$nunits 9

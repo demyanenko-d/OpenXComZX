@@ -676,14 +676,7 @@ static void hidden_show(uint8_t on)
 	bv_message(on);
 	if (!on) { marks_on(); return; }
 	marks_show(0, 0);
-	gfx_window(0, 0, SCREEN_W, VIEW_H, ui_color_in(UI_SCR_BATTLESCAPE, UI_EL_MESSAGEWINDOWBORDER, 0), RES_TAC00_SCR, 0);
-	char s[32];
-	tbox_t b;
-	str_copy(STR_HIDDEN_MOVEMENT, s, sizeof s);
-	b.x = 0; b.y = 64; b.w = SCREEN_W; b.h = 17; b.font = FNT_BIG; b.flags = TX_CENTER;
-	b.color = ui_color_in(UI_SCR_BATTLESCAPE, UI_EL_MESSAGEWINDOWS, 0);
-	b.color2 = ui_color_in(UI_SCR_BATTLESCAPE, UI_EL_MESSAGEWINDOWS, 1);
-	text_draw(&b, s);
+	st_hidden_draw();                    // окно и надпись (bstage.c: этот банк полон)
 }
 
 // Конец боя (BattlescapeGame::checkForCasualties -> finishBattle): живых пришельцев или бойцов
@@ -702,11 +695,13 @@ static uint8_t battle_end(uint8_t aborted)
 		if (aborted) st_exit(pf_page, nsold, 1);   // оставшиеся вне зоны выхода — выбыли
 		deb_stage(&q, !al);
 		mis_deploy = nx; mis_utype = 0xFF; mis_ufo = 0xFFFF;
-		if (aborted) UI_GO(A_POP, 0);
 		bt_stage = 1;
 		load_gen(0xFFFF);
 		bt_stage = 0;
-		ui_dirty(0);
+		st_brief_stage(1);               // брифинг фазы поверх боя (BriefingState), OK — в бой
+		bv_pause();                      // окно рисует в основной холст, карту не трогает
+		marks_show(0, 0);
+		UI_GO(aborted ? A_POP_PUSH : A_PUSH, SCR_BRIEFING);
 		return 1;
 	}
 	deb_start(&q);
@@ -908,6 +903,7 @@ void bat_mission(uint16_t deploy, uint16_t ufo, uint16_t craft_map, uint16_t cre
 	mis_utype = utype;
 	mis_race = race;
 	mis_deploy = deploy;
+	bt_dep = st_mission(utype, deploy);  // развёртывание (по типу НЛО) — брифингу до боя (bstage.c)
 	mis_ufo = ufo;
 	mis_craft = craft_map;
 	mis_crew = crew;
@@ -916,7 +912,7 @@ void bat_mission(uint16_t deploy, uint16_t ufo, uint16_t craft_map, uint16_t cre
 uint8_t bat_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
 {
 	if (id == SCR_DEBRIEFING) return deb_get(id, s, w);
-	if (id == SCR_ABORT) return st_abort_get(s, w, pf_page, bt_dep);   // AbortMissionState (bstage.c)
+	if (id == SCR_ABORT || id == SCR_BRIEFING) return st_get(id, s, w, pf_page, bt_dep);   // bstage.c
 	return scr_find(tab, sizeof tab / sizeof tab[0], id, s, w);
 }
 
@@ -930,6 +926,7 @@ void bat_text(uint8_t id, uint8_t slot, uint8_t line, char *buf) __banked
 		return;
 	}
 	if (id == SCR_ABORT) { st_abort_text(slot, buf, pf_page, nsold); return; }   // по зонам (bstage.c)
+	if (id == SCR_BRIEFING) { st_brief_text(slot, buf, bt_dep, mis_crew); return; }
 	if (id == SCR_INFOBOX) { strcpy(buf, ui_msg); return; }
 	if (id != SCR_NEXT_TURN) return;
 	char a[16];
@@ -948,6 +945,7 @@ uint8_t bat_rows(uint8_t id, uint8_t slot) __banked
 uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 {
 	if (id == SCR_DEBRIEFING) return deb_event(id, ev, arg);
+	if (id == SCR_BRIEFING) return st_brief_event(ev, arg, bt_dep);
 	if (id == SCR_NEXT_TURN) {
 		if (ev == EVT_BUTTON || ev == EVT_KEY) next_turn_close();
 		return 0;

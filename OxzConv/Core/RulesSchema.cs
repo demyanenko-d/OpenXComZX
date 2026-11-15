@@ -337,6 +337,25 @@ namespace OxzConv
 						"по записи data: [уровней, ([n, предметы] x уровней)] (DeploymentData::itemSets)"),
 					F("civilians", "u8", "0", comment: "мирных жителей до (deployCivilians: от половины до стольких)"),
 					F("nextStage", "ref:alienDeployments", comment: "следующая фаза миссии (BattlescapeGenerator::nextStage); #FFFF — нет"),
+					// briefing (BriefingData, AlienDeployment.h:44-50): заголовок — тип, текст — тип + _BRIEFING,
+					// фон BACK16.SCR, палитра 0, сдвиг текста 0, музыка GMDEFEND, корабль и цель видны
+					Fn("briefingTitle", "str", (e, k, rs) => Y.Str(Y.Get(Y.Get(e, "briefing"), "title")) ?? k),
+					Fn("briefingDesc", "str", (e, k, rs) => Y.Str(Y.Get(Y.Get(e, "briefing"), "desc")) ?? k + "_BRIEFING"),
+					Fn("briefingBg", "res", (e, k, rs) => Y.Str(Y.Get(Y.Get(e, "briefing"), "background")) ?? "BACK16.SCR"),
+					Fn("briefingPal", "u8", (e, k, rs) => Y.Int(Y.Get(Y.Get(e, "briefing"), "palette")).ToString(), "блок BACKPALS к PAL_GEOSCAPE"),
+					Fn("briefingOffset", "i8", (e, k, rs) => Y.Int(Y.Get(Y.Get(e, "briefing"), "textOffset")).ToString(), "сдвиг строки корабля и текста по y"),
+					Fn("briefingMusic", "u8", (e, k, rs) =>
+					{
+						var m = Registry.Index(Registry.Load("music_types.txt"));
+						string n = Y.Str(Y.Get(Y.Get(e, "briefing"), "music")) ?? "GMDEFEND";
+						return (m.TryGetValue(n, out var i) ? i : 255).ToString();
+					}, "тип музыки (mus_ids.h: ресурс MUS_BASE + n), #FF — нет"),
+					Fn("briefingShow", "u8", (e, k, rs) =>
+					{
+						var b = Y.Get(e, "briefing");
+						return ((Y.Get(b, "showCraft") == null || Y.Bool(Y.Get(b, "showCraft")) ? 1 : 0)
+							| (Y.Get(b, "showTarget") == null || Y.Bool(Y.Get(b, "showTarget")) ? 2 : 0)).ToString();
+					}, "бит 0 — строка корабля, бит 1 — строка цели"),
 				},
 			});
 

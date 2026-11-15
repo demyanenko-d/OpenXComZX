@@ -13,6 +13,13 @@
 #include "str_ids.h"
 #include "scrdef.h"
 #include "text.h"
+#include "state.h"
+#include "screens.h"
+#include "music.h"
+#include "mus_ids.h"
+#include "gfx.h"
+#include "memmap.h"
+#include "bview.h"
 #include "bstage.h"
 
 uint16_t st_ufo_deploy(uint8_t utype) __banked
@@ -83,6 +90,105 @@ static const wdef_t w_abort3[] = {
 };
 static const scr_t tab_abort = SCR(SCR_ABORT, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_POPUP | SF_RAWPAL, w_abort3);
 
+// BattlescapeMessage «Hidden Movement» (Map.cpp:96-101): окно на месте карты (320x144) на фоне
+// TAC00.SCR, крупно по центру в y 64 — цвета messageWindowBorder / messageWindows
+void st_hidden_draw(void) __banked
+{
+	gfx_window(0, 0, SCREEN_W, 144, ui_color_in(UI_SCR_BATTLESCAPE, UI_EL_MESSAGEWINDOWBORDER, 0), RES_TAC00_SCR, 0);
+	char s[32];
+	tbox_t b;
+	str_copy(STR_HIDDEN_MOVEMENT, s, sizeof s);
+	b.x = 0; b.y = 64; b.w = SCREEN_W; b.h = 17; b.font = FNT_BIG; b.flags = TX_CENTER;
+	b.color = ui_color_in(UI_SCR_BATTLESCAPE, UI_EL_MESSAGEWINDOWS, 0);
+	b.color2 = ui_color_in(UI_SCR_BATTLESCAPE, UI_EL_MESSAGEWINDOWS, 1);
+	text_draw(&b, s);
+}
+
+// ---------------------------------------------------------------- BriefingState
+// BriefingState.cpp:50-151: окно 320x200 на фоне развёртывания (BACK16.SCR по умолчанию) с палитрой
+// PAL_GEOSCAPE и блоком BACKPALS развёртывания, крупные заголовок (16,24), цель (16,40), корабль
+// (16,56 + сдвиг), текст брифинга с переносом (16,72 + сдвиг, 274x94), OK (100,164); цвета —
+// интерфейс briefing; музыка — развёртывания. OK — бой (перед следующей фазой — назад в бой)
+static const wdef_t w_brief[] = {
+	WIN(0, 0, 320, 200, UI_EL_WINDOW),
+	BTN(100, 164, 120, 18, UI_EL_BUTTON, STR_OK, A_CUSTOM, 1, ENT),
+	TXT(16, 24, 300, 32, UI_EL_TEXT, DYN(0), BIG),
+	TXT(16, 72, 274, 94, UI_EL_TEXT, DYN(3), TW),
+	TXT(16, 56, 300, 17, UI_EL_TEXT, DYN(2), BIG),
+	TXT(16, 40, 300, 17, UI_EL_TEXT, DYN(1), BIG),
+	HOT(0, 0, 0, 0, A_CUSTOM, 1, ESC),          // keyCancel — тоже OK
+	CUS(0, 0, 0, 0, NOSTR, 0, 0),               // палитра с блоком BACKPALS развёртывания (EVT_DRAW)
+};
+static const scr_t tab_brief = SCR(SCR_BRIEFING, UI_SCR_BRIEFING, NOUI, RES_BACK16_SCR, 0, w_brief);
+static uint8_t st_bstage;                    // брифинг следующей фазы: поверх боя (OK — назад в бой)
+
+static uint8_t brief(uint16_t dep, r_alienDeployments_t *d)
+{
+	rtab_t t;
+	if (dep == 0xFFFF || !rtab_open(RES_RULE_ALIENDEPLOYMENTS, &t) || dep >= t.n) return 0;
+	rtab_get(&t, dep, d);
+	return 1;
+}
+
+void st_brief_stage(uint8_t on) __banked
+{
+	st_bstage = on;
+}
+
+uint16_t st_mission(uint8_t utype, uint16_t deploy) __banked
+{
+	st_bstage = 0;
+	return utype != 0xFF ? st_ufo_deploy(utype) : deploy;
+}
+
+static uint8_t abort_get(sdef_t *s, wdef_t *w, uint8_t page, uint16_t dep);
+
+uint8_t st_get(uint8_t id, sdef_t *s, wdef_t *w, uint8_t page, uint16_t dep) __banked
+{
+	r_alienDeployments_t d;
+	if (id == SCR_ABORT) return abort_get(s, w, page, dep);
+	scr_find(&tab_brief, 1, SCR_BRIEFING, s, w);
+	if (!brief(dep, &d)) return 1;
+	if (d.briefing_bg) s->bg = d.briefing_bg;
+	w[3].y = (int16_t)(72 + d.briefing_offset);
+	w[4].y = (int16_t)(56 + d.briefing_offset);
+	if (!(d.briefing_show & 2)) w[5].str = NOSTR;   // _txtTarget->setVisible(showTarget)
+	if (!(d.briefing_show & 1)) w[4].str = NOSTR;   // _txtCraft->setVisible(showCraft)
+	return 1;
+}
+
+void st_brief_text(uint8_t slot, char *buf, uint16_t dep, uint16_t craft) __banked
+{
+	r_alienDeployments_t d;
+	buf[0] = 0;
+	if (slot == 0 || slot == 3) {
+		if (brief(dep, &d)) str_copy(slot ? d.briefing_desc : d.briefing_title, buf, slot ? 1024 : 64);
+		return;
+	}
+	if (craft >= MAX_CRAFTS || ST->craft[(uint8_t)craft].type == NONE8) return;
+	const craft_t *cr = &ST->craft[(uint8_t)craft];
+	if (slot == 1) { target_name(cr->dest_kind, cr->dest, buf); return; }
+	char n[32];                                  // STR_CRAFT_: «Craft> {0}»
+	craft_name((uint8_t)craft, n);
+	str_fmt(buf, str_get(STR_CRAFT_), n, "");
+}
+
+uint8_t st_brief_event(uint8_t ev, uint8_t arg, uint16_t dep) __banked
+{
+	r_alienDeployments_t d;
+	uint8_t ok = brief(dep, &d);
+	if (ev == EVT_MUSIC) { if (ok && d.briefing_music != 0xFF) mus_play(MUS_BASE + d.briefing_music); }
+	else if (ev == EVT_DRAW) {
+		if (st_bstage) bv_pause();               // поверх боя: сплит вида снять (окно — во весь экран)
+		if (ok) gfx_palette(RES_PAL_GEOSCAPE, (int8_t)d.briefing_pal);
+	}
+	else if (ev == EVT_BUTTON && arg == 1) {
+		if (st_bstage) { st_bstage = 0; UI_GO(A_POP, 0); }
+		else UI_GO(A_POP_PUSH, SCR_BATTLE);
+	}
+	return 0;
+}
+
 // targetType части пола (Tile::getMapData(O_FLOOR)->getSpecialType(); loader.h TV_PROPS, байт 10)
 static uint8_t special(uint8_t page, uint8_t part)
 {
@@ -114,7 +220,7 @@ static uint8_t has_exit(uint8_t page)
 	return 0;
 }
 
-uint8_t st_abort_get(sdef_t *s, wdef_t *w, uint8_t page, uint16_t dep) __banked
+static uint8_t abort_get(sdef_t *s, wdef_t *w, uint8_t page, uint16_t dep)
 {
 	scr_find(&tab_abort, 1, SCR_ABORT, s, w);
 	if (st_next(dep) == 0xFFFF || !has_exit(page)) {
