@@ -79,6 +79,13 @@ static uint8_t sel;                      // выбранный боец (пан�
 extern volatile uint16_t frames;         // crt0.s
 // Рабочая страница боя: массивы поиска пути, свойства частей и таблицы графики миссии
 static uint8_t pf_page = PG_NONE;
+// Память банка 31 (tools/build.ps1 ram = #B800; Win1 полон): только для кода этого банка
+// Паника (bact2.c ba_panic): кто запаниковал в начале хода — окна по очереди (handlePanickingUnit)
+static uint8_t __at(0xB800) pn_list[8];
+static uint8_t __at(0xB808) pn_n;
+static uint8_t __at(0xB809) pn_i;
+static uint8_t __at(0xB80A) ib_t;        // окно сообщения: кадр открытия
+static uint8_t __at(0xB80B) hit_pend;    // выбран удар — выполнить в такте боя (меню закрыто)
 
 static const wdef_t w_battle[] = {
 	// Виджет карты: рисует экран (EVT_DRAW) и отдаёт клики экрану (EVT_BUTTON, arg 0) —
@@ -157,7 +164,15 @@ static const wdef_t w_bpause[] = {
 	TXT(57, 32, 206, 17, UI_EL_BATTLESCAPETHEME, STR_OPTIONS_UC, BIG | TC),
 };
 
+// InfoboxState (Battlescape/InfoboxState.cpp:36-65): рамка 261x122 в (34, 10) толщиной 9 с контрастом,
+// крупный текст по центру с переносом
+static const wdef_t w_info[] = {
+	CUS(34, 10, 261, 122, NOSTR, A_POP, 0),
+	TXT(39, 15, 251, 112, UI_EL_INFOBOX, DYN(0), TC | TM | TW | BIG),
+};
+
 static const scr_t tab[] = {
+	SCR(SCR_INFOBOX, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, 0, SF_POPUP | SF_RAWPAL, w_info),
 	SCR(SCR_BATTLE, UI_SCR_SAVEMENUS, RES_PAL_BATTLESCAPE, 0, SF_RAWPAL, w_battle),
 	SCR(SCR_NEXT_TURN, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_RAWPAL, w_next),
 	SCR(SCR_ACTION_MENU, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, 0, SF_POPUP | SF_RAWPAL, w_amenu),
@@ -197,7 +212,7 @@ static void marks_on(void)
 	marks_show(nmarks, ui_color_in(UI_SCR_BATTLESCAPE, UI_EL_VISIBLEUNITS, 0));
 }
 
-static uint8_t wl_spot;                  // на этом шаге замечен новый пришелец — путь обрывается
+static uint8_t __at(0xB80C) wl_spot;     // на этом шаге замечен новый пришелец — путь обрывается
 
 static void see_update(void)
 {
@@ -545,6 +560,8 @@ static uint8_t load_gen(uint16_t terrain)
 	bv_sync(nunits);
 	an_on = 0;
 	bt_turn = 1;
+	pn_n = pn_i = 0;                     // память банка не обнуляется
+	hit_pend = wl_spot = 0;
 	bt_side = FACTION_PLAYER;
 	gen_mode = 1;
 	sel = 0;
@@ -600,6 +617,15 @@ static uint16_t ufo_deploy(uint8_t utype)
 // время и энергию (BattleUnit::prepareNewTurn -> recoverTimeUnits; вес снаряжения и раны — со
 // стрельбой), чужие прячутся до нового пересчёта обзора. После хода — окно NextTurnState.
 // Хода пришельцев (ИИ) ещё нет: их ход кончается сразу.
+// Паника стороны (bact2.c, банк 37): список — через стек, память этого банка оттуда не видна
+static void panic_roll(uint8_t side)
+{
+	uint8_t l[8];
+	pn_n = ba_panic(pf_page, side, nunits, l, sizeof l);
+	memcpy(pn_list, l, sizeof l);
+	pn_i = 0;
+}
+
 static void side_prepare(uint8_t side)
 {
 	for (uint8_t i = 0; i < nunits; i++) {
@@ -630,6 +656,7 @@ static void end_turn(void)
 	if (fuses() || battle_end(0)) return;   // пришельцев или отряда нет — разбор
 	bt_side = FACTION_HOSTILE;
 	side_prepare(FACTION_HOSTILE);
+	panic_roll(FACTION_HOSTILE);         // prepareNewTurn
 	for (uint8_t i = 0; i < nsold; i++) ru_put(i);
 	hide_aliens();                       // setVisible(false) не своим, обзор заново
 	path_n = 0;
@@ -727,6 +754,7 @@ static void ai_run(void)
 	bt_side = FACTION_PLAYER;
 	bt_turn++;
 	side_prepare(FACTION_PLAYER);
+	panic_roll(FACTION_PLAYER);          // prepareNewTurn
 	ai_round(&c, bt_turn);               // что пришельцы знают об отряде (turnsSinceSpotted)
 	if (sel < nsold && !units[sel].alive) sel_step(0);   // выбранного убили — следующий живой
 	hide_aliens();                       // ушедшие из вида за свой ход — невидимы (endTurn)
@@ -771,7 +799,20 @@ static void aim_off(void)
 	bv_aim(0);
 }
 
-static uint8_t hit_pend;                 // выбран удар — выполнить в такте боя (меню закрыто)
+
+// Следующий запаниковавший: «… has panicked» / «… has gone berserk» в окне, камера на него, если виден
+static void panic_show(void)
+{
+	uint8_t e = pn_list[pn_i++];
+	const unit_t *u = &units[e & 0x7F];
+	char name[48];
+	uint8_t fem = stats_name(u->sol, u->type, 0, name);   // строки — по роду (getString(id, gender))
+	str_fmt(ui_msg, str_get((e & 0x80) ? STR_HAS_GONE_BERSERK_MALE + fem : STR_HAS_PANICKED_MALE + fem), name, "");
+	if (u->seen || u->faction == FACTION_PLAYER) bv_center(u->x, u->y);
+	bv_snapshot();
+	marks_show(0, 0);
+	UI_GO(A_PUSH, SCR_INFOBOX);
+}
 
 static void shoot(uint8_t tx, uint8_t ty)
 {
@@ -914,6 +955,7 @@ void bat_text(uint8_t id, uint8_t slot, uint8_t line, char *buf) __banked
 		str_plural(buf, slot ? STR_UNITS_OUTSIDE_one : STR_UNITS_IN_CRAFT_one, slot ? out : in);
 		return;
 	}
+	if (id == SCR_INFOBOX) { strcpy(buf, ui_msg); return; }
 	if (id != SCR_NEXT_TURN) return;
 	char a[16];
 	if (slot == 0) fmt_num(a, bt_turn, 0);                              // TURN> n
@@ -936,6 +978,14 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		return 0;
 	}
 	if (id == SCR_ACTION_MENU) { amenu_event(ev, arg); return 0; }
+	if (id == SCR_INFOBOX) {                 // InfoboxState: само закрывается через 2 с, или клик/клавиша
+		if (ev == EVT_OPEN) ib_t = (uint8_t)frames;
+		else if (ev == EVT_DRAW)
+			gfx_frame(34, 10, 261, 122, ui_color(UI_EL_INFOBOX, 0), ui_color(UI_EL_INFOBOX, 1), 9, 2);
+		else if (ev == EVT_TICK) { uint8_t f = (uint8_t)frames; f -= ib_t; if (f >= 100) UI_GO(A_POP, 0); }
+		else if (ev == EVT_KEY) UI_GO(A_POP, 0);
+		return 0;
+	}
 	if (id == SCR_PRIME) { prime_event(ev, arg); return 0; }
 	if (id == SCR_BATTLE_PAUSE) return 0;   // кнопки ведут в окна меню сами
 	if (id == SCR_UNIT_INFO) {
@@ -977,6 +1027,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 		break;
 	case EVT_TICK: {
 		if (!gen_mode || !loaded) break;
+		if (pn_i < pn_n && bv_walking() == 0xFF) { panic_show(); break; }   // сперва — окна паники
 		if (bt_side == FACTION_HOSTILE) { ai_run(); break; }
 		if (hit_pend) {                      // удар в клетку перед бойцом
 			const unit_t *u = &units[sel < nsold ? sel : 0];

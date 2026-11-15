@@ -96,25 +96,36 @@ static void line(uint16_t name, uint8_t v, uint8_t max, uint8_t el, uint8_t v2)
 	sbar(y + 1, v, v2, max, ui_color_in(UI_SCR_STATS, el, 0), ui_color_in(UI_SCR_STATS, el, 1));
 }
 
+uint8_t stats_name(uint8_t sol, uint16_t type, uint8_t rank, char *name) __banked
+{
+	uint8_t female = 0;
+	uint16_t s16 = sol;                  // сравнение байта-параметра SDCC 4.5 портит (CLAUDE.md) — словом
+	name[0] = 0;
+	if (s16 != 0xFF) {                   // солдат: (звание и) имя
+		soldier_t so;
+		far_read(FAR(SOLDIER_PAGE, 0) + (uint16_t)sol * sizeof so, &so, sizeof so);
+		female = (so.look & SF_FEMALE) != 0;
+		if (rank) {
+			str_copy(rank_str[so.rank < 6 ? so.rank : 0], name, 24);
+			strcat(name, " ");
+		}
+		uint8_t l = (uint8_t)strlen(name);
+		memcpy(name + l, so.name, SOLDIER_NAME);
+		name[l + SOLDIER_NAME] = 0;
+	} else if (type != 0xFFFF) {         // пришелец: название из units
+		rtab_t t;
+		if (rtab_open(RES_RULE_UNITS, &t) && type < t.n) str_copy(rtab_word(&t, type, 0), name, 40);
+	}
+	return female;
+}
+
 void stats_draw(const ustat_t *s) __banked
 {
 	char name[48];
 	c_txt = ui_color_in(UI_SCR_STATS, UI_EL_TEXT, 0);
 	c_num = ui_color_in(UI_SCR_STATS, UI_EL_TEXT, 1);
 	gfx_blit(RES_UNIBORD_PCK, 0, 0, 0, 0, 320, 200);
-	name[0] = 0;
-	if (s->sol != 0xFF) {                // солдат: звание и имя
-		soldier_t so;
-		far_read(FAR(SOLDIER_PAGE, 0) + (uint16_t)s->sol * sizeof so, &so, sizeof so);
-		str_copy(rank_str[so.rank < 6 ? so.rank : 0], name, 24);
-		strcat(name, " ");
-		uint8_t l = (uint8_t)strlen(name);
-		memcpy(name + l, so.name, SOLDIER_NAME);
-		name[l + SOLDIER_NAME] = 0;
-	} else if (s->type != 0xFFFF) {      // пришелец: название из units
-		rtab_t t;
-		if (rtab_open(RES_RULE_UNITS, &t) && s->type < t.n) str_copy(rtab_word(&t, s->type, 0), name, 40);
-	}
+	stats_name(s->sol, s->type, 1, name);
 	uint8_t cn = ui_color_in(UI_SCR_STATS, UI_EL_TEXTNAME, 0);
 	tbox_t tb = { 16, 4, 288, 17, FNT_BIG, cn, cn, TX_CENTER | TX_CONTRAST };
 	text_draw(&tb, name);

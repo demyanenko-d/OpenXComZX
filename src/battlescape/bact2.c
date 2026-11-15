@@ -19,6 +19,7 @@
 #include "str_ids.h"
 #include "bgren.h"
 #include "bact.h"
+#include "game.h"
 
 uint8_t ba_fill(const bashot_t *q, fu_t *f, shot_t *s) __banked;   // bact.c
 uint8_t ba_melee(const bashot_t *a, const unit_t *u, const r_items_t *w, uint8_t go) __banked;
@@ -67,6 +68,39 @@ static uint16_t throw_it(bafire_t *q, unit_t *u, uint16_t bi, const bitem_t *b, 
 	bv_sync(n);
 	bv_cell(r.lx, r.ly, r.lz);
 	return 0;
+}
+
+// Паника в начале хода стороны (BattleUnit::prepareNewTurn :1710-1725, BattlescapeGame::
+// handlePanickingUnit :1267-1335, UnitPanicBState): у живого 1x1 шанс 100 − 2 · мораль; треть —
+// берсерк, остальные — паника, из них половина бросает оружие из рук на пол. Потом время 0,
+// мораль +15. Упрощено: паникующий не убегает, берсерк не стреляет (14_todo). В list — номера
+// (бит 7 — берсерк); вернёт их число (до max)
+uint8_t ba_panic(uint8_t page, uint8_t side, uint8_t n, uint8_t *list, uint8_t max) __banked
+{
+	uint8_t cnt = 0;
+	for (uint8_t i = 0; i < n && cnt < max; i++) {
+		unit_t u;
+		u_get(i, &u);
+		uint8_t f = u.faction;               // сравнения — с копиями (SDCC 4.5)
+		if (!u.alive || f != side || u.size != 1) continue;
+		int16_t chance = 100 - 2 * (int16_t)u.mor;
+		if ((int16_t)rng_range(1, 100) > chance) continue;
+		uint8_t berserk = rng_range(0, 100) <= 33;
+		if (!berserk && rng_range(0, 100) <= 50)         // бросает оружие
+			for (uint8_t h = 0; h < 2; h++) {
+				bitem_t b;
+				uint16_t bi = bi_hand(page, i, h, &b);
+				if (!bi) continue;
+				far_fill(FAR(page + 1, TL_BITEMS) + (bi - 1) * sizeof(bitem_t), BI_GROUND, 1);
+				fl_drop(page, bi - 1, u.x, u.y, u.z);
+			}
+		u.tu = 0;
+		u.mor = u.mor > 85 ? 100 : (uint8_t)(u.mor + 15);
+		u_set(i, &u);
+		list[cnt++] = (uint8_t)(i | (berserk ? 0x80 : 0));
+	}
+	if (cnt) { bi_hands(page, n); bv_sync(n); }
+	return cnt;
 }
 
 uint16_t ba_fire(bafire_t *q) __banked

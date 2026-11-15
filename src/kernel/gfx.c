@@ -372,6 +372,20 @@ void gfx_rings(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c) __banked
 	}
 }
 
+// Frame::draw (Interface/Frame.cpp:120-163): t колец, средняя — цвет c; к краям темнее на 1 (при
+// контрасте — на 2) от середины, у толстой рамки (t > 5) крайние кольца — темнейший цвет блока;
+// внутри — bg
+void gfx_frame(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c, uint8_t bg, uint8_t t, uint8_t mul) __banked
+{
+	uint8_t k = (uint8_t)(c + ((1 + t) * mul) / 2), dark = (uint8_t)((c & 0xF0) + 15);
+	for (uint8_t i = 0; i < t; i++) {
+		ring(x, y, w, h, (t > 5 && (!i || i == t - 1)) ? dark : k);
+		if (i < t / 2) k -= mul; else k += mul;
+		x++; y++; w -= 2; h -= 2;
+	}
+	gfx_fill(x, y, w, h, bg);
+}
+
 // Window::popup / draw: 10 шагов по кадру (POPUP_SPEED 0.05 по 10 мс у OpenXcom — те же ~200 мс), рамка
 // растёт от середины по горизонтали (flags & 2) и/или вертикали (flags & 4): 5 колец c+3, c+2, c+1, c+2,
 // c+3, внутри — фон окна bg (или c+3). Растёт — прошлый шаг накрыт, фон под окном не нужен.

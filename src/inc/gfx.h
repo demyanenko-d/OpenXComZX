@@ -44,6 +44,8 @@ uint8_t gfx_bgsave(uint8_t lvl, int16_t x, int16_t y, int16_t w, int16_t h) __ba
 uint8_t gfx_bgrestore(uint8_t lvl, uint8_t draw) __banked;
 // Рамка окна: 5 колец c+3, c+2, c+1, c+2, c+3 (Window::draw)
 void gfx_rings(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c) __banked;
+// Рамка Frame: t колец вокруг цвета c (mul 2 — высокий контраст), внутри — bg
+void gfx_frame(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c, uint8_t bg, uint8_t t, uint8_t mul) __banked;
 // Window::popup: рамка окна растёт 10 кадров (flags: 2 — по горизонтали, 4 — по вертикали), фон — bg или c+3
 void gfx_popup(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t c, uint16_t bg, uint8_t flags) __banked;
 

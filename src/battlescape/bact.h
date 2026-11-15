@@ -36,5 +36,7 @@ typedef struct {
 	uint8_t hand, tu;
 } bafire_t;
 uint16_t ba_fire(bafire_t *q) __banked;
+// Паника в начале хода стороны side (bact2.c): кто запаниковал — номера в list (бит 7 — берсерк)
+uint8_t ba_panic(uint8_t page, uint8_t side, uint8_t n, uint8_t *list, uint8_t max) __banked;
 
 #endif
