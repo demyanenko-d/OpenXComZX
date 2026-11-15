@@ -406,11 +406,9 @@ static void fog_update(const vu_t *u, uint8_t nsold)
 		uint8_t x = v->x, y = v->y, z = (uint8_t)(v->z + (eye_bits(v) & EYE_FOG)), d = v->dir & 7;
 		uint8_t l0 = l[0], l1 = l[1], l2 = l[2], l3 = l[3];
 		uint8_t again = all == 1;
-		if (all == 2) {                    // дверь: только тем, кому она в пределах обзора
-			uint8_t ax = fd_x, ay = fd_y;
-			uint8_t ddx = x > ax ? x - ax : ax - x, ddy = y > ay ? y - ay : ay - y;
-			again = ddx <= MAX_VIEW && ddy <= MAX_VIEW;
-		}
+		// дверь: только тем, у кого она в секторе обзора — туман растёт только в секторе, а полный
+		// пересчёт шестерых в поле после двери стоил ~450 кадров
+		if (all == 2) again = in_cone(d, (int8_t)(fd_x - x), (int8_t)(fd_y - y));
 		if (!again && l0 == x && l1 == y && l2 == z && l3 == d) continue;
 		l[0] = x; l[1] = y; l[2] = z; l[3] = d;
 		uint8_t nq = (v->flags & VU_BIG) ? 4 : 1;
@@ -631,8 +629,11 @@ void vis_cell(far_t cells, uint8_t x, uint8_t y, uint8_t z, uint8_t page) __bank
 	}
 	uint8_t m = cell_mask(c, fl, bw);
 	far_write(FAR(vm_page, 0) + i, &m, 1);
-	// обзор сменился — сектора бойцов в пределах обзора от двери заново (calculateFOV(pos));
-	// вторая дверь до пересчёта — тогда уже всех
-	if (fog_all) fog_all = 1;
-	else { fog_all = 2; fd_x = x; fd_y = y; }
+	// обзор сменился — сектора бойцов, у кого дверь в секторе, заново (calculateFOV(pos)); вторая
+	// дверь до пересчёта — всех, кроме соседней створки той же двери (пара створок НЛО)
+	uint8_t ax = fd_x, ay = fd_y, all = fog_all;   // сравнения — с копиями (SDCC 4.5)
+	if (!all) { fog_all = 2; fd_x = x; fd_y = y; }
+	else if (all == 2) {
+		if ((uint8_t)(x - ax + 1) > 2 || (uint8_t)(y - ay + 1) > 2) fog_all = 1;
+	}
 }

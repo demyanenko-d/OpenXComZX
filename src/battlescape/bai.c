@@ -47,6 +47,13 @@ static uint8_t __at(0xBF35) ai_walk;     // идёт шаг с анимацие�
 static uint8_t __at(0xBF36) ai_wx;       // куда шаг
 static uint8_t __at(0xBF37) ai_wy;
 static uint8_t __at(0xBF38) ai_aim;      // повернулся к цели — выстрел в следующем такте (карта видна)
+static uint8_t __at(0xBF39) ai_door;     // едут створки НЛО, открытые пришельцем (doors_anim)
+static uint8_t __at(0xBF3A) ai_dtm;      //   кадр (frames), когда сменили их кадр
+// Сценарии: путь патруля задан извне — ED:3F3B число шагов (до 4), ED:3F3C.. направления; берётся
+// вместо случайного узла первым же патрулём (tests/bat_aidoor.oxs) и сбрасывается
+static uint8_t __at(0xBF3B) ai_dbgn;
+#define AI_DBGP ((uint8_t *)0xBF3C)
+extern volatile uint16_t frames;         // crt0.s
 // #BF40..#BF67 — ai_tss[MAX_BUNITS], turnsSinceSpotted (bai.h)
 #define CHEAT_TURN 20                     // AlienDeployment::_cheatTurn по умолчанию
 
@@ -147,6 +154,7 @@ void ai_tss_init(const aictx_t *c) __banked
 {
 	memset(ai_tss, 255, MAX_BUNITS);
 	memset(ai_hitby, 0, MAX_BUNITS * 2);
+	ai_dbgn = 0;
 	spot_reset(c);
 }
 
@@ -178,7 +186,7 @@ void ai_start(const aictx_t *c) __banked
 {
 	spot_all(c);                                     // recalculateFOV в endTurn
 	ai_a = 0;
-	ai_pn = ai_pi = ai_moved = ai_atk = ai_walk = ai_aim = 0;
+	ai_pn = ai_pi = ai_moved = ai_atk = ai_walk = ai_aim = ai_door = 0;
 }
 
 // Следующий пришелец
@@ -357,6 +365,11 @@ static void plan_patrol(const aictx_t *c, unit_t *u)
 	far_t np;
 	uint16_t nn = mapgen_nodes(&np), to = 0xFFFF;
 	bnode_t b;
+	if (ai_dbgn && ai_dbgn <= 4) {                   // путь от сценария
+		memcpy(ai_path, AI_DBGP, ai_dbgn);
+		ai_pn = ai_dbgn; ai_pi = 0; ai_dbgn = 0;
+		return;
+	}
 	if (!nn) return;
 	if (u->node < nn) {
 		far_read(np + (uint32_t)u->node * sizeof b, &b, sizeof b);
@@ -379,6 +392,26 @@ static void plan_patrol(const aictx_t *c, unit_t *u)
 	if (ai_pn) { u->node = to; u_set(ai_a, u); }
 }
 
+// Клетки двери сменились: перерисовать и пересчитать маску обзора (тройки x, y, z до #FF)
+static void door_cells(const aictx_t *c, const uint8_t *cl, uint8_t n)
+{
+	for (uint8_t i = 0; i < n && cl[i * 3] != 0xFF; i++) {
+		bv_cell(cl[i * 3], cl[i * 3 + 1], cl[i * 3 + 2]);
+		vis_cell(c->cells, cl[i * 3], cl[i * 3 + 1], cl[i * 3 + 2], c->page);
+	}
+}
+
+// Створки НЛО едут — кадр раз в 100 мс (Tile::animate); 1 — ещё едут
+static uint8_t door_anim(const aictx_t *c, const dmap_t *m)
+{
+	uint8_t parts[5], cl[15];
+	ai_door = doors_anim(m, parts, cl);
+	ai_dtm = (uint8_t)frames;
+	for (uint8_t i = 0; parts[i]; i++) bv_tile(parts[i]);
+	door_cells(c, cl, 5);
+	return ai_door;
+}
+
 // Шаг по пути: на виду — с анимацией, иначе сразу. 0 — шагать некуда (путь кончился, время, занято)
 static uint8_t step(const aictx_t *c, unit_t *u)
 {
@@ -388,8 +421,25 @@ static uint8_t step(const aictx_t *c, unit_t *u)
 	if (nx < 0 || ny < 0 || nx >= c->sx || ny >= c->sy) { ai_pn = 0; return 0; }
 	dmap_t m;
 	m.cells = c->cells; m.sx = c->sx; m.sy = c->sy; m.sz = c->sz; m.page = c->page;
-	uint8_t cost = cell_cost(&m, (uint8_t)nx, (uint8_t)ny, u->z, d, STEP_TU);
-	if (!cost || u->tu < cost) { ai_pn = 0; return 0; }
+	{                                                // дверь на пути — сперва открыть (UnitWalkBState:
+		uint8_t list[12], spent = 0;                 //   unitOpensDoor), шаг — в следующем такте
+		memset(list, 0xFF, sizeof list);
+		uint8_t r = door_open(&m, u->x, u->y, u->z, d, 0, u->tu, &spent, list, 4);
+		if (r == 1) { ai_pn = 0; return 0; }         // не хватило времени — путь прерван
+		if (r == 0 || r == 3) {                      // открыл (или створка НЛО ещё едет — ждать)
+			u->tu -= spent;
+			u->dir = d;
+			u_set(ai_a, u);
+			show(c, ai_a, u);
+			if (r == 0 && !door_anim(c, &m))         // обычная дверь: клетки (пары x, y) — сразу
+				for (uint8_t i = 0; i < 4 && list[i * 2] != 0xFF; i++) {
+					bv_cell(list[i * 2], list[i * 2 + 1], u->z);
+					vis_cell(c->cells, list[i * 2], list[i * 2 + 1], u->z, c->page);
+				}
+			return 1;
+		}
+	}
+	uint8_t cost = cell_cost(&m, (uint8_t)nx, (uint8_t)ny, u->z, d, STEP_TU);	if (!cost || u->tu < cost) { ai_pn = 0; return 0; }
 	for (uint8_t i = 0; i < c->n; i++) {             // клетка занята — стоп
 		unit_t o;
 		if (i == ai_a) continue;
@@ -460,6 +510,14 @@ uint8_t ai_tick(const aictx_t *c) __banked
 static uint8_t ai_step(const aictx_t *c)
 {
 	unit_t u;
+	if (ai_door) {                                   // створки НЛО едут — пришелец ждёт
+		uint8_t f = (uint8_t)frames, t = ai_dtm;     // сравнения — с копиями (SDCC 4.5)
+		f -= t;
+		if (f < 5) return 0;
+		dmap_t m;
+		m.cells = c->cells; m.sx = c->sx; m.sy = c->sy; m.sz = c->sz; m.page = c->page;
+		return door_anim(c, &m) ? 0 : AI_SEE;        // обзор отряда — раз, когда доехали
+	}
 	if (ai_walk) {                                   // шаг с анимацией
 		uint8_t r = bv_walk_tick();
 		if (r == 1) {                                // середина: числится в новой клетке
@@ -505,6 +563,13 @@ static uint8_t ai_step(const aictx_t *c)
 		}
 		next_alien();
 		return 0;                                    // по пришельцу на такт
+	}
+	{                                                // конец хода: двери НЛО закрываются (endTurn)
+		uint8_t list[24];
+		dmap_t m;
+		m.cells = c->cells; m.sx = c->sx; m.sy = c->sy; m.sz = c->sz; m.page = c->page;
+		memset(list, 0xFF, sizeof list);
+		door_cells(c, list, doors_close_ufo(&m, list, 8));
 	}
 	return AI_DONE;
 }

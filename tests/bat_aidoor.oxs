@@ -1,0 +1,55 @@
+# Пришелец открывает дверь на пути (UnitWalkBState: unitOpensDoor, bai.c step): отладочный бой,
+# дверь корабля — западная стена клетки (16,16) (клавиша D её находит). Пришельца (units[6]) ставим
+# в (16,16) лицом на запад, отряд — подальше и лицом на юг (дверь не в их секторе — обзор после
+# двери не пересчитывается, findings_log 2026-11-15). Путь патруля задаёт сценарий: ED:3F3B = 1 шаг,
+# ED:3F3C = 6 (запад; bai.c ai_dbgn). В ход пришельцев: дверь открывается (время 54 -> 50, стена
+# #DE -> #C1 — створка НЛО едет), доехала (ai_door #3F39 = 0), шаг в (15,16) (50 -> 46); в конце
+# хода пришельцев створки закрываются (#DE).
+# Клетки карты отладочного боя — страница #D3 (клетка (16,16) — #0A40).
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_aidoor.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _bat_still 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+expect D3:0A41 222
+poke 4E:3880 3
+poke 4E:3881 34
+poke 4E:3883 4
+poke 4E:38B0 3
+poke 4E:38B1 30
+poke 4E:38B3 4
+poke 4E:38E0 4
+poke 4E:38E1 30
+poke 4E:38E3 4
+poke 4E:3910 5
+poke 4E:3911 30
+poke 4E:3913 4
+poke 4E:3940 6
+poke 4E:3941 30
+poke 4E:3943 4
+poke 4E:3970 7
+poke 4E:3971 30
+poke 4E:3973 4
+poke 4E:39A0 16
+poke 4E:39A1 16
+poke 4E:39A3 6
+poke ED:3F3C 6
+poke ED:3F3B 1
+pokew _cursor_x 250
+pokew _cursor_y 150
+click L
+wait 60
+click L
+wait 400
+expect ED:3F39 0
+expect 4E:39A0 15
+expect 4E:39A1 16
+expect 4E:39A6 46
+# ход пришельцев кончился — створки НЛО закрыты снова (endTurn -> closeUfoDoors)
+expect scr_battle$bt_side 0
+expect D3:0A41 222
+exit 0
