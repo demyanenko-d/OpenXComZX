@@ -302,14 +302,72 @@ static uint8_t gren(const aictx_t *c, unit_t *u, const vu_t *v, uint8_t tg, uint
 	return 1;
 }
 
+// Оружие ближнего боя в руке (getMeleeWeapon): BT_MELEE с ценой удара
+static uint8_t club(const aictx_t *c, uint8_t a, bitem_t *b, uint8_t *right, r_items_t *w)
+{
+	rtab_t t;
+	if (!rtab_open(RES_RULE_ITEMS, &t)) return 0;
+	for (uint8_t h = 1; h != 0xFF; h--) {
+		if (!bi_hand(c->page, a, h, b) || b->item >= t.n) continue;
+		rtab_get(&t, b->item, w);
+		if (w->battle_type == BT_MELEE && w->tu_melee) { *right = h; return 1; }
+	}
+	return 0;
+}
+
+// Ближний бой (meleeAction, :1620-1680; MeleeAttackBState): цель рядом — поворот, в следующем такте
+// удар; иначе путь к ней на время за вычетом удара (selectPointNearTarget — у нас путь в клетку цели,
+// шаг в занятую клетку и так останавливает рядом). 1 — действовал
+static uint8_t melee_ai(const aictx_t *c, unit_t *u, const vu_t *t, uint8_t right, const r_items_t *w)
+{
+	uint8_t cost = tu_cost(u, w, w->tu_melee);
+	if (u->tu < cost) return 0;
+	int16_t dx = (int16_t)t->x - u->x, dy = (int16_t)t->y - u->y;
+	if (t->z == u->z && dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1) {
+		if (!ai_aim) {
+			u->dir = dir_to(dx, dy);
+			u_set(ai_a, u);
+			show(c, ai_a, u);
+			if (u->seen) bv_cell(u->x, u->y, u->z);
+			ai_aim = 1;
+			return 1;
+		}
+		ai_aim = 0;
+		bafire_t q;
+		q.s.page = c->page; q.s.cells = c->cells; q.s.sx = c->sx; q.s.sy = c->sy; q.s.sz = c->sz;
+		q.s.shooter = ai_a; q.s.n = c->n; q.s.tx = t->x; q.s.ty = t->y; q.s.tz = t->z;
+		q.s.action = BA_HIT; q.s.acc = 0;
+		q.hand = right; q.tu = cost;
+		ba_fire(&q);
+		u_get(ai_a, u);
+		ai_atk++;
+		return 1;
+	}
+	if (ai_pi < ai_pn || u->tu <= cost) return 0;    // уже идёт к цели
+	pf_req_t r;
+	r.cells = c->cells; r.sx = c->sx; r.sy = c->sy; r.z = u->z; r.sz = c->sz;
+	r.fx = u->x; r.fy = u->y; r.tx = t->x; r.ty = t->y;
+	r.budget = (uint8_t)(u->tu - cost); r.step = STEP_TU; r.page = c->page;
+	uint8_t path[PATH_MAX];
+	ai_pn = pf_find(&r, path, PATH_MAX);
+	if (ai_pn) ai_pn--;                              // последний шаг — в клетку цели: встать рядом
+	memcpy(ai_path, path, ai_pn);
+	ai_pi = 0;
+	ai_moved = 1;
+	return 0;
+}
+
 // Атака видимого бойца: 1 — выстрелил
 static uint8_t attack(const aictx_t *c, unit_t *u)
 {
 	if (ai_atk >= ATK_MAX) return 0;
 	bitem_t b;
-	uint8_t right;
+	uint8_t right, hit = 0;
 	r_items_t w;
-	if (!gun(c, ai_a, &b, &right, &w)) return 0;
+	if (!gun(c, ai_a, &b, &right, &w)) {
+		if (!club(c, ai_a, &b, &right, &w)) return 0;
+		hit = 1;
+	}
 	// цель (selectNearestTarget, validTarget): ближайший не-пришелец, о котором знают (счёт
 	// turnsSinceSpotted не больше intelligence) и которого видно без сектора (TileEngine::visible)
 	vu_t v[MAX_BUNITS];
@@ -325,6 +383,7 @@ static uint8_t attack(const aictx_t *c, unit_t *u)
 		if (d2 < best && vis_pair(v, ai_a, i, 0)) { best = d2; tg = i; }
 	}
 	if (tg == 0xFF) return 0;
+	if (hit) return melee_ai(c, u, &v[tg], right, &w);
 	if (!ai_aim && gren(c, u, v, tg, intel)) { ai_atk++; return 1; }   // граната — раньше оружия
 	if (best > (uint16_t)w.max_range * w.max_range) return 0;
 	uint16_t dist = isqrt(best);

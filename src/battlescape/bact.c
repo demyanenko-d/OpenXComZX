@@ -20,6 +20,7 @@
 #include "bgren.h"
 #include "bact.h"
 #include "bai.h"
+#include "game.h"
 
 static void u_get(uint8_t i, unit_t *u)
 {
@@ -62,11 +63,40 @@ static uint8_t fill(const bashot_t *q, fu_t *f, shot_t *s)
 	return n;
 }
 
+// Попадание по юниту h (TileEngine::hit): урон с бронёй по стороне — от точки удара (vx, vy, vz),
+// мораль; выбывший — со сцены. Стрелок замечен пришельцами и помнится раненым (gotHit)
+static void hurt(uint8_t page, uint8_t n, uint8_t shooter, uint8_t h, int16_t vx, int16_t vy, int16_t vz,
+		 uint16_t power, uint8_t type, uint8_t height)
+{
+	unit_t v;
+	u_get(h, &v);
+	dmg_t d;
+	uint8_t hs = v.size * 8;
+	d.power = power; d.type = type;
+	d.rx = vx - ((int16_t)v.x * 16 + hs); d.ry = vy - ((int16_t)v.y * 16 + hs);
+	d.rz = vz - (int16_t)v.z * 24;
+	d.dir = v.dir; d.height = height; d.armor_rule = v.armor_rule;
+	memcpy(d.armor, v.armor, 5);
+	d.hp = v.hp; d.stun = v.stun;
+	uint8_t adj = fire_damage(&d);
+	memcpy(v.armor, d.armor, 5);
+	v.hp = d.hp; v.stun = d.stun;
+	uint16_t loss = (uint16_t)adj * ((110 - v.bravery) / 10) / 10;
+	v.mor = loss >= v.mor ? 0 : (uint8_t)(v.mor - loss);
+	uint8_t dead = !v.hp || v.stun >= v.hp;
+	if (dead) v.alive = 0;
+	if (v.faction == FACTION_HOSTILE) {          // попал в пришельца — его заметили (ProjectileFlyBState:794)
+		ai_tss[shooter] = 0;
+		if (shooter < 16) ai_hitby[h] |= (uint16_t)1 << shooter;   // setWasHitBy
+	} else ai_hitby[h] = 1;                      // hitState
+	u_set(h, &v);
+	if (dead) ba_kill(page, h, n);
+}
+
 uint8_t ba_shot(const bashot_t *q) __banked
 {
 	rtab_t t;
 	r_items_t w;
-	unit_t v;
 	if (!rtab_open(RES_RULE_ITEMS, &t) || q->weapon >= t.n) return 0xFF;
 	rtab_get(&t, q->weapon, &w);
 	uint16_t power = w.power;
@@ -86,29 +116,40 @@ uint8_t ba_shot(const bashot_t *q) __banked
 		fx_shot(&x);
 	}
 	if (s.res != V_UNIT || s.hit == 0xFF) return 0xFF;
-	u_get(s.hit, &v);                            // TileEngine::hit: урон, мораль
-	dmg_t d;
-	uint8_t hs = v.size * 8;
-	d.power = power; d.type = type;
-	d.rx = s.vx - ((int16_t)v.x * 16 + hs); d.ry = s.vy - ((int16_t)v.y * 16 + hs);
-	d.rz = s.vz - (int16_t)v.z * 24;
-	d.dir = v.dir; d.height = f[s.hit].height; d.armor_rule = v.armor_rule;
-	memcpy(d.armor, v.armor, 5);
-	d.hp = v.hp; d.stun = v.stun;
-	uint8_t adj = fire_damage(&d);
-	memcpy(v.armor, d.armor, 5);
-	v.hp = d.hp; v.stun = d.stun;
-	uint16_t loss = (uint16_t)adj * ((110 - v.bravery) / 10) / 10;
-	v.mor = loss >= v.mor ? 0 : (uint8_t)(v.mor - loss);
-	uint8_t dead = !v.hp || v.stun >= v.hp;
-	if (dead) v.alive = 0;
-	if (v.faction == FACTION_HOSTILE) {          // попал в пришельца — его заметили (ProjectileFlyBState:794)
-		ai_tss[q->shooter] = 0;
-		if (q->shooter < 16) ai_hitby[s.hit] |= (uint16_t)1 << q->shooter;   // setWasHitBy
-	} else ai_hitby[s.hit] = 1;                  // hitState
-	u_set(s.hit, &v);
-	if (dead) ba_kill(q->page, s.hit, n);
+	hurt(q->page, n, q->shooter, s.hit, s.vx, s.vy, s.vz, power, type, f[s.hit].height);
 	return s.hit;
+}
+
+// Удар (MeleeAttackBState::resolveHit, :224-281): шанс — accuracyMelee (· melee, если skillApplied;
+// поправки на раны нет); сила — meleePower
+// (оглушение — приклад), у оружия ближнего боя — его мощность и тип урона; strengthApplied — плюс
+// сила; точка удара — у цели со смещением к бьющему (броня — с его стороны). Цель — юнит в клетке
+// (tx, ty, tz); вернёт его номер (#FF — промах или никого)
+static uint8_t melee_target(const bashot_t *a)
+{
+	for (uint8_t i = 0; i < a->n; i++) {
+		unit_t o;
+		u_get(i, &o);
+		if (i != a->shooter && o.alive && o.z == a->tz && (uint8_t)(a->tx - o.x) < o.size && (uint8_t)(a->ty - o.y) < o.size) return i;
+	}
+	return 0xFF;
+}
+
+static uint8_t melee(const bashot_t *a, const unit_t *u, const r_items_t *w, uint8_t h)
+{
+	uint16_t acc = w->accuracy_melee;            // getFiringAccuracy(BA_HIT): навык — если skillApplied
+	if (w->flags & ITEMS_F_SKILL_APPLIED) acc = acc * u->melee / 100;
+	if (rng_range(0, 99) >= acc) return 0xFF;
+	uint16_t power = w->melee_power;
+	uint8_t type = 6;                            // DT_STUN
+	if (w->battle_type == BT_MELEE) { power = w->power; type = w->damage_type; }
+	if (w->flags & ITEMS_F_STRENGTH_APPLIED) power += u->strength;
+	unit_t v;
+	u_get(h, &v);
+	int8_t sx = (int8_t)(u->x > a->tx ? 1 : u->x < a->tx ? -1 : 0), sy = (int8_t)(u->y > a->ty ? 1 : u->y < a->ty ? -1 : 0);
+	hurt(a->page, a->n, a->shooter, h, (int16_t)a->tx * 16 + 8 + sx, (int16_t)a->ty * 16 + 8 + sy,
+	     (int16_t)a->tz * 24 + UNIT_H(&v) / 2, power, type, UNIT_H(&v));
+	return h;
 }
 
 void ba_kill(uint8_t page, uint8_t i, uint8_t n) __banked
@@ -122,75 +163,17 @@ void ba_kill(uint8_t page, uint8_t i, uint8_t n) __banked
 		bv_cell((uint8_t)(v.x + (k & 1)), (uint8_t)(v.y + (k >> 1)), v.z);
 }
 
-// ProjectileFlyBState::createNewProjectile, BA_THROW: дуга (bfire.c), предмет из руки летит
-// (bfx.c) и ложится на пол клетки падения; пришелец бросает гранату сразу взведённой
-static uint16_t throw_it(bafire_t *q, unit_t *u, uint16_t bi, const bitem_t *b, const r_items_t *w)
+// Для bact2.c (банк 37: ba_fire и бросок вынесены — банк 36 был полон)
+uint8_t ba_fill(const bashot_t *q, fu_t *f, shot_t *s) __banked
 {
-	bashot_t *a = &q->s;
-	rtab_t t;
-	throw_t r;
-	fu_t f[MAX_BUNITS];
-	shot_t s;
-	r.strength = u->strength; r.kneel = u->kneel; r.weight = w->weight; r.wtotal = w->weight;
-	r.acc = a->acc;
-	if (b->ammo != 0xFFFF && b->ammo != b->item && rtab_open(RES_RULE_ITEMS, &t) && b->ammo < t.n)
-		r.wtotal += (uint8_t)rtab_word(&t, b->ammo, offsetof(r_items_t, weight));
-	uint8_t n = fill(a, f, &s), e = gr_throw(&s, f, &r);
-	if (e) return e == 1 ? STR_OUT_OF_RANGE : STR_UNABLE_TO_THROW_HERE;
-	u->tu -= q->tu;
-	u_set(a->shooter, u);
-	if (u->faction != FACTION_PLAYER && w->battle_type == BT_GRENADE) {
-		bitem_t g = *b;
-		g.rounds = 1;                            // таймер 0
-		far_write(FAR(a->page + 1, TL_BITEMS) + (bi - 1) * sizeof g, &g, sizeof g);
-	}
-	far_fill(FAR(a->page + 1, TL_BITEMS) + (bi - 1) * sizeof(bitem_t), BI_GROUND, 1);   // из руки
-	bi_hands(a->page, n);
-	bv_sync(n);
-	bv_cell(u->x, u->y, u->z);
-	fxthrow_t x;
-	x.page = a->page; x.ox = s.ox; x.oy = s.oy; x.oz = s.oz; x.dx = r.dx; x.dy = r.dy; x.dz = r.dz;
-	x.r16 = r.r16; x.z16 = r.z16; x.n = r.n; x.item = b->item;
-	fx_throw(&x);
-	fl_drop(a->page, bi - 1, r.lx, r.ly, r.lz);
-	bv_sync(n);
-	bv_cell(r.lx, r.ly, r.lz);
-	return 0;
+	return fill(q, f, s);
 }
 
-uint16_t ba_fire(bafire_t *q) __banked
+// Удар: go = 0 — только кто в клетке цели (#FF — никого), иначе — сам удар по нему
+uint8_t ba_melee(const bashot_t *a, const unit_t *u, const r_items_t *w, uint8_t go) __banked
 {
-	bashot_t *a = &q->s;
-	unit_t u;
-	bitem_t b;
-	rtab_t t;
-	r_items_t w;
-	uint8_t i = a->shooter;
-	uint16_t bi = bi_hand(a->page, i, q->hand, &b);
-	if (!bi || !rtab_open(RES_RULE_ITEMS, &t) || b.item >= t.n) return 0xFFFF;
-	rtab_get(&t, b.item, &w);
-	u_get(i, &u);
-	if (u.tu < q->tu) return STR_NOT_ENOUGH_TIME_UNITS;
-	int16_t dx = (int16_t)a->tx - u.x, dy = (int16_t)a->ty - u.y;
-	a->weapon = b.item; a->ammo = b.ammo;
-	if (a->action != BA_THROW) {
-		if (w.compatible_ammo.n && b.ammo == 0xFFFF) return STR_NO_AMMUNITION_LOADED;
-		if (w.compatible_ammo.n && !b.rounds) return STR_NO_ROUNDS_LEFT;
-		if ((uint16_t)(dx * dx + dy * dy) > (uint16_t)w.max_range * w.max_range) return STR_OUT_OF_RANGE;
-	}
-	u.dir = dir_to(dx, dy);                  // lookAt
-	u_set(i, &u);
-	if (a->action == BA_THROW) return throw_it(q, &u, bi, &b, &w);
-	u.tu -= q->tu;
-	u_set(i, &u);
-	uint8_t shots = a->action == BA_AUTOSHOT ? w.auto_shots : 1;
-	for (uint8_t k = 0; k < shots; k++) {
-		if (w.compatible_ammo.n) {               // BattleItem::spendBullet; кончились — очередь обрывается
-			bitem_t c;
-			if (!bi_hand(a->page, i, q->hand, &c) || !c.rounds) break;
-			bi_spend(a->page, i, q->hand);
-		}
-		ba_shot(a);
-	}
-	return 0;
+	uint8_t h = melee_target(a);
+	if (go && h != 0xFF) melee(a, u, w, h);
+	return h;
 }
+

@@ -771,12 +771,15 @@ static void aim_off(void)
 	bv_aim(0);
 }
 
+static uint8_t hit_pend;                 // выбран удар — выполнить в такте боя (меню закрыто)
+
 static void shoot(uint8_t tx, uint8_t ty)
 {
 	uint8_t i = sel < nsold ? sel : 0;
 	bafire_t q;                              // проверки, поворот, время, пули и бросок — bact.c (банк 36)
 	q.s.page = pf_page; q.s.cells = cells; q.s.sx = m_sx; q.s.sy = m_sy; q.s.sz = m_sz;
-	q.s.shooter = i; q.s.n = nunits; q.s.tx = tx; q.s.ty = ty; q.s.tz = bv_level();
+	q.s.shooter = i; q.s.n = nunits; q.s.tx = tx; q.s.ty = ty;
+	q.s.tz = bt_action == BA_HIT ? units[i].z : bv_level();
 	q.s.action = bt_action; q.s.acc = bt_acc; q.hand = bt_hand; q.tu = bt_action_tu;
 	uint16_t r = ba_fire(&q);
 	if (r == 0xFFFF) { aim_off(); return; }
@@ -784,7 +787,7 @@ static void shoot(uint8_t tx, uint8_t ty)
 	unit_changed(i);                     // повернулся
 	aim_off();
 	see_update();
-	react(i);                            // после выстрела — огонь в ответ (ProjectileFlyBState)
+	if (bt_action != BA_HIT) react(i);   // после выстрела — огонь в ответ (удар его не вызывает)
 	if (!battle_end(0)) ui_dirty(0);     // последний пришелец выбыл — разбор (бой не перерисовывать)
 }
 
@@ -853,6 +856,11 @@ static void amenu_event(uint8_t ev, uint8_t arg)
 		if (bt_action == BA_PRIME) {         // таймер — окном поверх меню (бесконтактная — сразу 0)
 			if (gr_window(pf_page, sel < nsold ? sel : 0, bt_hand)) UI_GO(A_PUSH, SCR_PRIME);
 			else { UI_GO(A_POP, 0); prime(0); }
+			break;
+		}
+		if (bt_action == BA_HIT) {           // удар — сразу в клетку перед бойцом (ActionMenuState:306)
+			hit_pend = 1;                    //   после закрытия меню (такт боя)
+			UI_GO(A_POP, 0);
 			break;
 		}
 		// выстрелы и бросок ждут цель: курсор — прицел (BattlescapeGame::setupCursor: CT_AIM; у
@@ -970,6 +978,12 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	case EVT_TICK: {
 		if (!gen_mode || !loaded) break;
 		if (bt_side == FACTION_HOSTILE) { ai_run(); break; }
+		if (hit_pend) {                      // удар в клетку перед бойцом
+			const unit_t *u = &units[sel < nsold ? sel : 0];
+			hit_pend = 0;
+			shoot((uint8_t)(u->x + dir_dx[u->dir & 7]), (uint8_t)(u->y + dir_dy[u->dir & 7]));
+			break;
+		}
 		if (turn_dir != 0xFF && nunits) {    // правая кнопка: разворот по одной восьмой,
 			uint8_t i = sel < nunits ? sel : 0;   // в конце — попытка открыть дверь
 			if (move_wait) move_wait--;
