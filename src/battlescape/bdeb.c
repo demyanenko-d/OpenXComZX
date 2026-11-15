@@ -30,15 +30,16 @@
 #include "bact.h"
 #include "bstage.h"
 
-#define DS_MAX 10
+#define DS_MAX 10                        // постоянные строки; за ними — части НЛО (specialType)
+#define DS_ALL 22
 typedef struct { uint16_t str; uint8_t qty; int16_t score; } dstat_t;
 // Память банка (tools/build.ps1 ram = #B000)
-static dstat_t __at(0xB000) ds[DS_MAX];  // строки в порядке _stats оригинала (до #B032)
-static uint8_t __at(0xB040) ds_n;
-static uint16_t __at(0xB041) d_title;
-static int16_t __at(0xB043) d_total;
-static uint8_t __at(0xB045) d_page;      // 1 — окно повышений (PromotionsState) вместо разбора
-static uint8_t __at(0xB046) d_prom;      // повышенных в этой миссии
+static dstat_t __at(0xB000) ds[DS_ALL];  // строки в порядке _stats оригинала (до #B06E)
+static uint8_t __at(0xB080) ds_n;
+static uint16_t __at(0xB081) d_title;
+static int16_t __at(0xB083) d_total;
+static uint8_t __at(0xB085) d_page;      // 1 — окно повышений (PromotionsState) вместо разбора
+static uint8_t __at(0xB086) d_prom;      // повышенных в этой миссии
 static const uint16_t rank_str[6] = { STR_ROOKIE, STR_SQUADDIE, STR_SERGEANT, STR_CAPTAIN, STR_COLONEL, STR_COMMANDER };
 
 static const uint16_t ds_str[DS_MAX] = {
@@ -259,7 +260,15 @@ static void campaign(const debreq_t *q, uint8_t alive_x, uint8_t success)
 static void ds_reset(void)
 {
 	if (DEB_ACC) return;
-	for (uint8_t k = 0; k < DS_MAX; k++) { ds[k].str = ds_str[k]; ds[k].qty = 0; ds[k].score = 0; }
+	for (uint8_t k = 0; k < DS_ALL; k++) { ds[k].str = k < DS_MAX ? ds_str[k] : 0; ds[k].qty = 0; ds[k].score = 0; }
+}
+
+// Части НЛО на карте — строки за постоянными (bstage.c st_recovery: подсчёт, склад базы)
+static void recovery(const debreq_t *q)
+{
+	strow_t r[DS_ALL - DS_MAX];                  // на стеке: память банка 37 банку 32 не видна
+	uint8_t n = st_recovery(q->page, q->ufo, q->craft, r, DS_ALL - DS_MAX);
+	memcpy(&ds[DS_MAX], r, (uint16_t)n * sizeof r[0]);
 }
 
 // Очки по юнитам с i0 и упавшим предметам (prepareDebriefing); success — поле за отрядом
@@ -353,9 +362,10 @@ void deb_start(const debreq_t *q) __banked
 	if (success) d_title = q->ufo ? STR_UFO_IS_RECOVERED : STR_ALIENS_DEFEATED;
 	else if (!alive_x) d_title = STR_CRAFT_IS_LOST;
 	else d_title = q->ufo ? STR_UFO_IS_NOT_RECOVERED : STR_TERROR_CONTINUES;
+	if (success) recovery(q);                    // части НЛО: поле за отрядом
 	ds_n = 0;                                    // ненулевые строки — подряд в начало
 	d_total = 0;
-	for (uint8_t k = 0; k < DS_MAX; k++) {
+	for (uint8_t k = 0; k < DS_ALL; k++) {
 		if (!ds[k].qty) continue;
 		d_total += ds[k].score;
 		ds[ds_n++] = ds[k];

@@ -327,6 +327,11 @@ click L
 waitmark 254 600
 wait 100
 shot tmp/shots/bat_geo_win/01_debriefing.png
+# части НЛО на карте (specialType клеток): ускорители (2) и навигация (3) — строки ds[2], ds[3]
+# (#EE:300A, #EE:300F: str, qty); пластика (10) — 115 клеток / 150 (цель не НЛО) = 0, строки нет
+expect EE:300C 1
+expect EE:3011 1
+expect EE:3016 0
 key ENTER
 # повышения были — окно PromotionsState (тот же экран разбора, второй вид)
 wait 60

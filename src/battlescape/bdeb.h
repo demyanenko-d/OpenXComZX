@@ -18,7 +18,7 @@ void deb_start(const debreq_t *q) __banked;
 // фазы перебиты: трофеи — на склад сразу)
 void deb_stage(const debreq_t *q, uint8_t won) __banked;
 // Очки копятся с прошлых фаз (память банка 37; обнуляет ba_exp_reset — начало боя)
-#define DEB_ACC (*(volatile uint8_t *)0xB047)
+#define DEB_ACC (*(volatile uint8_t *)0xB087)
 
 // Экран SCR_DEBRIEFING (раздаёт экран боя)
 uint8_t deb_get(uint8_t id, sdef_t *s, wdef_t *w) __banked;

@@ -28,6 +28,13 @@ void st_abort_text(uint8_t slot, char *buf, uint8_t page, uint8_t nsold) __banke
 // Зона клетки юнита i (BattleUnit::isInExitArea): 0 — корабль (у карты без корабля — START_POINT),
 // 1 — снаружи, 2 — END_POINT
 uint8_t st_zone(uint8_t page, uint8_t i) __banked;
+// Части НЛО на карте (DebriefingState.cpp:1378-1392): число частей клеток (пол, стены, объект) со
+// specialType 2..15 — в cnt[16] (буфер вызывающего на стеке)
+void st_specials(uint8_t page, uint16_t *cnt) __banked;
+// Строки разбора «части НЛО» (как dstat_t bdeb.c) — в out (до max), вернёт их число; предметы —
+// на склад базы корабля craft
+typedef struct { uint16_t str; uint8_t qty; int16_t score; } strow_t;
+uint8_t st_recovery(uint8_t page, uint8_t ufo, uint16_t craft, strow_t *out, uint8_t max) __banked;
 // Окно BriefingState (SCR_BRIEFING) развёртывания dep: тексты DYN(0..3) — заголовок, цель корабля
 // craft, корабль, брифинг. st_brief_stage(1) — брифинг следующей фазы поверх боя (OK — назад в бой),
 // 0 — перед боем (OK — бой)
