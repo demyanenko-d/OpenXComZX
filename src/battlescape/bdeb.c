@@ -111,6 +111,7 @@ static void post_soldier(const unit_t *u, uint8_t i)
 	s.kills += x[EXP_KILLS];
 	uint8_t hl = u->hp_max > u->hp ? (uint8_t)(u->hp_max - u->hp) : 0;
 	s.recovery = (uint8_t)rng_range(hl / 2, hl + hl / 2);
+	if (s.recovery) s.craft = NONE8;             // setWoundRecovery: раненый — из корабля
 	if (x[EXP_BRAVE] && c->bravery < cap->bravery && x[EXP_BRAVE] > rng_range(0, 10)) c->bravery += 10;
 	if (x[EXP_REACT] && c->reactions < cap->reactions) c->reactions += improve(x[EXP_REACT]);
 	if (x[EXP_FIRE] && c->firing < cap->firing) c->firing += improve(x[EXP_FIRE]);
