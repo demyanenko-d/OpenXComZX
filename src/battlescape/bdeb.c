@@ -35,6 +35,9 @@ static dstat_t __at(0xB000) ds[DS_MAX];  // строки в порядке _stat
 static uint8_t __at(0xB030) ds_n;
 static uint16_t __at(0xB031) d_title;
 static int16_t __at(0xB033) d_total;
+static uint8_t __at(0xB035) d_page;      // 1 — окно повышений (PromotionsState) вместо разбора
+static uint8_t __at(0xB036) d_prom;      // повышенных в этой миссии
+static const uint16_t rank_str[6] = { STR_ROOKIE, STR_SQUADDIE, STR_SERGEANT, STR_CAPTAIN, STR_COLONEL, STR_COMMANDER };
 
 static const uint16_t ds_str[DS_MAX] = {
 	STR_ALIENS_KILLED, STR_ALIEN_CORPSES_RECOVERED, STR_LIVE_ALIENS_RECOVERED,
@@ -114,13 +117,69 @@ static void post_soldier(const unit_t *u, uint8_t i)
 	if (x[EXP_MELEE] && c->melee < cap->melee) c->melee += improve(x[EXP_MELEE]);
 	if (x[EXP_THROW] && c->throwing < cap->throwing) c->throwing += improve(x[EXP_THROW]);
 	if (x[EXP_BRAVE] || x[EXP_REACT] || x[EXP_FIRE] || x[EXP_MELEE]) {
-		if (!s.rank) s.rank = 1;                 // RANK_ROOKIE -> SQUADDIE
+		if (!s.rank) { s.rank = 1; s.flags |= SF_PROMOTED; }   // RANK_ROOKIE -> SQUADDIE
 		grow(&c->tu, cap->tu, 10);
 		grow(&c->health, cap->health, 10);
 		grow(&c->strength, cap->strength, 10);
 		grow(&c->stamina, cap->stamina, 15);
 	}
 	far_write(a, &s, sizeof s);
+}
+
+// SavedGame::getSoldierScore (:1667-1675)
+static uint16_t s_score(const soldier_t *s)
+{
+	const rstats_t *c = &s->cur;
+	uint16_t v = 2 * c->health + 2 * c->stamina + 4 * c->reactions + 4 * c->bravery
+		+ 3 * (c->tu + 2 * c->firing) + c->melee + c->throwing + c->strength;
+	if (c->psi_skill) v += c->psi_strength + 2 * c->psi_skill;
+	return v + 10 * (s->missions + s->kills);
+}
+
+// Лучший по очкам солдат звания rank (inspectSoldiers); #FF — нет
+static uint8_t s_best(uint8_t rank)
+{
+	uint16_t hi = 0;
+	uint8_t k = 0xFF;
+	for (uint8_t i = 0; i < ST->nsoldiers; i++) {
+		soldier_t s;
+		far_read(FAR(SOLDIER_PAGE, 0) + (uint16_t)i * sizeof s, &s, sizeof s);
+		if (s.base == NONE8 || s.rank != rank) continue;
+		uint16_t sc = s_score(&s);
+		if (sc > hi) { hi = sc; k = i; }
+	}
+	return k;
+}
+
+static void s_promote(uint8_t i)
+{
+	soldier_t s;
+	far_t a = FAR(SOLDIER_PAGE, 0) + (uint16_t)i * sizeof s;
+	far_read(a, &s, sizeof s);
+	s.rank++;                                    // promoteRank: _recentlyPromoted
+	s.flags |= SF_PROMOTED;
+	far_write(a, &s, sizeof s);
+}
+
+// Повышения званий по всему составу (SavedGame::handlePromotions :1510-1608): коммандер — один,
+// если солдат не меньше 30; полковников — 1 на 23, капитанов — 1 на 11, сержантов — 1 на 5;
+// каждое — лучшему по очкам званием ниже (fieldPromotions выключен — любой, не только с миссии)
+static void promotions(void)
+{
+	uint8_t n = 0, cnt[6];
+	memset(cnt, 0, sizeof cnt);
+	for (uint8_t i = 0; i < ST->nsoldiers; i++) {
+		soldier_t s;
+		far_read(FAR(SOLDIER_PAGE, 0) + (uint16_t)i * sizeof s, &s, sizeof s);
+		if (s.base == NONE8) continue;
+		n++;
+		if (s.rank < 6) cnt[s.rank]++;
+	}
+	uint8_t k;
+	if (!cnt[5] && n >= 30 && (k = s_best(4)) != 0xFF) { s_promote(k); cnt[5]++; cnt[4]--; }
+	while (n / 23 > cnt[4] && (k = s_best(3)) != 0xFF) { s_promote(k); cnt[4]++; cnt[3]--; }
+	while (n / 11 > cnt[3] && (k = s_best(2)) != 0xFF) { s_promote(k); cnt[3]++; cnt[2]--; }
+	while (n / 5 > cnt[2] && (k = s_best(1)) != 0xFF) { s_promote(k); cnt[2]++; }
 }
 
 static void campaign(const debreq_t *q, uint8_t alive_x, uint8_t success)
@@ -159,12 +218,23 @@ static void campaign(const debreq_t *q, uint8_t alive_x, uint8_t success)
 		if (ST->ufo[di].status == US_LANDED && (q->aborted || !alive_x)) ST->ufo[di].secs = 5;
 		else ufo_free(di);
 	}
+	for (uint8_t i = 0; i < ST->nsoldiers; i++) {   // прежние повышения забыты (_recentlyPromoted)
+		far_t a = FAR(SOLDIER_PAGE, 0) + (uint16_t)i * sizeof(soldier_t) + offsetof(soldier_t, flags);
+		uint8_t f = (uint8_t)(far_byte(a) & ~SF_PROMOTED);
+		far_write(a, &f, 1);
+	}
 	for (uint8_t i = 0; i < q->nsold; i++) {        // погибшие — с базы (killSoldier), выжившие — опыт
 		unit_t u;
 		far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
 		if (u.sol == 0xFF) continue;
 		if (!u.alive && !u.hp) soldier_delete(u.sol);
 		else post_soldier(&u, i);
+	}
+	promotions();
+	for (uint8_t i = 0; i < ST->nsoldiers; i++) {   // кого показать в окне повышений
+		soldier_t s;
+		far_read(FAR(SOLDIER_PAGE, 0) + (uint16_t)i * sizeof s, &s, sizeof s);
+		if (s.base != NONE8 && (s.flags & SF_PROMOTED)) d_prom++;
 	}
 	add_activity(&pos, d_total, 1);
 }
@@ -226,12 +296,43 @@ void deb_start(const debreq_t *q) __banked
 		d_total += ds[k].score;
 		ds[ds_n++] = ds[k];
 	}
+	d_page = d_prom = 0;
 	if (q->craft < MAX_CRAFTS) campaign(q, alive_x, success);
+}
+
+// k-й повышенный солдат (порядок записей), #FF — нет
+static uint8_t prom_nth(uint8_t k, soldier_t *s)
+{
+	for (uint8_t i = 0; i < ST->nsoldiers; i++) {
+		far_read(FAR(SOLDIER_PAGE, 0) + (uint16_t)i * sizeof *s, s, sizeof *s);
+		if (s->base == NONE8 || !(s->flags & SF_PROMOTED)) continue;
+		if (!k--) return i;
+	}
+	return 0xFF;
 }
 
 uint8_t deb_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
 {
 	(void)id;
+	if (d_page) {                                   // PromotionsState (PromotionsState.cpp:39-96)
+		static const wdef_t prom[] = {
+			WIN(0, 0, 320, 200, UI_EL_WINDOW),
+			BTN(16, 176, 288, 16, UI_EL_BUTTON, STR_OK, A_CUSTOM, 1, ENT),
+			TXT(10, 8, 300, 17, UI_EL_HEADING, STR_PROMOTIONS, TC | BIG),
+			TXT(16, 32, 114, 9, UI_EL_TEXT, STR_NAME, 0),
+			TXT(130, 32, 90, 9, UI_EL_TEXT, STR_NEW_RANK, 0),
+			TXT(220, 32, 80, 9, UI_EL_TEXT, STR_BASE, 0),
+			LST(8, 40, 288, 128, UI_EL_LIST, 4, 0),
+			HOT(0, 0, 0, 0, A_CUSTOM, 1, ESC),          // keyCancel — тоже OK
+		};
+		memcpy(w, prom, sizeof prom);
+		s->ui = UI_SCR_PROMOTIONS;
+		s->palui = 0xFF;
+		s->bg = RES_BACK01_SCR;
+		s->flags = 0;
+		s->n = sizeof prom / sizeof prom[0];
+		return 1;
+	}
 	static const wdef_t fixed[] = {
 		WIN(0, 0, 320, 200, UI_EL_WINDOW),
 		TXT(16, 8, 300, 17, UI_EL_HEADING, DYN(0), BIG),
@@ -259,6 +360,26 @@ void deb_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked
 {
 	(void)id;
 	buf[0] = 0;
+	if (slot == 4) {                                // повышенные: имя, новое звание, база
+		if (row == LIST_COLS) {
+			static const uint8_t cs[] = { 114, 90, 84 }, ca[] = { 0, 0, 0 };
+			list_cols(buf, 3, cs, ca);
+			return;
+		}
+		soldier_t s;
+		if (prom_nth(row, &s) == 0xFF) return;
+		memcpy(buf, s.name, SOLDIER_NAME);
+		buf[SOLDIER_NAME] = 0;
+		strcat(buf, "\t");
+		str_copy(rank_str[s.rank < 6 ? s.rank : 0], buf + strlen(buf), 30);
+		strcat(buf, "\t");
+		if (s.base < MAX_BASES) {
+			uint8_t l = (uint8_t)strlen(buf);
+			memcpy(buf + l, ST->base[s.base].name, NAME_LEN);
+			buf[l + NAME_LEN] = 0;
+		}
+		return;
+	}
 	if (slot == 0) { str_copy(d_title, buf, 64); return; }
 	if (slot == 3) {                                // STR_RATING {0}
 		uint16_t r = d_total <= -200 ? STR_RATING_TERRIBLE : d_total <= 0 ? STR_RATING_POOR
@@ -291,12 +412,16 @@ void deb_text(uint8_t id, uint8_t slot, uint8_t row, char *buf) __banked
 uint8_t deb_rows(uint8_t id, uint8_t slot) __banked
 {
 	(void)id;
-	return slot == 1 ? ds_n : slot == 2 ? 1 : 0;
+	return slot == 1 ? ds_n : slot == 2 ? 1 : slot == 4 ? d_prom : 0;
 }
 
 uint8_t deb_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 {
 	(void)id;
-	if (ev == EVT_BUTTON && arg == 1) UI_GO(A_POP2, 0);   // btnOkClick: назад на геоскейп (бой закрывается)
+	if (ev == EVT_BUTTON && arg == 1) {
+		// btnOkClick: были повышения — окно PromotionsState, потом — назад на геоскейп (бой закрывается)
+		if (!d_page && d_prom) { d_page = 1; UI_GO(A_REDRAW, 0); }
+		else UI_GO(A_POP2, 0);
+	}
 	return 0;
 }

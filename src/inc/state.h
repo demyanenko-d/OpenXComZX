@@ -262,6 +262,7 @@ typedef struct {
 
 // --- солдат (страница STATE_PAGE + 1). base NONE8 — свободная запись.
 #define SF_PSI      0x01            // на пси-тренировке
+#define SF_PROMOTED 0x02            // повышен в последней миссии (Soldier::isPromoted, окно повышений)
 #define SF_FEMALE   0x80            // в look
 typedef struct {
 	char name[SOLDIER_NAME];
