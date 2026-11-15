@@ -104,6 +104,47 @@ uint8_t ba_panic(uint8_t page, uint8_t side, uint8_t n, uint8_t *list, uint8_t m
 	return cnt;
 }
 
+// Оглушение (BattleUnit::prepareNewTurn :1705-1708 — юнитам стороны хода −1, мирным — в ход
+// пришельцев; SavedBattleGame::reviveUnconsciousUnits :1524-1558): лежащий без сознания 1x1 с
+// оглушением меньше здоровья встаёт, если его клетка свободна (соседние клетки оригинал тоже
+// пробует — у нас нет), тело (corpseBattle брони) с пола клетки убирается. Вернёт, сколько встало
+uint8_t ba_stun(uint8_t page, uint8_t side, uint8_t n) __banked
+{
+	uint8_t up = 0;
+	for (uint8_t i = 0; i < n; i++) {
+		unit_t u, o;
+		u_get(i, &u);
+		uint8_t f = u.faction;               // сравнения — с копиями (SDCC 4.5)
+		if (u.stun && (f == side || (side == FACTION_HOSTILE && f == FACTION_NEUTRAL)) && (u.size == 1 || u.alive)) u.stun--;
+		if (!u.alive && u.hp && u.stun < u.hp && u.size == 1) {
+			uint8_t busy = 0;
+			for (uint8_t k = 0; k < n && !busy; k++) {
+				u_get(k, &o);
+				busy = k != i && o.alive && o.x == u.x && o.y == u.y && o.z == u.z;
+			}
+			rtab_t t;
+			r_armors_t ar;
+			if (!busy && u.armor_rule != 0xFFFF && rtab_open(RES_RULE_ARMORS, &t) && u.armor_rule < t.n) {
+				rtab_get(&t, u.armor_rule, &ar);
+				uint16_t body = 0xFFFF;
+				if (ar.corpse_battle.n) rtab_tail(&t, ar.corpse_battle.off, &body, 2);
+				for (uint16_t k = 0; k < BI_MAX; k++) {      // removeUnconsciousBodyItem
+					bitem_t b;
+					far_read(FAR(page + 1, TL_BITEMS) + k * sizeof b, &b, sizeof b);
+					if (b.owner == BI_GROUND && b.item == body && b.x == u.x && b.y == u.y && b.z == u.z) {
+						far_fill(FAR(page + 1, TL_BITEMS) + k * sizeof b, BI_NONE, 1);
+						break;
+					}
+				}
+			}
+			if (!busy) { u.alive = 1; u.kneel = 0; u.tu = f == side ? u.tu_max : 0; up++; }
+		}
+		u_set(i, &u);
+	}
+	if (up) fl_rebuild(page);
+	return up;
+}
+
 // Выстрел берсерка (UnitPanicBState::think :62-125): оружие в руке с очередью (иначе навскидку),
 // времени хватает — по ближайшему врагу, которого он видит (в секторе), иначе в случайную клетку
 // ±6. Заполнить в q карту, стрелка и n. 1 — выстрелил

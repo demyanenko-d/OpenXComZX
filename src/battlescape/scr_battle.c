@@ -624,6 +624,11 @@ static uint16_t ufo_deploy(uint8_t utype)
 static void panic_roll(uint8_t side)
 {
 	uint8_t l[8];
+	if (ba_stun(pf_page, side, nunits)) {    // очнулись — на карту (вид заново: тело убрано)
+		for (uint8_t i = 0; i < nunits; i++) ru_put(i);
+		bv_sync(nunits);
+		bv_redraw();
+	}
 	pn_n = ba_panic(pf_page, side, nunits, l, sizeof l);
 	memcpy(pn_list, l, sizeof l);
 	pn_i = 0;

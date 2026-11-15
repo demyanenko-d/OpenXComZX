@@ -1,0 +1,52 @@
+# Очнувшийся встаёт (prepareNewTurn — оглушение −1 в начале хода своей стороны; reviveUnconscious-
+# Units): сцена bat_amelee — пришелец оглушил бойца 0 (49 >= здоровья 40). В ходе X-COM ставим ему
+# оглушение 40 (#3891); ход пришельцев; в начале следующего хода X-COM оно 39 < 40 — боец встаёт
+# (#3884 = 1) со временем своего хода (#3886 = 60), тело с пола убрано (запись предметов 8 —
+# #2D50 страницы #D1 = #FF), оружие остаётся на полу. Снимки — tmp/shots/bat_revive/.
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_revive.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _bat_still 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+expect D1:2D3C 6
+poke 4E:3880 5
+poke 4E:3881 34
+poke 4E:3883 2
+poke 4E:3886 0
+poke 4E:39A0 3
+poke 4E:39A1 34
+poke 4E:39A3 2
+poke D1:2D40 48
+poke D1:2D41 0
+poke D1:2D42 255
+poke D1:2D43 255
+pokew _cursor_x 250
+pokew _cursor_y 150
+click L
+wait 60
+click L
+wait 200
+expect 4E:39A0 4
+expect 4E:39A1 34
+expect 4E:3884 0
+click L
+wait 60
+poke 4E:3891 40
+pokew _cursor_x 250
+pokew _cursor_y 150
+click L
+wait 60
+click L
+wait 400
+click L
+wait 60
+shot tmp/shots/bat_revive/00.png
+expect 4E:3884 1
+expect 4E:3886 60
+expect 4E:3891 39
+expect D1:2D50 255
+exit 0
