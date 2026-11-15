@@ -121,8 +121,9 @@
 // --- графики (банк 4, scr_graph.c); группа 7 делится с Уфопедией: 240.. — сюда
 #define SCR_GRAPHS           240
 
-// --- наземный бой (банк 28, battlescape/scr_battle.c); 246.. — сюда
-#define SCR_BRIEFING         246       // BriefingState: брифинг миссии (bstage.c, банк 32)
+// --- наземный бой (банк 28, battlescape/scr_battle.c); 245.. — сюда
+#define SCR_MEDIKIT          245       // MedikitState: аптечка (bmedi.c, банк 35)
+#define SCR_BRIEFING         246      // BriefingState: брифинг миссии (bstage.c, банк 32)
 #define SCR_INFOBOX          247      // InfoboxState: сообщение в рамке («… has panicked»), само закрывается
 #define SCR_BATTLE           248
 #define SCR_NEXT_TURN        249       // NextTurnState: ход и сторона

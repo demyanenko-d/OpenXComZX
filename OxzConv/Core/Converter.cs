@@ -318,9 +318,42 @@ namespace OxzConv
 				var frames = name.EndsWith(".DAT", StringComparison.Ordinal)
 					? Formats.DecodeDatSet(gfs.Read($"{dir}/{name}"), w, h)
 					: Formats.DecodePck(gfs.Read($"{dir}/{name}"), gfs.Read($"{dir}/{name.Replace(".PCK", ".TAB")}"), w, h);
+				if (name == "MEDIBITS.DAT") frames = MediBits(frames, w, h, bat);
 				pak.Add(ids.Id(name), ResType.Sprset, Sprites.EncodeSprset(frames), frames.Count, w, h);
 				Preview(name, Sprites.Sheet(frames, w > 64 ? 4 : 16), "PAL_BATTLESCAPE");
 				if (pak == bat) nBat++; else nItems++;
+			}
+			// MedikitView::draw (MedikitView.cpp:67-89): части тела MEDIBITS.DAT — blitNShade с новым
+			// базовым цветом: целая часть — color элемента body интерфейса medikit, раненая — color2
+			// (точка = (база − 1) · 16 | яркость). Кадры 0..5 — целые, 6..11 — раненые; карта
+			// MEDIMAP (52x58, номер части под точкой или #FF) — для выбора части щелчком (mouseClick)
+			List<Img> MediBits(List<Img> fr, int w, int h, PakWriter pak)
+			{
+				int green = 0, red = 3;
+				foreach (var it in Y.List(Y.Get(Y.Load(ox.ReadText($"standard/{RuleFolder}/interfaces.rul")), "interfaces")) ?? new List<object>())
+				{
+					if (Y.Str(Y.Get(it, "type")) != "medikit") continue;
+					foreach (var el in Y.List(Y.Get(it, "elements")) ?? new List<object>())
+						if (Y.Str(Y.Get(el, "id")) == "body") { green = Y.Int(Y.Get(el, "color"), 0); red = Y.Int(Y.Get(el, "color2"), 3); }
+				}
+				var outl = new List<Img>();
+				var map = new byte[w * h];
+				for (int i = 0; i < map.Length; i++) map[i] = 0xFF;
+				foreach (int bc in new[] { green, red })
+					for (int f = 0; f < fr.Count; f++)
+					{
+						var o = new Img(w, h);
+						for (int i = 0; i < w * h; i++)
+						{
+							byte c = fr[f].Px[i];
+							if (c == 0) continue;
+							o.Px[i] = bc > 0 ? (byte)(((bc - 1) << 4) | (c & 15)) : c;
+							if (map[i] == 0xFF) map[i] = (byte)f;
+						}
+						outl.Add(o);
+					}
+				pak.Add(ids.Id("MEDIMAP"), ResType.Blob, map);
+				return outl;
 			}
 			var rb = bat.Write(Path.Combine(OutDir, "BATUI.PAK"));
 			var ri = items.Write(Path.Combine(OutDir, "ITEMS.PAK"));

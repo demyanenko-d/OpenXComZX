@@ -44,6 +44,7 @@
 #include "bgren.h"
 #include "bexpl.h"
 #include "bstage.h"
+#include "bmedi.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 
@@ -883,6 +884,10 @@ static void amenu_event(uint8_t ev, uint8_t arg)
 			else { UI_GO(A_POP, 0); prime(0); }
 			break;
 		}
+		if (bt_action == BA_USE) {           // аптечка — своё окно (bmedi.c), прочее — пока ничего
+			UI_GO(md_open(pf_page, sel < nsold ? sel : 0, bt_hand, bt_action_tu, nunits) ? A_POP_PUSH : A_POP, SCR_MEDIKIT);
+			break;
+		}
 		if (bt_action == BA_HIT) {           // удар — сразу в клетку перед бойцом (ActionMenuState:306)
 			hit_pend = 1;                    //   после закрытия меню (такт боя)
 			UI_GO(A_POP, 0);
@@ -932,6 +937,7 @@ uint8_t bat_get(uint8_t id, sdef_t *s, wdef_t *w) __banked
 {
 	if (id == SCR_DEBRIEFING) return deb_get(id, s, w);
 	if (id == SCR_ABORT || id == SCR_BRIEFING) return st_get(id, s, w, pf_page, bt_dep);   // bstage.c
+	if (id == SCR_MEDIKIT) return md_get(s, w);                         // аптечка (bmedi.c)
 	return scr_find(tab, sizeof tab / sizeof tab[0], id, s, w);
 }
 
@@ -946,6 +952,7 @@ void bat_text(uint8_t id, uint8_t slot, uint8_t line, char *buf) __banked
 	}
 	if (id == SCR_ABORT) { st_abort_text(slot, buf, pf_page, nsold); return; }   // по зонам (bstage.c)
 	if (id == SCR_BRIEFING) { st_brief_text(slot, buf, bt_dep, mis_crew); return; }
+	if (id == SCR_MEDIKIT) { md_text(slot, buf); return; }
 	if (id == SCR_INFOBOX) { strcpy(buf, ui_msg); return; }
 	if (id != SCR_NEXT_TURN) return;
 	char a[16];
@@ -964,6 +971,7 @@ uint8_t bat_rows(uint8_t id, uint8_t slot) __banked
 uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 {
 	if (id == SCR_DEBRIEFING) return deb_event(id, ev, arg);
+	if (id == SCR_MEDIKIT) return md_event(ev, arg);
 	if (id == SCR_BRIEFING) {
 		if (ev == EVT_BUTTON && !bt_intro) bt_intro = 1;   // в бою — сперва инвентарь и окно хода
 		return st_brief_event(ev, arg, bt_dep);
@@ -1241,9 +1249,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			path_n = 0;                       // вид пересоберёт center_on_unit
 			ru_put(i);
 			bv_sync(nunits);
-			see_update();
-			dbg_puts("door: at "); dbg_dec(dx); dbg_puts(","); dbg_dec(dy);
-			dbg_puts(" slot "); dbg_dec(ds); dbg_puts("\n");
+			see_update();                    // (печать в отладку убрана: банк 31 полон)
 			center_on_unit();
 			break;
 		}

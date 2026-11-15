@@ -21,10 +21,10 @@
 #include "units.h"
 #include "bfire.h"
 
-// Память банка (build.ps1 ram = #B000): z -> этаж и слой маски, маски юнитов
-static uint8_t __at(0xB000) zlev[256];
-static uint8_t __at(0xB100) zlay[256];
-static uint8_t __at(0xB200) uloft[40][4];
+// Память банка (build.ps1 ram = #BC00; с #BEB0 — аптечка, bmedi.c): z -> этаж и слой маски, маски юнитов
+static uint8_t __at(0xBC00) zlev[256];
+static uint8_t __at(0xBD00) zlay[256];
+static uint8_t __at(0xBE00) uloft[40][4];
 
 static const shot_t *S;
 static const fu_t *U;
@@ -33,10 +33,10 @@ static int16_t c_x = -1, c_y, c_z;       // кэш клетки voxelCheck
 // Две последние основные точки линии (траектория calculateLine; у дуги — через все отрезки):
 // предмет падает в точку перед ударом (Projectile::ItemDropVoxelOffset = -2). h_cont — первая
 // точка отрезка уже учтена (конец прошлого)
-static int16_t __at(0xB2A0) h_x[2];
-static int16_t __at(0xB2A4) h_y[2];
-static int16_t __at(0xB2A8) h_z[2];
-static uint8_t __at(0xB2AC) h_cont;
+static int16_t __at(0xBEA0) h_x[2];
+static int16_t __at(0xBEA4) h_y[2];
+static int16_t __at(0xBEA8) h_z[2];
+static uint8_t __at(0xBEAC) h_cont;
 static uint8_t c_part[4], c_unit;
 static int8_t c_tl;                      // T_Level клетки (Tile::getTerrainLevel)
 

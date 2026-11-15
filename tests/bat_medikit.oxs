@@ -1,0 +1,43 @@
+# Аптечка (MedikitState, bmedi.c): отладочный бой с аптечкой в правой руке (_bi_dbg 6), у бойца 0 —
+# 3 раны торса (TV_WOUNDS третьей рабочей страницы, #B101) и 20 здоровья. Меню руки — «Use Medi-kit»
+# (TU 10, flatRate) — окно аптечки (SCR_MEDIKIT 245, фон MEDIBORD.PCK; раненая часть — красным, выбрана
+# сама). «Лечение» (кнопка TFTD 186,116): рана −1 (woundRecovery), здоровье +3 (healthRecovery),
+# время 60 -> 50; конец (кнопка 292,46) — назад в бой.
+# Снимки — tmp/shots/bat_medikit/. Запуск: powershell -File tools\run.ps1 -Script tests\bat_medikit.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+poke _bi_dbg 6
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _ui_request 248
+waitmark 248 900
+wait 150
+poke *scr_battle$pf_page:B101 3
+poke 4E:3888 20
+pokew _cursor_x 296
+pokew _cursor_y 170
+click L
+waitmark 250 300
+wait 30
+shot tmp/shots/bat_medikit/0_menu.png
+pokew _cursor_x 150
+pokew _cursor_y 140
+click L
+waitmark 245 300
+wait 30
+shot tmp/shots/bat_medikit/1_medikit.png
+pokew _cursor_x 196
+pokew _cursor_y 126
+click L
+wait 30
+shot tmp/shots/bat_medikit/2_healed.png
+# лечение — заряд записан в запись предмета 0 (rounds #6D08): 10 -> 9
+expect *scr_battle$pf_page:6D08 9
+expect *scr_battle$pf_page:B101 2
+expect 4E:3888 23
+expect 4E:3886 50
+pokew _cursor_x 300
+pokew _cursor_y 90
+click L
+waitmark 248 300
+exit 0

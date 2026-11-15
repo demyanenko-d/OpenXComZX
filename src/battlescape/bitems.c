@@ -53,7 +53,8 @@ static uint8_t debug_gun(uint16_t *gun, uint16_t *clip, uint8_t *rounds)
 	for (uint16_t i = 0; i < t.n; i++) {
 		rtab_get(&t, i, &it);
 		if (bi_dbg) {
-			if (it.battle_type != bi_dbg || it.requires.n || !it.cost_buy) continue;
+			// аптечка не продаётся (costBuy нет) — её берём без этого условия
+			if (it.battle_type != bi_dbg || it.requires.n || (!it.cost_buy && bi_dbg != BT_MEDIKIT)) continue;
 			*gun = i; *clip = 0xFFFF; *rounds = 0;
 			return 1;
 		}
@@ -153,6 +154,7 @@ void bi_save(uint8_t page, uint8_t n) __banked
 			v.soldier = x.sol; v.slot = b.slot; v.x = b.x; v.y = b.y;
 			v.item = b.item; v.ammo = b.ammo;
 			v.rounds = bt == BT_GRENADE || bt == BT_PROXIMITYGRENADE ? 0 : b.rounds;
+			if (bt == BT_MEDIKIT) { v.ammo = 0xFFFF; v.rounds = 0; }   // аптечка с базы — снова полная (bmedi.c)
 			inv_put(k, &v);
 		}
 	}
