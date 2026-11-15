@@ -965,7 +965,7 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 {
 	if (id == SCR_DEBRIEFING) return deb_event(id, ev, arg);
 	if (id == SCR_BRIEFING) {
-		if (ev == EVT_BUTTON) bt_intro = 1;  // в бою — сперва инвентарь и окно хода
+		if (ev == EVT_BUTTON && !bt_intro) bt_intro = 1;   // в бою — сперва инвентарь и окно хода
 		return st_brief_event(ev, arg, bt_dep);
 	}
 	if (id == SCR_NEXT_TURN) {
@@ -1024,7 +1024,17 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 	case EVT_TICK: {
 		if (!gen_mode || !loaded) break;
 		if (bt_intro) {                      // после брифинга (BriefingState::btnOkClick): инвентарь,
-			if (bt_intro++ == 1) { inv_open(); break; }   //   за ним окно хода, потом бой
+			uint8_t xc;                      //   за ним окно хода, потом бой
+			if (bt_intro == 9) { bt_intro = 0; battle_end(0); break; }   // после AliensCrashState — разбор
+			if (bt_intro == 1 && !st_alive(nunits, &xc)) {   // все пришельцы погибли при крушении — боя нет
+				bt_intro = 9;
+				st_brief_stage(2);           // AliensCrashState — второй вид окна брифинга (bstage.c)
+				bv_pause();
+				marks_show(0, 0);
+				UI_GO(A_PUSH, SCR_BRIEFING);
+				break;
+			}
+			if (bt_intro++ == 1) { inv_open(); break; }
 			bt_intro = 0;
 			bv_pause();
 			marks_show(0, 0);

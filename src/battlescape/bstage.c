@@ -121,7 +121,16 @@ static const wdef_t w_brief[] = {
 	CUS(0, 0, 0, 0, NOSTR, 0, 0),               // палитра с блоком BACKPALS развёртывания (EVT_DRAW)
 };
 static const scr_t tab_brief = SCR(SCR_BRIEFING, UI_SCR_BRIEFING, NOUI, RES_BACK16_SCR, 0, w_brief);
-static uint8_t st_bstage;                    // брифинг следующей фазы: поверх боя (OK — назад в бой)
+// AliensCrashState (AliensCrashState.cpp): окно 256x160 в (32, 20) на фоне TAC00.SCR, крупный текст
+// по центру с переносом, OK — разбор (его зовёт бой, вернувшись из окна)
+static const wdef_t w_crash[] = {
+	WIN(32, 20, 256, 160, UI_EL_MESSAGEWINDOWBORDER),
+	BTN(100, 154, 120, 18, UI_EL_MESSAGEWINDOWBUTTONS, STR_OK, A_CUSTOM, 1, ENT),
+	TXT(37, 50, 246, 80, UI_EL_MESSAGEWINDOWS, STR_ALL_ALIENS_KILLED_IN_CRASH, TC | TM | TW | BIG),
+	HOT(0, 0, 0, 0, A_CUSTOM, 1, ESC),
+};
+static const scr_t tab_crash = SCR(SCR_BRIEFING, UI_SCR_BATTLESCAPE, RES_PAL_BATTLESCAPE, RES_TAC00_SCR, SF_POPUP | SF_RAWPAL, w_crash);
+static uint8_t st_bstage;                    // 1 — брифинг следующей фазы поверх боя, 2 — AliensCrashState
 
 static uint8_t brief(uint16_t dep, r_alienDeployments_t *d)
 {
@@ -148,6 +157,7 @@ uint8_t st_get(uint8_t id, sdef_t *s, wdef_t *w, uint8_t page, uint16_t dep) __b
 {
 	r_alienDeployments_t d;
 	if (id == SCR_ABORT) return abort_get(s, w, page, dep);
+	if (st_bstage == 2) return scr_find(&tab_crash, 1, SCR_BRIEFING, s, w);
 	scr_find(&tab_brief, 1, SCR_BRIEFING, s, w);
 	if (!brief(dep, &d)) return 1;
 	if (d.briefing_bg) s->bg = d.briefing_bg;
@@ -177,10 +187,10 @@ void st_brief_text(uint8_t slot, char *buf, uint16_t dep, uint16_t craft) __bank
 uint8_t st_brief_event(uint8_t ev, uint8_t arg, uint16_t dep) __banked
 {
 	r_alienDeployments_t d;
-	uint8_t ok = brief(dep, &d);
+	uint8_t ok = st_bstage < 2 && brief(dep, &d);   // AliensCrashState — без музыки и палитры брифинга
 	if (ev == EVT_MUSIC) { if (ok && d.briefing_music != 0xFF) mus_play(MUS_BASE + d.briefing_music); }
 	else if (ev == EVT_DRAW) {
-		if (st_bstage) bv_pause();               // поверх боя: сплит вида снять (окно — во весь экран)
+		if (st_bstage == 1) bv_pause();          // поверх боя: сплит вида снять (окно — во весь экран)
 		if (ok) gfx_palette(RES_PAL_GEOSCAPE, (int8_t)d.briefing_pal);
 	}
 	else if (ev == EVT_BUTTON && arg == 1) {

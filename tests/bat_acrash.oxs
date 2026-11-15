@@ -1,0 +1,23 @@
+# AliensCrashState (BriefingState::btnOkClick: живых пришельцев нет — боя нет): отладочный бой,
+# единственный пришелец (units[6]: alive #39A4, hp #39A8) «погиб при крушении», бой — как сразу после
+# брифинга (scr_battle bt_intro = 1): окно «All aliens killed in crash» (второй вид SCR_BRIEFING 246,
+# 256x160 на фоне TAC00.SCR), OK — разбор (SCR_DEBRIEFING 254).
+# Снимки — tmp/shots/bat_acrash/. Запуск: powershell -File tools\run.ps1 -Script tests\bat_acrash.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _ui_request 248
+waitmark 248 900
+wait 150
+poke 4E:39A4 0
+poke 4E:39A8 0
+poke scr_battle$bt_intro 1
+waitmark 246 300
+wait 30
+shot tmp/shots/bat_acrash/0_crash.png
+key ENTER
+waitmark 254 600
+wait 60
+shot tmp/shots/bat_acrash/1_debriefing.png
+exit 0
