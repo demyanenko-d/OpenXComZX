@@ -36,7 +36,12 @@ typedef struct {
 	uint8_t hand, tu;
 } bafire_t;
 uint16_t ba_fire(bafire_t *q) __banked;
-// Паника в начале хода стороны side (bact2.c): кто запаниковал — номера в list (бит 7 — берсерк)
+// Отряд в корабле / снаружи (AbortMissionState): вернёт «в корабле», снаружи — в *out
+uint8_t ba_in_craft(uint8_t nsold, uint8_t *out) __banked;
+// Бегство паникующего i: путь (до max шагов) в path — Win1 или стек; вернёт число шагов
+uint8_t ba_flee(uint8_t page, uint8_t i, uint8_t *path, uint8_t max) __banked;
+// Паника в начале хода стороны side (bact2.c): кто запаниковал — номера в list (бит 7 — берсерк,
+// бит 6 — бросил оружие и бежит)
 uint8_t ba_panic(uint8_t page, uint8_t side, uint8_t n, uint8_t *list, uint8_t max) __banked;
 // Начало хода стороны side: оглушение −1, очнувшиеся встают (bact2.c). Вернёт, сколько встало
 uint8_t ba_stun(uint8_t page, uint8_t side, uint8_t n) __banked;

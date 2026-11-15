@@ -1,0 +1,28 @@
+# Бегство паникующего (handlePanickingUnit :1290-1328; bact2.c ba_flee): мораль бойца 3 — 0 (#391B);
+# в начале следующего хода X-COM он паникует, бросает оружие (запись предметов 3 — #2D1E страницы #D1:
+# хозяин #FE — на полу) и бежит: путь к случайной клетке ±5 (поиск только в малом окне — pf_near_once),
+# (14,15) -> (15,13), после пути время 0 (units[3]: #3910 x, #3911 y, #3916 tu).
+# Запуск: powershell -File tools\run.ps1 -Script tests\bat_flee.oxs -Headless
+waitmark 1 600
+poke _alien_off 1
+pokew _cursor_x 160
+pokew _cursor_y 100
+poke _bat_still 1
+poke _ui_request 248
+waitmark 248 900
+wait 150
+poke 4E:391B 0
+pokew _cursor_x 250
+pokew _cursor_y 150
+click L
+wait 60
+click L
+wait 300
+click L
+wait 600
+shot tmp/shots/bat_flee/00.png
+expect D1:2D1E 254
+expect 4E:3910 15
+expect 4E:3911 13
+expect 4E:3916 0
+exit 0

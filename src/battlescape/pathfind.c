@@ -62,6 +62,12 @@ static uint8_t __at(0xBF08) pf_mx;           // размер карты
 static uint8_t __at(0xBF09) pf_my;
 static uint8_t __at(0xBF0A) pf_ox;           // угол окна на ней
 static uint8_t __at(0xBF0B) pf_oy;
+static uint8_t __at(0xBF0C) pf_near;         // #A5 — следующий поиск только в малом окне (pf_near_once)
+
+void pf_near_once(void) __banked
+{
+	pf_near = 0xA5;
+}
 
 // Клетка карты (координаты окна): номер считается в 16 битах и умножается на 4 сдвигом —
 // 32-битное умножение здесь обходилось дороже самого чтения.
@@ -247,7 +253,9 @@ uint8_t pf_find(const pf_req_t *q, uint8_t *path, uint8_t maxlen) __banked
 		}
 		if (PF_COST(tx, ty) != 0xFF) break;           // дошли
 		if (!bx0 && !by0 && bx1 == pf_sx - 1 && by1 == pf_sy - 1) break;   // и так всё окно
+		if (pf_near == 0xA5) break;                   // просили без второго захода (бегство паники)
 	}
+	pf_near = 0;
 	uint8_t n = 0;
 	if (PF_COST(tx, ty) != 0xFF) {
 		uint8_t x = tx, y = ty;

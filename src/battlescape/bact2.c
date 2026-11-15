@@ -20,6 +20,8 @@
 #include "bgren.h"
 #include "bact.h"
 #include "vision.h"
+#include "pathfind.h"
+#include "mapgen.h"
 #include "game.h"
 
 uint8_t ba_fill(const bashot_t *q, fu_t *f, shot_t *s) __banked;   // bact.c
@@ -87,7 +89,8 @@ uint8_t ba_panic(uint8_t page, uint8_t side, uint8_t n, uint8_t *list, uint8_t m
 		int16_t chance = 100 - 2 * (int16_t)u.mor;
 		if ((int16_t)rng_range(1, 100) > chance) continue;
 		uint8_t berserk = rng_range(0, 100) <= 33;
-		if (!berserk && rng_range(0, 100) <= 50)         // бросает оружие
+		uint8_t flee = !berserk && rng_range(0, 100) <= 50;
+		if (flee)                                        // бросает оружие и бежит (ba_flee)
 			for (uint8_t h = 0; h < 2; h++) {
 				bitem_t b;
 				uint16_t bi = bi_hand(page, i, h, &b);
@@ -95,13 +98,60 @@ uint8_t ba_panic(uint8_t page, uint8_t side, uint8_t n, uint8_t *list, uint8_t m
 				far_fill(FAR(page + 1, TL_BITEMS) + (bi - 1) * sizeof(bitem_t), BI_GROUND, 1);
 				fl_drop(page, bi - 1, u.x, u.y, u.z);
 			}
-		if (!berserk) u.tu = 0;              // берсерк сперва стреляет (ba_berserk), время — потом
+		if (!berserk && !flee) u.tu = 0;     // берсерк сперва стреляет, бегущий — бежит; время — потом
 		u.mor = u.mor > 85 ? 100 : (uint8_t)(u.mor + 15);
 		u_set(i, &u);
-		list[cnt++] = (uint8_t)(i | (berserk ? 0x80 : 0));
+		list[cnt++] = (uint8_t)(i | (berserk ? 0x80 : 0) | (flee ? 0x40 : 0));
 	}
 	if (cnt) { bi_hands(page, n); bv_sync(n); }
 	return cnt;
+}
+
+// Кто из отряда (nsold) в корабле — для AbortMissionState: на его полу (части от base) внутри
+// прямоугольника (клетки START_POINT у карт кораблей; признака в наших MCDSET нет). Вернёт
+// число в корабле, остальных живых — в *out
+uint8_t ba_in_craft(uint8_t nsold, uint8_t *out) __banked
+{
+	uint8_t cx, cy, cw, cl, base, in = 0, o = 0;
+	mapgen_craft(&cx, &cy, &cw, &cl, &base);
+	far_t cells = mapgen_cells();
+	uint16_t sx = mapgen_sx(), sy = mapgen_sy();
+	for (uint8_t i = 0; i < nsold; i++) {
+		unit_t u;
+		u_get(i, &u);
+		if (!u.alive) continue;
+		uint8_t c = 0;
+		if (cw && u.x >= cx && u.y >= cy && u.x < cx + cw && u.y < cy + cl)
+			c = far_byte(cells + ((uint32_t)((uint16_t)u.z * sy + u.y) * sx + u.x) * 4);
+		if (c && c >= base) in++; else o++;
+	}
+	*out = o;
+	return in;
+}
+
+// Бегство паникующего (handlePanickingUnit :1306-1328): до 20 попыток — случайная клетка ±5 на его
+// этаже, путь на всё его время (у нас без попыток этажом ниже). Вернёт шагов в path (0 — некуда)
+uint8_t ba_flee(uint8_t page, uint8_t i, uint8_t *path, uint8_t max) __banked
+{
+	unit_t u;
+	pf_req_t r;
+	u_get(i, &u);
+	r.cells = mapgen_cells(); r.sx = (uint8_t)mapgen_sx(); r.sy = (uint8_t)mapgen_sy(); r.sz = mapgen_sz();
+	r.z = u.z; r.fx = u.x; r.fy = u.y; r.budget = u.tu; r.step = 4; r.page = page;
+	dmap_t m;
+	m.cells = r.cells; m.sx = r.sx; m.sy = r.sy; m.sz = r.sz; m.page = page;
+	for (uint8_t k = 0; k < 20; k++) {
+		int16_t tx = (int16_t)u.x + (int16_t)rng_range(0, 10) - 5, ty = (int16_t)u.y + (int16_t)rng_range(0, 10) - 5;
+		if (tx < 0 || ty < 0 || tx >= r.sx || ty >= r.sy) continue;
+		// в клетку, куда не встать, путь не ищем: волна до недостижимой цели — полный проход окна,
+		// а 20 таких — секунды (у оригинала тот же перебор, но на ПК)
+		if (!cell_cost(&m, (uint8_t)tx, (uint8_t)ty, u.z, 0, 4)) continue;
+		r.tx = (uint8_t)tx; r.ty = (uint8_t)ty;
+		pf_near_once();
+		uint8_t n = pf_find(&r, path, max);
+		if (n) return n;
+	}
+	return 0;
 }
 
 // Оглушение (BattleUnit::prepareNewTurn :1705-1708 — юнитам стороны хода −1, мирным — в ход

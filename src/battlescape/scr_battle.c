@@ -88,6 +88,7 @@ static uint8_t __at(0xB80A) ib_t;        // окно сообщения: кад�
 static uint8_t __at(0xB80B) hit_pend;    // выбран удар — выполнить в такте боя (меню закрыто)
 static uint8_t __at(0xB80D) bz_u;        // берсерк стреляет после своего окна (#FF — никто)
 static uint8_t __at(0xB80E) bz_k;        //   выстрелов сделано (до 10)
+static uint8_t __at(0xB80F) fl_u;        // паникующий бежит по пути (#FF — никто): дошёл — время 0
 
 static const wdef_t w_battle[] = {
 	// Виджет карты: рисует экран (EVT_DRAW) и отдаёт клики экрану (EVT_BUTTON, arg 0) —
@@ -564,7 +565,7 @@ static uint8_t load_gen(uint16_t terrain)
 	bt_turn = 1;
 	pn_n = pn_i = 0;                     // память банка не обнуляется
 	hit_pend = wl_spot = 0;
-	bz_u = 0xFF;
+	bz_u = fl_u = 0xFF;
 	bt_side = FACTION_PLAYER;
 	gen_mode = 1;
 	sel = 0;
@@ -772,16 +773,6 @@ static void ai_run(void)
 	UI_GO(A_PUSH, SCR_NEXT_TURN);
 }
 
-// ---------------------------------------------------------------- прервать миссию
-// В корабле — на его полу (части от m_cbase) внутри его прямоугольника: так лежат клетки
-// START_POINT (MCD.Special_Type) у карт кораблей; самого признака в наших MCDSET нет
-static uint8_t in_craft(const unit_t *u)
-{
-	if (!m_cw || u->x < m_cx || u->y < m_cy || u->x >= m_cx + m_cw || u->y >= m_cy + m_cl) return 0;
-	uint8_t c;
-	far_read(cells + ((uint32_t)((uint16_t)u->z * m_sy + u->y) * m_sx + u->x) * 4, &c, 1);
-	return c >= m_cbase && c;
-}
 
 // ---------------------------------------------------------------- характеристики
 static void uinfo_draw(void)
@@ -803,9 +794,13 @@ static void aim_off(void)
 // Следующий запаниковавший: «… has panicked» / «… has gone berserk» в окне, камера на него, если виден
 static void panic_show(void)
 {
-	uint8_t e = pn_list[pn_i++];
-	const unit_t *u = &units[e & 0x7F];
-	if (e & 0x80) { bz_u = e & 0x7F; bz_k = 0; }   // после окна — стрельба (UnitPanicBState)
+	uint8_t e = pn_list[pn_i++], i = e & 0x3F;
+	unit_t *u = &units[i];
+	if (e & 0x80) { bz_u = i; bz_k = 0; }   // после окна — стрельба (UnitPanicBState)
+	if (e & 0x40) {                          // бросил оружие и бежит; пришелец — просто стоит
+		if (u->faction == FACTION_PLAYER && (path_n = ba_flee(pf_page, i, path, PATH_MAX)) != 0) { sel = i; path_i = 0; fl_u = i; }
+		else u->tu = 0;                      // некуда бежать — стоит
+	}
 	char name[48];
 	uint8_t fem = stats_name(u->sol, u->type, 0, name);   // строки — по роду (getString(id, gender))
 	str_fmt(ui_msg, str_get((e & 0x80) ? STR_HAS_GONE_BERSERK_MALE + fem : STR_HAS_PANICKED_MALE + fem), name, "");
@@ -946,13 +941,8 @@ void bat_text(uint8_t id, uint8_t slot, uint8_t line, char *buf) __banked
 		if (slot) { buf[0] = slot == 1 ? '<' : '>'; buf[1] = buf[0]; buf[2] = 0; }
 		return;
 	}
-	if (id == SCR_ABORT) {               // бойцы на полу своего корабля (START_POINT) и прочие
-		uint8_t in = 0, out = 0;
-		for (uint8_t i = 0; i < nsold; i++) {
-			const unit_t *u = &units[i];
-			if (!u->alive) continue;
-			if (in_craft(u)) in++; else out++;
-		}
+	if (id == SCR_ABORT) {               // бойцы на полу своего корабля (START_POINT) и прочие (bact2.c)
+		uint8_t out, in = ba_in_craft(nsold, &out);
 		str_plural(buf, slot ? STR_UNITS_OUTSIDE_one : STR_UNITS_IN_CRAFT_one, slot ? out : in);
 		return;
 	}
@@ -1037,7 +1027,8 @@ uint8_t bat_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 			if (!battle_end(0)) ui_dirty(0);
 			break;
 		}
-		if (pn_i < pn_n && bv_walking() == 0xFF) { panic_show(); break; }   // сперва — окна паники
+		if (fl_u != 0xFF && !path_n && bv_walking() == 0xFF) { units[fl_u].tu = 0; fl_u = 0xFF; ui_dirty(0); }
+		if (pn_i < pn_n && !path_n && bv_walking() == 0xFF) { panic_show(); break; }   // сперва — окна паники
 		if (bt_side == FACTION_HOSTILE) { ai_run(); break; }
 		if (hit_pend) {                      // удар в клетку перед бойцом
 			const unit_t *u = &units[sel < nsold ? sel : 0];
