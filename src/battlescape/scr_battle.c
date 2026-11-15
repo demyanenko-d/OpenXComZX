@@ -45,6 +45,7 @@
 #include "bexpl.h"
 #include "bstage.h"
 #include "bmedi.h"
+#include "bpsi.h"
 
 #define VIEW_H     144               // окно карты; ниже — панель ICONS (56 строк)
 
@@ -797,7 +798,18 @@ static void panic_show(void)
 static void shoot(uint8_t tx, uint8_t ty)
 {
 	uint8_t i = sel < nsold ? sel : 0;
-	bafire_t q;                              // проверки, поворот, время, пули и бросок — bact.c (банк 36)
+	if (bt_action == BA_PANIC || bt_action == BA_MINDCONTROL) {   // пси-усилитель (bpsi.c)
+		uint16_t s = psi_player(i, tx, ty, bv_level(), bt_action, bt_action_tu, nunits);
+		aim_off();
+		if (s == STR_NOT_ENOUGH_TIME_UNITS) { hud_warn(s); return; }
+		if (!s) { ui_dirty(0); return; }     // при успехе — без: перерисовка карты вернула бы сплит над окном
+		str_copy(s, ui_msg, sizeof ui_msg);  // InfoboxState: «Morale attack / Mind control successful»
+		bv_snapshot();
+		marks_show(0, 0);
+		UI_GO(A_PUSH, SCR_INFOBOX);
+		return;
+	}
+	bafire_t q;                             // проверки, поворот, время, пули и бросок — bact.c (банк 36)
 	q.s.page = pf_page; q.s.cells = cells; q.s.sx = m_sx; q.s.sy = m_sy; q.s.sz = m_sz;
 	q.s.shooter = i; q.s.n = nunits; q.s.tx = tx; q.s.ty = ty;
 	q.s.tz = bt_action == BA_HIT ? units[i].z : bv_level();
@@ -890,7 +902,8 @@ static void amenu_event(uint8_t ev, uint8_t arg)
 		}
 		// выстрелы и бросок ждут цель: курсор — прицел (BattlescapeGame::setupCursor: CT_AIM; у
 		// броска CT_THROW — рамка клетки, как обычный)
-		bt_aim = bt_action == BA_AUTOSHOT || bt_action == BA_SNAPSHOT || bt_action == BA_AIMEDSHOT || bt_action == BA_THROW;
+		bt_aim = bt_action == BA_AUTOSHOT || bt_action == BA_SNAPSHOT || bt_action == BA_AIMEDSHOT || bt_action == BA_THROW
+			|| bt_action == BA_PANIC || bt_action == BA_MINDCONTROL;
 		bv_aim(bt_aim && bt_action != BA_THROW);
 		UI_GO(A_POP, 0);
 		break;

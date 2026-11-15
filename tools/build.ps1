@@ -44,7 +44,7 @@ $banks = @(
     @{ n = 13; page = 0x3C; files = @('common\scr_ufop') }
     @{ n = 14; page = 0x3E; files = @('test\bank_a', 'test\mathtest', 'kernel\sddiag'); ram = 0xB000 }   # служебный: самотест джампера, диагностика SD (с #B000 — её результаты)
     @{ n = 15; page = 0x3F; files = @('test\bank_b', 'common\screens', 'battlescape\bequip'); ram = 0xB000 }   # самотест джампера; диспетчер экранов (зовёт ui.c; банк 1 переполнился); снаряжение боя из груза корабля и пришельцам (bequip.c; с #B300 — его рабочая память)
-    @{ n = 16; page = 0x3D; files = @('geoscape\month') }   # конец месяца
+    @{ n = 16; page = 0x3D; files = @('geoscape\month', 'battlescape\bpsi') }   # конец месяца; пси-атаки боя (bpsi.c: в банках боя места нет)
     @{ n = 17; page = 0x40; files = @('geoscape\earth\world', 'geoscape\earth\geo') }   # ГСЧ, регионы, сфера, маска суши
     @{ n = 18; page = 0x41; files = @('geoscape\earth\alien') }   # стратегия и миссии пришельцев
     @{ n = 19; page = 0x42; files = @('geoscape\earth\ufo') }     # НЛО, обнаружение, места миссий, базы пришельцев
@@ -68,7 +68,7 @@ $banks = @(
     @{ n = 37; page = 0xEE; files = @('battlescape\bdeb', 'battlescape\bact2'); ram = 0xB000 }   # бой: разбор (DebriefingState, bdeb.c; с #B000 — строки очков); действие предметом в руке — выстрел, бросок, удар (bact2.c, из банка 36)
     @{ n = 39; page = 0x8D; files = @('battlescape\bexpl'); ram = 0xB400 }   # бой: взрывы — гранаты в конце хода, анимация X1.PCK, урон по площади (bexpl.c, с #B000 — его рабочая память); страница — хвост области пакетов (RES_LAST #8C)
     @{ n = 38; page = 0x4A; files = @('battlescape\bstats', 'battlescape\bgren', 'battlescape\bload'); ram = 0xB000 }   # бой: характеристики (bstats.c, из банка 33); загрузка миссии для экрана боя (bload.c, из банка 30); гранаты — таймер, бросок, взрыв (bgren.c, с #B000 — его рабочая память); страница освободилась от инвентаря (банк 27)
-    @{ n = 35; page = 0xEC; files = @('battlescape\bfire', 'battlescape\bescape', 'battlescape\bmorale', 'battlescape\bmedi', 'battlescape\bpsi'); ram = 0xBC00 }   # бой: выстрел — траектория в вокселях, урон (bfire.c); с #B000 — таблицы z и маски юнитов; страница из бывшего пула (map.h BANK3_PAGE)
+    @{ n = 35; page = 0xEC; files = @('battlescape\bfire', 'battlescape\bescape', 'battlescape\bmorale', 'battlescape\bmedi'); ram = 0xBC00 }   # бой: выстрел — траектория в вокселях, урон (bfire.c); с #B000 — таблицы z и маски юнитов; страница из бывшего пула (map.h BANK3_PAGE)
 )
 
 # Пакеты данных игры: выход конвертера OxzConv (tmp\sd\OXZ\<игра>), вшиваются в SPG.

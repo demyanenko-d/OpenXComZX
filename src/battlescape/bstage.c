@@ -47,9 +47,10 @@ void st_side_prepare(uint8_t side, uint8_t n, uint8_t page) __banked
 		far_t a = UNITS_FAR + (uint16_t)i * sizeof u;
 		far_read(a, &u, sizeof u);
 		uint8_t f = u.faction;               // сравнения — с копиями (SDCC 4.5)
-		if (u.alive && xcom && f == FACTION_HOSTILE && u.type == 0xFFFF) {
-			u.faction = FACTION_PLAYER;      // боец из-под контроля — назад к X-COM, времени в этот
-			far_write(a, &u, sizeof u);      //   ход не получает (prepareNewTurn: revert, return)
+		uint8_t me = u.type == 0xFFFF;       // боец X-COM (иначе — пришелец: под контролем игрока)
+		if (u.alive && xcom && (me ? f == FACTION_HOSTILE : f == FACTION_PLAYER)) {
+			u.faction = me ? FACTION_PLAYER : FACTION_HOSTILE;   // из-под контроля — к своим, времени в
+			far_write(a, &u, sizeof u);      //   этот ход не получает (prepareNewTurn: revert, return)
 			continue;
 		}
 		if (!u.alive || f != side) continue;

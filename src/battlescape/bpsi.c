@@ -15,6 +15,7 @@
 #include "res_ids.h"
 #include "rules.h"
 #include "units.h"
+#include "str_ids.h"
 #include "game.h"
 #include "bitems.h"
 #include "bai.h"
@@ -28,6 +29,41 @@ static uint16_t isqrt16(uint16_t v)
 	uint16_t r = 0;
 	for (uint16_t b = 0x80; b; b >>= 1) if ((r | b) * (r | b) <= v) r |= b;
 	return r;
+}
+
+// Пси-атака бойца a пси-усилителем (BA_PANIC 12 / BA_MINDCONTROL 11; PsiAttackBState::init, psiAttack)
+// по юниту не X-COM в клетке (tx, ty, tz), время tu. Вернёт строку для InfoboxState при успехе,
+// STR_NOT_ENOUGH_TIME_UNITS — времени нет, 0 — не вышло или некого (время не тратится, если некого)
+uint16_t psi_player(uint8_t a, uint8_t tx, uint8_t ty, uint8_t tz, uint8_t act, uint8_t tu, uint8_t n) __banked
+{
+	unit_t u, x;
+	uint8_t tg = 0xFF;
+	for (uint8_t i = 0; i < n && tg == 0xFF; i++) {
+		far_read(UNITS_FAR + (uint16_t)i * sizeof x, &x, sizeof x);
+		uint8_t f = x.faction;
+		if (x.alive && f != FACTION_PLAYER && x.z == tz && (uint8_t)(tx - x.x) < x.size && (uint8_t)(ty - x.y) < x.size) tg = i;
+	}
+	if (tg == 0xFF) return 0;
+	uint8_t xf = x.faction;
+	if (act == 11 && xf != FACTION_HOSTILE) return 0;   // контроль — только пришельцев
+	far_read(UNITS_FAR + (uint16_t)a * sizeof u, &u, sizeof u);
+	if (u.tu < tu) return STR_NOT_ENOUGH_TIME_UNITS;
+	u.tu -= tu;
+	far_write(UNITS_FAR + (uint16_t)a * sizeof u, &u, sizeof u);
+	int16_t dx = (int16_t)x.x - u.x, dy = (int16_t)x.y - u.y, dz = (int16_t)x.z - u.z;
+	int16_t s = (int16_t)((uint16_t)u.psi_str * u.psi_skill / 50) - (int16_t)isqrt16((uint16_t)(dx * dx + dy * dy + dz * dz))
+		+ (int16_t)rng_range(0, 55);
+	int16_t def = x.psi_str + (x.psi_skill ? 10 + x.psi_skill / 5 : 10) + (act == 11 ? 20 : 0);
+	if (s <= def) return 0;
+	if (act == 11) {                         // convertToFaction: к X-COM до начала следующего хода X-COM
+		x.faction = FACTION_PLAYER;
+		x.tu = x.tu_max;
+	} else {
+		int16_t loss = 110 - x.bravery;
+		x.mor = loss >= x.mor ? 0 : (uint8_t)(x.mor - loss);
+	}
+	far_write(UNITS_FAR + (uint16_t)tg * sizeof x, &x, sizeof x);
+	return act == 11 ? STR_MIND_CONTROL_SUCCESSFUL : STR_MORALE_ATTACK_SUCCESSFUL;
 }
 
 uint8_t ai_psi(const aictx_t *c, uint8_t a) __banked

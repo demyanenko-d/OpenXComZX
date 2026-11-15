@@ -53,8 +53,8 @@ static uint8_t debug_gun(uint16_t *gun, uint16_t *clip, uint8_t *rounds)
 	for (uint16_t i = 0; i < t.n; i++) {
 		rtab_get(&t, i, &it);
 		if (bi_dbg) {
-			// аптечка не продаётся (costBuy нет) — её берём без этого условия
-			if (it.battle_type != bi_dbg || it.requires.n || (!it.cost_buy && bi_dbg != BT_MEDIKIT)) continue;
+			// аптечка и пси-оружие пришельцев не продаются (costBuy нет) — их берём без этого условия
+			if (it.battle_type != bi_dbg || it.requires.n || (!it.cost_buy && bi_dbg != BT_MEDIKIT && bi_dbg != 9)) continue;
 			*gun = i; *clip = 0xFFFF; *rounds = 0;
 			return 1;
 		}
