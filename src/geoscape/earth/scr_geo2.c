@@ -537,6 +537,9 @@ uint8_t geo2_event(uint8_t id, uint8_t ev, uint8_t arg) __banked
 				if (cr->dest_kind == TGT_SITE) {
 					uint8_t s = cr->dest;
 					if (s < MAX_SITES && ST->site[s].id) { dep = ST->site[s].deployment; race = ST->site[s].race; }
+				} else if (cr->dest_kind == TGT_ABASE) {   // база пришельцев: её развёртывание и раса
+					uint8_t b = cr->dest;
+					if (b < MAX_ALIEN_BASES && ST->abase[b].id) { dep = ST->abase[b].deployment; race = ST->abase[b].race; }
 				} else if (cr->dest_kind == TGT_UFO) {
 					uint8_t u = cr->dest;
 					if (u < MAX_UFOS && ST->ufo[u].id) {

@@ -227,6 +227,10 @@ AVAILABLE» y 24 h 9 стирала верх заголовка на 32), каж
   tu = 0), затем окно хода «TURN 1 / X-Com», потом бой (scr_battle `bt_intro`). [ ] Перед боем
   оригинал ещё запоминает раскладку (saveEquipmentLayout) и на ходу 1 раскидывает предметы корабля
   (randomizeItemLocations); cutscene брифинга (T'лет) не показывается.
+  [x] Высадка на базу пришельцев (2026-11-15): бой — по развёртыванию и расе базы
+  (STR_ALIEN_BASE_ASSAULT 16 -> 17 у TFTD), разбор — «Alien Base Destroyed / Still Intact», победа
+  удаляет базу, её миссии снабжения — без базы (DebriefingState.cpp:1104-1137). [ ] Цели миссий
+  (objectiveType / MUST_DESTROY, allObjectivesDestroyed), финалы (T'лет, Cydonia; ConfirmCydonia).
   [ ] Чего нет: мирные фазы засчитываются как спасённые при
   её победе (в OpenXcom — по итогу всей миссии); оглушённый боец без тела на полу (встанет, когда
   очнётся); предметы на полу зоны выхода в следующую фазу не переходят; turnLimit/chronoTrigger.

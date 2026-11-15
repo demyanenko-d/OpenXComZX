@@ -231,6 +231,10 @@ static void campaign(const debreq_t *q, uint8_t alive_x, uint8_t success)
 		if (ST->ufo[di].status == US_LANDED && (q->aborted || !alive_x)) ST->ufo[di].secs = 5;
 		else ufo_free(di);
 	}
+	if (dk == DK_ALIENBASE && success && di < MAX_ALIEN_BASES) {   // база пришельцев уничтожена (:1104-1137):
+		ST->abase[di].id = 0;                    //   её миссии снабжения — без базы (ClearAlienBase)
+		for (uint8_t m = 0; m < MAX_MISSIONS; m++) if (ST->mission[m].abase == di) ST->mission[m].abase = NONE8;
+	}
 	for (uint8_t i = 0; i < ST->nsoldiers; i++) {   // прежние повышения забыты (_recentlyPromoted)
 		far_t a = FAR(SOLDIER_PAGE, 0) + (uint16_t)i * sizeof(soldier_t) + offsetof(soldier_t, flags);
 		uint8_t f = (uint8_t)(far_byte(a) & ~SF_PROMOTED);
@@ -359,9 +363,10 @@ void deb_start(const debreq_t *q) __banked
 		if (ct != NONE8 && rtab_open(RES_RULE_CRAFTS, &tc) && ct < tc.n) sc = (int16_t)rtab_word(&tc, ct, offsetof(r_crafts_t, score));
 		add_stat(D_CRAFT, -sc);
 	}
-	if (success) d_title = q->ufo ? STR_UFO_IS_RECOVERED : STR_ALIENS_DEFEATED;
+	uint8_t ab = q->craft < MAX_CRAFTS && ST->craft[(uint8_t)q->craft].dest_kind == DK_ALIENBASE;   // цель — база пришельцев
+	if (success) d_title = q->ufo ? STR_UFO_IS_RECOVERED : ab ? STR_ALIEN_BASE_DESTROYED : STR_ALIENS_DEFEATED;
 	else if (!alive_x) d_title = STR_CRAFT_IS_LOST;
-	else d_title = q->ufo ? STR_UFO_IS_NOT_RECOVERED : STR_TERROR_CONTINUES;
+	else d_title = q->ufo ? STR_UFO_IS_NOT_RECOVERED : ab ? STR_ALIEN_BASE_STILL_INTACT : STR_TERROR_CONTINUES;
 	if (success) recovery(q);                    // части НЛО: поле за отрядом
 	ds_n = 0;                                    // ненулевые строки — подряд в начало
 	d_total = 0;
