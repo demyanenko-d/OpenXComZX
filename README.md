@@ -17,23 +17,99 @@ ZX Evolution / Pentevo: Z80 до 14 МГц, 4 МБ страничной памя
 
 ### Геоскейп
 
+#### Начало игры
+
 | UFO Defense | Terror from the Deep |
 |---|---|
-| [<img src="project_docs/scr/ufo_geo_globe.png" width="400">](project_docs/scr/ufo_geo_globe.png)<br>Глобус: тень по времени суток | [<img src="project_docs/scr/tftd_geo_globe.png" width="400">](project_docs/scr/tftd_geo_globe.png)<br>Глобус: тень по времени суток |
-| [<img src="project_docs/scr/ufo_geo_dogfight.png" width="400">](project_docs/scr/ufo_geo_dogfight.png)<br>Перехват: воздушный бой | [<img src="project_docs/scr/tftd_geo_dogfight.png" width="400">](project_docs/scr/tftd_geo_dogfight.png)<br>Перехват: воздушный бой |
+| [<img src="project_docs/scr/ufo_geo_menu.png" width="400">](project_docs/scr/ufo_geo_menu.png)<br>Главное меню | [<img src="project_docs/scr/tftd_geo_menu.png" width="400">](project_docs/scr/tftd_geo_menu.png)<br>Главное меню |
+| [<img src="project_docs/scr/ufo_geo_newgame.png" width="400">](project_docs/scr/ufo_geo_newgame.png)<br>Новая игра: сложность и «железный человек» | [<img src="project_docs/scr/tftd_geo_newgame.png" width="400">](project_docs/scr/tftd_geo_newgame.png)<br>Новая игра: сложность и «железный человек» |
+
+#### Глобус
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_geo_globe.png" width="400">](project_docs/scr/ufo_geo_globe.png)<br>Глобус на закате: тень по времени суток | [<img src="project_docs/scr/tftd_geo_globe.png" width="400">](project_docs/scr/tftd_geo_globe.png)<br>Глобус на закате: тень по времени суток |
+| [<img src="project_docs/scr/ufo_geo_cities.png" width="400">](project_docs/scr/ufo_geo_cities.png)<br>Ближний зум: города, реки, подписи стран | [<img src="project_docs/scr/tftd_geo_cities.png" width="400">](project_docs/scr/tftd_geo_cities.png)<br>Ближний зум: города, реки, подписи стран |
+
+#### Первая база и сообщения
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_geo_first_base.png" width="400">](project_docs/scr/ufo_geo_first_base.png)<br>Место для первой базы | [<img src="project_docs/scr/tftd_geo_first_base.png" width="400">](project_docs/scr/tftd_geo_first_base.png)<br>Место для первой базы |
+| [<img src="project_docs/scr/ufo_geo_message.png" width="400">](project_docs/scr/ufo_geo_message.png)<br>Сообщение: постройка закончена | [<img src="project_docs/scr/tftd_geo_message.png" width="400">](project_docs/scr/tftd_geo_message.png)<br>Сообщение: постройка закончена |
+
+#### НЛО
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_geo_ufo.png" width="400">](project_docs/scr/ufo_geo_ufo.png)<br>Обнаружен корабль пришельцев | [<img src="project_docs/scr/tftd_geo_ufo.png" width="400">](project_docs/scr/tftd_geo_ufo.png)<br>Обнаружен корабль пришельцев |
+| [<img src="project_docs/scr/ufo_geo_intercept.png" width="400">](project_docs/scr/ufo_geo_intercept.png)<br>Перехват: выбор корабля | [<img src="project_docs/scr/tftd_geo_intercept.png" width="400">](project_docs/scr/tftd_geo_intercept.png)<br>Перехват: выбор корабля |
+
+#### Воздушный бой и оборона базы
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_geo_dogfight.png" width="400">](project_docs/scr/ufo_geo_dogfight.png)<br>Воздушный бой | [<img src="project_docs/scr/tftd_geo_dogfight.png" width="400">](project_docs/scr/tftd_geo_dogfight.png)<br>Воздушный бой |
+| [<img src="project_docs/scr/ufo_geo_basedefense.png" width="400">](project_docs/scr/ufo_geo_basedefense.png)<br>Пришельцы атакуют базу: огонь обороны | [<img src="project_docs/scr/tftd_geo_basedefense.png" width="400">](project_docs/scr/tftd_geo_basedefense.png)<br>Пришельцы атакуют базу: огонь обороны |
 
 ### Базы
+
+#### База
 
 | UFO Defense | Terror from the Deep |
 |---|---|
 | [<img src="project_docs/scr/ufo_base_view.png" width="400">](project_docs/scr/ufo_base_view.png)<br>База | [<img src="project_docs/scr/tftd_base_view.png" width="400">](project_docs/scr/tftd_base_view.png)<br>База |
-| [<img src="project_docs/scr/ufo_base_research.png" width="400">](project_docs/scr/ufo_base_research.png)<br>Исследования: распределение учёных | [<img src="project_docs/scr/tftd_base_research.png" width="400">](project_docs/scr/tftd_base_research.png)<br>Исследования: распределение учёных |
+| [<img src="project_docs/scr/ufo_base_arriving.png" width="400">](project_docs/scr/ufo_base_arriving.png)<br>Прибыли закупки | [<img src="project_docs/scr/tftd_base_arriving.png" width="400">](project_docs/scr/tftd_base_arriving.png)<br>Прибыли закупки |
 
-### Экипаж
+#### Строительство
 
 | UFO Defense | Terror from the Deep |
 |---|---|
+| [<img src="project_docs/scr/ufo_base_build_list.png" width="400">](project_docs/scr/ufo_base_build_list.png)<br>Список построек | [<img src="project_docs/scr/tftd_base_build_list.png" width="400">](project_docs/scr/tftd_base_build_list.png)<br>Список построек |
+| [<img src="project_docs/scr/ufo_base_build.png" width="400">](project_docs/scr/ufo_base_build.png)<br>Рамка габаритов модуля, цена и срок | [<img src="project_docs/scr/tftd_base_build.png" width="400">](project_docs/scr/tftd_base_build.png)<br>Рамка габаритов модуля, цена и срок |
+
+#### Исследования
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_base_research_list.png" width="400">](project_docs/scr/ufo_base_research_list.png)<br>Текущие исследования | [<img src="project_docs/scr/tftd_base_research_list.png" width="400">](project_docs/scr/tftd_base_research_list.png)<br>Текущие исследования |
+| [<img src="project_docs/scr/ufo_base_research.png" width="400">](project_docs/scr/ufo_base_research.png)<br>Распределение учёных | [<img src="project_docs/scr/tftd_base_research.png" width="400">](project_docs/scr/tftd_base_research.png)<br>Распределение учёных |
+
+#### Производство
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_base_manuf_list.png" width="400">](project_docs/scr/ufo_base_manuf_list.png)<br>Что можно производить | [<img src="project_docs/scr/tftd_base_manuf_list.png" width="400">](project_docs/scr/tftd_base_manuf_list.png)<br>Что можно производить |
+| [<img src="project_docs/scr/ufo_base_manufacture.png" width="400">](project_docs/scr/ufo_base_manufacture.png)<br>Запуск производства | [<img src="project_docs/scr/tftd_base_manufacture.png" width="400">](project_docs/scr/tftd_base_manufacture.png)<br>Запуск производства |
+
+#### Склад и переводы
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_base_purchase.png" width="400">](project_docs/scr/ufo_base_purchase.png)<br>Закупки и наём | [<img src="project_docs/scr/tftd_base_purchase.png" width="400">](project_docs/scr/tftd_base_purchase.png)<br>Закупки и наём |
+| [<img src="project_docs/scr/ufo_base_transfer.png" width="400">](project_docs/scr/ufo_base_transfer.png)<br>Перевод между базами | [<img src="project_docs/scr/tftd_base_transfer.png" width="400">](project_docs/scr/tftd_base_transfer.png)<br>Перевод между базами |
+
+### Экипаж
+
+#### Бойцы
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_crew_list.png" width="400">](project_docs/scr/ufo_crew_list.png)<br>Список бойцов | [<img src="project_docs/scr/tftd_crew_list.png" width="400">](project_docs/scr/tftd_crew_list.png)<br>Список бойцов |
 | [<img src="project_docs/scr/ufo_crew_soldier.png" width="400">](project_docs/scr/ufo_crew_soldier.png)<br>Карточка бойца | [<img src="project_docs/scr/tftd_crew_soldier.png" width="400">](project_docs/scr/tftd_crew_soldier.png)<br>Карточка бойца |
+
+#### Корабль
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_crew_craft.png" width="400">](project_docs/scr/ufo_crew_craft.png)<br>Корабль: экипаж, снаряжение, броня | [<img src="project_docs/scr/tftd_crew_craft.png" width="400">](project_docs/scr/tftd_crew_craft.png)<br>Корабль: экипаж, снаряжение, броня |
+| [<img src="project_docs/scr/ufo_crew_craft_weapons.png" width="400">](project_docs/scr/ufo_crew_craft_weapons.png)<br>Вооружение корабля | [<img src="project_docs/scr/tftd_crew_craft_weapons.png" width="400">](project_docs/scr/tftd_crew_craft_weapons.png)<br>Вооружение корабля |
+
+#### Снаряжение и инвентарь
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_crew_equipment.png" width="400">](project_docs/scr/ufo_crew_equipment.png)<br>Снаряжение корабля | [<img src="project_docs/scr/tftd_crew_equipment.png" width="400">](project_docs/scr/tftd_crew_equipment.png)<br>Снаряжение корабля |
 | [<img src="project_docs/scr/ufo_crew_inventory.png" width="400">](project_docs/scr/ufo_crew_inventory.png)<br>Инвентарь: оружие заряжено, обойма под курсором | [<img src="project_docs/scr/tftd_crew_inventory.png" width="400">](project_docs/scr/tftd_crew_inventory.png)<br>Инвентарь: оружие заряжено, обойма под курсором |
 
 ### Наземный бой
@@ -45,7 +121,14 @@ ZX Evolution / Pentevo: Z80 до 14 МГц, 4 МБ страничной памя
 | UFO Defense | Terror from the Deep |
 |---|---|
 | [<img src="project_docs/scr/ufo_bat_briefing.png" width="400">](project_docs/scr/ufo_bat_briefing.png)<br>Брифинг перед высадкой | [<img src="project_docs/scr/tftd_bat_briefing.png" width="400">](project_docs/scr/tftd_bat_briefing.png)<br>Брифинг перед высадкой |
-| [<img src="project_docs/scr/ufo_bat_landing.png" width="400">](project_docs/scr/ufo_bat_landing.png)<br>Отряд в корабле | [<img src="project_docs/scr/tftd_bat_landing.png" width="400">](project_docs/scr/tftd_bat_landing.png)<br>Отряд в корабле |
+| [<img src="project_docs/scr/ufo_bat_landing.png" width="400">](project_docs/scr/ufo_bat_landing.png)<br>Отряд на поле боя | [<img src="project_docs/scr/tftd_bat_landing.png" width="400">](project_docs/scr/tftd_bat_landing.png)<br>Отряд на поле боя |
+
+#### Карта
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_bat_craft.png" width="400">](project_docs/scr/ufo_bat_craft.png)<br>Корабль отряда снаружи, этажи | [<img src="project_docs/scr/tftd_bat_craft.png" width="400">](project_docs/scr/tftd_bat_craft.png)<br>Корабль отряда снаружи, этажи |
+| [<img src="project_docs/scr/ufo_bat_door.png" width="400">](project_docs/scr/ufo_bat_door.png)<br>Дверь открыта | [<img src="project_docs/scr/tftd_bat_door.png" width="400">](project_docs/scr/tftd_bat_door.png)<br>Дверь открыта |
 
 #### Разведка
 
@@ -59,7 +142,21 @@ ZX Evolution / Pentevo: Z80 до 14 МГц, 4 МБ страничной памя
 | UFO Defense | Terror from the Deep |
 |---|---|
 | [<img src="project_docs/scr/ufo_bat_menu.png" width="400">](project_docs/scr/ufo_bat_menu.png)<br>Меню действий: точность и цена в единицах времени | [<img src="project_docs/scr/tftd_bat_menu.png" width="400">](project_docs/scr/tftd_bat_menu.png)<br>Меню действий: точность и цена в единицах времени |
-| [<img src="project_docs/scr/ufo_bat_grenade.png" width="400">](project_docs/scr/ufo_bat_grenade.png)<br>Граната: таймер взрывателя | [<img src="project_docs/scr/tftd_bat_grenade.png" width="400">](project_docs/scr/tftd_bat_grenade.png)<br>Граната: таймер взрывателя |
+| [<img src="project_docs/scr/ufo_bat_melee.png" width="400">](project_docs/scr/ufo_bat_melee.png)<br>Ближний бой: оглушить | [<img src="project_docs/scr/tftd_bat_melee.png" width="400">](project_docs/scr/tftd_bat_melee.png)<br>Ближний бой: оглушить |
+
+#### Гранаты
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_bat_grenade.png" width="400">](project_docs/scr/ufo_bat_grenade.png)<br>Таймер взрывателя | [<img src="project_docs/scr/tftd_bat_grenade.png" width="400">](project_docs/scr/tftd_bat_grenade.png)<br>Таймер взрывателя |
+| [<img src="project_docs/scr/ufo_bat_throw.png" width="400">](project_docs/scr/ufo_bat_throw.png)<br>Бросок: выбор клетки | [<img src="project_docs/scr/tftd_bat_throw.png" width="400">](project_docs/scr/tftd_bat_throw.png)<br>Бросок: выбор клетки |
+
+#### Бойцы
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_bat_stats.png" width="400">](project_docs/scr/ufo_bat_stats.png)<br>Характеристики бойца в бою | [<img src="project_docs/scr/tftd_bat_stats.png" width="400">](project_docs/scr/tftd_bat_stats.png)<br>Характеристики бойца в бою |
+| [<img src="project_docs/scr/ufo_bat_inventory.png" width="400">](project_docs/scr/ufo_bat_inventory.png)<br>Инвентарь в бою | [<img src="project_docs/scr/tftd_bat_inventory.png" width="400">](project_docs/scr/tftd_bat_inventory.png)<br>Инвентарь в бою |
 
 #### Раненые и пси
 
@@ -67,6 +164,20 @@ ZX Evolution / Pentevo: Z80 до 14 МГц, 4 МБ страничной памя
 |---|---|
 | [<img src="project_docs/scr/ufo_bat_medikit.png" width="400">](project_docs/scr/ufo_bat_medikit.png)<br>Аптечка: раны по частям тела | [<img src="project_docs/scr/tftd_bat_medikit.png" width="400">](project_docs/scr/tftd_bat_medikit.png)<br>Аптечка: раны по частям тела |
 | [<img src="project_docs/scr/ufo_bat_mindcontrol.png" width="400">](project_docs/scr/ufo_bat_mindcontrol.png)<br>Контроль разума: пришелец ходит за X-COM | [<img src="project_docs/scr/tftd_bat_mindcontrol.png" width="400">](project_docs/scr/tftd_bat_mindcontrol.png)<br>Контроль разума: пришелец ходит за X-COM |
+
+#### Ход и пауза
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_bat_turn.png" width="400">](project_docs/scr/ufo_bat_turn.png)<br>Ход пришельцев | [<img src="project_docs/scr/tftd_bat_turn.png" width="400">](project_docs/scr/tftd_bat_turn.png)<br>Ход пришельцев |
+| [<img src="project_docs/scr/ufo_bat_pause.png" width="400">](project_docs/scr/ufo_bat_pause.png)<br>Меню паузы | [<img src="project_docs/scr/tftd_bat_pause.png" width="400">](project_docs/scr/tftd_bat_pause.png)<br>Меню паузы |
+
+#### Панель
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_bat_warn.png" width="400">](project_docs/scr/ufo_bat_warn.png)<br>Не хватает единиц времени | [<img src="project_docs/scr/tftd_bat_warn.png" width="400">](project_docs/scr/tftd_bat_warn.png)<br>Не хватает единиц времени |
+| [<img src="project_docs/scr/ufo_bat_kneel.png" width="400">](project_docs/scr/ufo_bat_kneel.png)<br>Боец присел | [<img src="project_docs/scr/tftd_bat_kneel.png" width="400">](project_docs/scr/tftd_bat_kneel.png)<br>Боец присел |
 
 #### Конец миссии
 
@@ -77,10 +188,40 @@ ZX Evolution / Pentevo: Z80 до 14 МГц, 4 МБ страничной памя
 
 ### Уфопедия и отчёты
 
+#### Уфопедия
+
 | UFO Defense | Terror from the Deep |
 |---|---|
-| [<img src="project_docs/scr/ufo_info_article.png" width="400">](project_docs/scr/ufo_info_article.png)<br>Уфопедия: статья | [<img src="project_docs/scr/tftd_info_article.png" width="400">](project_docs/scr/tftd_info_article.png)<br>Уфопедия: статья |
+| [<img src="project_docs/scr/ufo_info_ufopaedia.png" width="400">](project_docs/scr/ufo_info_ufopaedia.png)<br>Разделы Уфопедии | [<img src="project_docs/scr/tftd_info_ufopaedia.png" width="400">](project_docs/scr/tftd_info_ufopaedia.png)<br>Разделы Уфопедии |
+| [<img src="project_docs/scr/ufo_info_article.png" width="400">](project_docs/scr/ufo_info_article.png)<br>Статья о корабле | [<img src="project_docs/scr/tftd_info_article.png" width="400">](project_docs/scr/tftd_info_article.png)<br>Статья о корабле |
+
+#### Оружие
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_info_weapon.png" width="400">](project_docs/scr/ufo_info_weapon.png)<br>Оружие X-COM | [<img src="project_docs/scr/tftd_info_weapon.png" width="400">](project_docs/scr/tftd_info_weapon.png)<br>Оружие X-COM |
+| [<img src="project_docs/scr/ufo_info_weapon2.png" width="400">](project_docs/scr/ufo_info_weapon2.png)<br>Оружие на технологиях пришельцев | [<img src="project_docs/scr/tftd_info_weapon2.png" width="400">](project_docs/scr/tftd_info_weapon2.png)<br>Оружие на технологиях пришельцев |
+
+#### Пришельцы
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_info_alien.png" width="400">](project_docs/scr/ufo_info_alien.png)<br>Раса пришельцев | [<img src="project_docs/scr/tftd_info_alien.png" width="400">](project_docs/scr/tftd_info_alien.png)<br>Раса пришельцев |
+| [<img src="project_docs/scr/ufo_info_tech.png" width="400">](project_docs/scr/ufo_info_tech.png)<br>Технология пришельцев | [<img src="project_docs/scr/tftd_info_tech.png" width="400">](project_docs/scr/tftd_info_tech.png)<br>Технология пришельцев |
+
+#### Отчёты
+
+| UFO Defense | Terror from the Deep |
+|---|---|
 | [<img src="project_docs/scr/ufo_info_report.png" width="400">](project_docs/scr/ufo_info_report.png)<br>Отчёт за месяц | [<img src="project_docs/scr/tftd_info_report.png" width="400">](project_docs/scr/tftd_info_report.png)<br>Отчёт за месяц |
+| [<img src="project_docs/scr/ufo_info_funding.png" width="400">](project_docs/scr/ufo_info_funding.png)<br>Финансирование стран | [<img src="project_docs/scr/tftd_info_funding.png" width="400">](project_docs/scr/tftd_info_funding.png)<br>Финансирование стран |
+
+#### Графики
+
+| UFO Defense | Terror from the Deep |
+|---|---|
+| [<img src="project_docs/scr/ufo_info_graphs.png" width="400">](project_docs/scr/ufo_info_graphs.png)<br>Активность пришельцев по регионам | [<img src="project_docs/scr/tftd_info_graphs.png" width="400">](project_docs/scr/tftd_info_graphs.png)<br>Активность пришельцев по регионам |
+| [<img src="project_docs/scr/ufo_info_finance.png" width="400">](project_docs/scr/ufo_info_finance.png)<br>Финансы | [<img src="project_docs/scr/tftd_info_finance.png" width="400">](project_docs/scr/tftd_info_finance.png)<br>Финансы |
 
 ## Что уже работает
 
