@@ -264,9 +264,12 @@ static void hit_cell(int16_t x, int16_t y, uint8_t z, int16_t p, uint8_t type, i
 		d.dir = v.dir; d.height = v.kneel ? v.h_kneel : v.h_stand; d.armor_rule = v.armor_rule;
 		memcpy(d.armor, v.armor, 5);
 		d.hp = v.hp; d.stun = v.stun;
+		d.wu = v.faction == FACTION_PLAYER && i < MAX_UNITS ? i : 0xFF;   // раны — бойцам X-COM
+		d.page = Q->page;
 		fire_damage(&d);
 		memcpy(v.armor, d.armor, 5);
 		v.hp = d.hp; v.stun = d.stun;
+		v.mor = d.mor >= v.mor ? 0 : v.mor - d.mor;
 		if (!v.hp || v.stun >= v.hp) { v.alive = 0; us[i] = 0; dead[i] = 1; }
 		u_set(i, &v);
 	}

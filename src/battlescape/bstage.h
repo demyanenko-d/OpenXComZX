@@ -11,8 +11,9 @@
 // Развёртывание НЛО типа utype — то, что называется как сам НЛО (alienDeployments STR_SMALL_SCOUT
 // и т. п., BattlescapeGenerator::run: getDeployment(ufo->getRules()->getType())); #FFFF — нет
 uint16_t st_ufo_deploy(uint8_t utype) __banked;
-// Начало хода стороны (BattleUnit::prepareNewTurn -> recoverTimeUnits): время, энергия, выбор
-void st_side_prepare(uint8_t side, uint8_t n) __banked;
+// Начало хода стороны (BattleUnit::prepareNewTurn -> recoverTimeUnits): время, энергия, выбор;
+// смертельные раны бойцов — минус здоровье, время (ноги) и энергия (торс); умерший — со сцены
+void st_side_prepare(uint8_t side, uint8_t n, uint8_t page) __banked;
 // Живых пришельцев (вернёт) и бойцов X-COM (*xc) — конец боя (checkForCasualties)
 uint8_t st_alive(uint8_t n, uint8_t *xc) __banked;
 // Следующая фаза развёртывания dep (#FFFF — нет)

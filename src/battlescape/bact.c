@@ -119,10 +119,12 @@ static void hurt(uint8_t page, uint8_t n, uint8_t shooter, uint8_t h, int16_t vx
 	d.dir = v.dir; d.height = height; d.armor_rule = v.armor_rule;
 	memcpy(d.armor, v.armor, 5);
 	d.hp = v.hp; d.stun = v.stun;
+	d.wu = v.faction == FACTION_PLAYER && h < MAX_UNITS ? h : 0xFF;   // раны — бойцам X-COM (isWoundable)
+	d.page = page;
 	uint8_t adj = fire_damage(&d);
 	memcpy(v.armor, d.armor, 5);
 	v.hp = d.hp; v.stun = d.stun;
-	uint16_t loss = (uint16_t)adj * ((110 - v.bravery) / 10) / 10;
+	uint16_t loss = (uint16_t)adj * ((110 - v.bravery) / 10) / 10 + d.mor;
 	v.mor = loss >= v.mor ? 0 : (uint8_t)(v.mor - loss);
 	uint8_t dead = !v.hp || v.stun >= v.hp;
 	if (dead) v.alive = 0;

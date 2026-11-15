@@ -21,6 +21,8 @@
 #include "gfx.h"
 #include "memmap.h"
 #include "bview.h"
+#include "bfire.h"
+#include "bact.h"
 #include "bstage.h"
 
 uint16_t st_ufo_deploy(uint8_t utype) __banked
@@ -37,7 +39,7 @@ uint16_t st_ufo_deploy(uint8_t utype) __banked
 	return i < t.n ? i : 0xFFFF;
 }
 
-void st_side_prepare(uint8_t side, uint8_t n) __banked
+void st_side_prepare(uint8_t side, uint8_t n, uint8_t page) __banked
 {
 	for (uint8_t i = 0; i < n; i++) {
 		unit_t u;
@@ -46,10 +48,23 @@ void st_side_prepare(uint8_t side, uint8_t n) __banked
 		uint8_t f = u.faction;               // сравнения — с копиями (SDCC 4.5)
 		if (!u.alive || f != side) continue;
 		u.done = 0;                          // _dontReselect = false
-		u.tu = u.tu_max;
-		uint16_t e = (uint16_t)u.en + u.en_rec;
-		u.en = e > u.en_max ? u.en_max : (uint8_t)e;
+		uint8_t w[6] = { 0, 0, 0, 0, 0, 0 };
+		if (i < MAX_UNITS && f == FACTION_PLAYER) far_read(WOUNDS_AT(page, i), w, 6);
+		// recoverTimeUnits: рана ноги — минус 10 % времени, рана торса — минус 10 % текущей энергии
+		uint16_t tu = u.tu_max;
+		tu -= tu * (uint16_t)((w[4] + w[5]) * 10) / 100;
+		u.tu = (uint8_t)tu;
+		int16_t e = (int16_t)u.en + u.en_rec - (int16_t)((uint16_t)u.en * (w[1] * 10) / 100);
+		u.en = e < 0 ? 0 : e > u.en_max ? u.en_max : (uint8_t)e;
+		// prepareNewTurn: смертельные раны отнимают здоровье
+		uint8_t sum = w[0] + w[1] + w[2] + w[3] + w[4] + w[5];
+		u.hp = sum >= u.hp ? 0 : (uint8_t)(u.hp - sum);
+		if (!u.hp) u.alive = 0;
 		far_write(a, &u, sizeof u);
+		if (!u.hp) {                         // умер от ран (checkForCasualties)
+			ba_morale(i, 0xFF, n);
+			ba_kill(page, i, n);
+		}
 	}
 }
 

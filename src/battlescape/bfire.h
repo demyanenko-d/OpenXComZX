@@ -64,7 +64,14 @@ typedef struct {
 	uint16_t armor_rule;       // armors: модификатор урона по типу
 	uint8_t armor[5];          // текущая броня по сторонам (меняется)
 	uint8_t hp, stun;          // меняются
+	uint8_t wu, page;          // раненый для смертельных ран (боец X-COM, #FF — не ранится) и рабочая страница
+	uint8_t mor;               // вернёт: потеря морали от ран части тела (moraleChange(-раны))
 } dmg_t;
+
+// Смертельные раны бойцов X-COM (BattleUnit::_fatalWounds): по 6 частей тела (голова, торс, правая и
+// левая рука, правая и левая нога) на бойца — в третьей рабочей странице боя
+#define TV_WOUNDS 12544        // MAX_UNITS x 6 байт (до #3148)
+#define WOUNDS_AT(page, u) (FAR((page) + 2, TV_WOUNDS) + (uint16_t)(u) * 6)
 
 // BattleUnit::damage с разбросом мощности TileEngine::hit; вернёт нанесённый урон
 uint8_t fire_damage(dmg_t *d) __banked;

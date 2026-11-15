@@ -627,7 +627,7 @@ static void panic_roll(uint8_t side)
 
 static void side_prepare(uint8_t side)
 {
-	st_side_prepare(side, nunits);       // bstage.c (банк 32): этот банк полон
+	st_side_prepare(side, nunits, pf_page);   // bstage.c (банк 32): этот банк полон
 }
 
 static uint8_t battle_end(uint8_t aborted);   // конец боя (ниже)

@@ -18,6 +18,7 @@
 #include "pathfind.h"
 #include "loader.h"
 #include "bmenu.h"
+#include "units.h"
 #include "bfire.h"
 
 // Память банка (build.ps1 ram = #B000): z -> этаж и слой маски, маски юнитов
@@ -294,8 +295,10 @@ uint8_t fire_damage(dmg_t *d) __banked
 		}
 	}
 	if (type == DT_SMOKE) type = DT_STUN;
+	d->mor = 0;
 	// сторона: относительное направление на точку попадания минус направление юнита
 	uint8_t side = 0;                    // SIDE_FRONT, LEFT 1, RIGHT 2, REAR 3, UNDER 4
+	uint8_t part = 1;                    // BODYPART_HEAD 0, TORSO 1, RIGHTARM 2, LEFTARM 3, RIGHTLEG 4, LEFTLEG 5
 	if (!d->rx && !d->ry && !d->rz) side = 4;
 	else {
 		int16_t ax = iabs(d->rx), ay = iabs(d->ry);
@@ -313,6 +316,11 @@ uint8_t fire_damage(dmg_t *d) __banked
 		case 6: side = 1; break;
 		default: side = rng_range(0, 2) < 2 ? 0 : 1; break;
 		}
+		// часть тела (BattleUnit::damage :1154-1176): выше роста — голова, выше 4 — руки или торс,
+		// ниже — ноги (спереди и сзади — случайная)
+		if (d->rz >= d->height) part = 0;
+		else if (d->rz > 4) part = side == 1 ? 3 : side == 2 ? 2 : 1;
+		else part = side == 1 ? 5 : side == 2 ? 4 : (uint8_t)rng_range(4, 5);
 	}
 	power -= d->armor[side];
 	if (power <= 0) return 0;
@@ -324,6 +332,12 @@ uint8_t fire_damage(dmg_t *d) __banked
 		if (type != DT_IN) {                 // обычное оружие ещё и оглушает
 			uint16_t s = d->stun + rng_range(0, (uint16_t)(power / 4));
 			d->stun = s > 255 ? 255 : (uint8_t)s;
+			if (d->wu < MAX_UNITS) {         // смертельные раны (:1204-1211): шанс — мощность из 11
+				far_t wa = WOUNDS_AT(d->page, d->wu) + part;
+				uint8_t w = far_byte(wa);
+				if ((int16_t)rng_range(0, 10) < power) { w += (uint8_t)rng_range(1, 3); far_write(wa, &w, 1); }
+				d->mor = w;                  // moraleChange(-раны части)
+			}
 		}
 		int16_t na = (int16_t)d->armor[side] - power / 10 - 1;   // броня изнашивается
 		d->armor[side] = na < 0 ? 0 : (uint8_t)na;

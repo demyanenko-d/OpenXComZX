@@ -19,6 +19,7 @@
 #include "bitems.h"
 #include "bequip.h"
 #include "bfx.h"
+#include "bfire.h"
 #include "game.h"
 
 static uint8_t bi_n;                     // занято записей
@@ -75,6 +76,7 @@ uint8_t bi_crew(uint8_t page, const uint8_t *sol, uint8_t n) __banked
 	bitem_t b;
 	bi_n = 0;
 	far_fill(FAR(page + 1, TL_BITEMS), BI_NONE, (uint16_t)BI_MAX * sizeof(bitem_t));
+	far_fill(WOUNDS_AT(page, 0), 0, MAX_UNITS * 6);   // смертельных ран нет (bfire.h; следующая фаза их хранит)
 	uint8_t old = pg_map3(STATE_PAGE);
 	uint16_t ninv = ST->ninv;
 	pg_map3(old);
