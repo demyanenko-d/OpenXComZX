@@ -66,7 +66,7 @@ $banks = @(
     @{ n = 34; page = 0x8F; files = @('battlescape\deploy'); ram = 0xA000 }   # бой: расстановка пришельцев (deploy.c); с #A000 — юниты, узлы появления, листы брони
     @{ n = 36; page = 0xED; files = @('battlescape\bact', 'battlescape\bai'); ram = 0xBF00 }   # бой: действия юнитов — выстрел (bact.c), общее для бойца и ИИ; ход пришельцев (bai.c, с #BF00 — его состояние); юниты — дальним доступом к памяти банка 31
     @{ n = 37; page = 0xEE; files = @('battlescape\bdeb', 'battlescape\bact2'); ram = 0xB000 }   # бой: разбор (DebriefingState, bdeb.c; с #B000 — строки очков); действие предметом в руке — выстрел, бросок, удар (bact2.c, из банка 36)
-    @{ n = 39; page = 0x8D; files = @('battlescape\bexpl'); ram = 0xB000 }   # бой: взрывы — гранаты в конце хода, анимация X1.PCK, урон по площади (bexpl.c, с #B000 — его рабочая память); страница — хвост области пакетов (RES_LAST #8C)
+    @{ n = 39; page = 0x8D; files = @('battlescape\bexpl'); ram = 0xB400 }   # бой: взрывы — гранаты в конце хода, анимация X1.PCK, урон по площади (bexpl.c, с #B000 — его рабочая память); страница — хвост области пакетов (RES_LAST #8C)
     @{ n = 38; page = 0x4A; files = @('battlescape\bstats', 'battlescape\bgren', 'battlescape\bload'); ram = 0xB000 }   # бой: характеристики (bstats.c, из банка 33); загрузка миссии для экрана боя (bload.c, из банка 30); гранаты — таймер, бросок, взрыв (bgren.c, с #B000 — его рабочая память); страница освободилась от инвентаря (банк 27)
     @{ n = 35; page = 0xEC; files = @('battlescape\bfire'); ram = 0xB000 }   # бой: выстрел — траектория в вокселях, урон (bfire.c); с #B000 — таблицы z и маски юнитов; страница из бывшего пула (map.h BANK3_PAGE)
 )

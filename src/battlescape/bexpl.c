@@ -45,30 +45,30 @@ extern volatile uint16_t frames;         // crt0.s
 #define SIDE     (2 * R_MAX + 1)
 #define GI_MAX   48                      // предметов на земле в радиусе
 
-// Память банка (build.ps1 ram = #B000)
-static uint8_t __at(0xB000) seen[SIDE * SIDE];       // клетка уже взята лучом
-static uint8_t __at(0xB220) ux[MAX_BUNITS];          // юниты: клетка, размер, жив
-static uint8_t __at(0xB248) uy[MAX_BUNITS];
-static uint8_t __at(0xB270) uz[MAX_BUNITS];
-static uint8_t __at(0xB298) us[MAX_BUNITS];
-static uint8_t __at(0xB2C0) gi_x[GI_MAX];            // предметы на земле рядом: клетка, запись
-static uint8_t __at(0xB2F0) gi_y[GI_MAX];
-static uint8_t __at(0xB320) gi_i[GI_MAX];
-static uint8_t __at(0xB350) gi_n;
-static uint8_t __at(0xB351) ex_fr[EXP_MAX];          // взрывы на экране: кадр (0..7), задержка
-static uint8_t __at(0xB381) ex_dl[EXP_MAX];
-static int16_t __at(0xB3B2) ex_sx[EXP_MAX];          // мировые экранные x, y
-static int16_t __at(0xB412) ex_sy[EXP_MAX];
-static uint8_t __at(0xB472) ex_te[EXP_N][TE_SIZE];   // кадры X1.PCK во временных страницах
-static const exreq_t * __at(0xB4B2) Q;
-static uint8_t __at(0xB4B4) dead[MAX_BUNITS];        // выбыл от этого взрыва
-static uint8_t __at(0xB4DC) ex_np;                  // страница кадров (от BAT_SCRATCH_PAGE)
-static uint16_t __at(0xB500) expl[SIDE * SIDE];      // Tile::setExplosive: наибольшая мощность луча (до #B922)
-static uint8_t __at(0xB930) ex_ndet;                 // клеток с разрушенными частями (последний взрыв; сценарии)
-static uint8_t __at(0xB940) eq[8][4];                // цепные взрывы местности: x, y, z, мощность (HE_Strength)
-static uint8_t __at(0xB960) eq_n;
-static uint8_t __at(0xB961) ex_quiet;                // без экрана (крушение НЛО при сборке карты)
-static uint8_t __at(0xB962) ex_ncrash;               // взорвалось источников питания (сценарии)
+// Память банка (build.ps1 ram = #B400; до #BD63 — код дорос до #B13B, прежние #B000.. стали тесны)
+static uint8_t __at(0xB400) seen[SIDE * SIDE];       // клетка уже взята лучом
+static uint8_t __at(0xB620) ux[MAX_BUNITS];          // юниты: клетка, размер, жив
+static uint8_t __at(0xB648) uy[MAX_BUNITS];
+static uint8_t __at(0xB670) uz[MAX_BUNITS];
+static uint8_t __at(0xB698) us[MAX_BUNITS];
+static uint8_t __at(0xB6C0) gi_x[GI_MAX];            // предметы на земле рядом: клетка, запись
+static uint8_t __at(0xB6F0) gi_y[GI_MAX];
+static uint8_t __at(0xB720) gi_i[GI_MAX];
+static uint8_t __at(0xB750) gi_n;
+static uint8_t __at(0xB751) ex_fr[EXP_MAX];          // взрывы на экране: кадр (0..7), задержка
+static uint8_t __at(0xB781) ex_dl[EXP_MAX];
+static int16_t __at(0xB7B2) ex_sx[EXP_MAX];          // мировые экранные x, y
+static int16_t __at(0xB812) ex_sy[EXP_MAX];
+static uint8_t __at(0xB872) ex_te[EXP_N][TE_SIZE];   // кадры X1.PCK во временных страницах
+static const exreq_t * __at(0xB8B2) Q;
+static uint8_t __at(0xB8B4) dead[MAX_BUNITS];        // выбыл от этого взрыва
+static uint8_t __at(0xB8DC) ex_np;                  // страница кадров (от BAT_SCRATCH_PAGE)
+static uint16_t __at(0xB900) expl[SIDE * SIDE];      // Tile::setExplosive: наибольшая мощность луча (до #BD22)
+static uint8_t __at(0xBD30) ex_ndet;                 // клеток с разрушенными частями (последний взрыв; сценарии)
+static uint8_t __at(0xBD40) eq[8][4];                // цепные взрывы местности: x, y, z, мощность (HE_Strength)
+static uint8_t __at(0xBD60) eq_n;
+static uint8_t __at(0xBD61) ex_quiet;                // без экрана (крушение НЛО при сборке карты)
+static uint8_t __at(0xBD62) ex_ncrash;               // взорвалось источников питания (сценарии)
 
 // sin(3° · k), Q8
 static const int16_t sin8[120] = {
@@ -388,6 +388,42 @@ static void detonate(int16_t x, int16_t y, uint8_t z, uint16_t e)
 	}
 }
 
+// Пола нет (снесён или часть без пола): падать дальше
+static uint8_t floorless(uint8_t x, uint8_t y, uint8_t z)
+{
+	uint8_t f = far_byte(cell_at(x, y, z));
+	return !f || (far_byte(FAR(Q->page, PF_FLAGS) + f) & 1);
+}
+
+// TileEngine::applyGravity: юнит (не летающий, 1x1) и предметы над выбитым полом падают до этажа с
+// полом (у нас — сразу, без UnitFallBState)
+static void gravity(void)
+{
+	for (uint8_t i = 0; i < Q->n; i++) {
+		unit_t v;
+		u_get(i, &v);
+		if (!v.alive || v.fly || v.size != 1) continue;
+		uint8_t z = v.z;
+		while (z && floorless(v.x, v.y, z)) z--;
+		if (z == v.z) continue;
+		v.z = z;
+		u_set(i, &v);
+		runit_t r;                           // запись для вида (как ru_write в bact.c)
+		r.x = v.x; r.y = v.y; r.z = v.z; r.dir = v.dir;
+		r.flags = (v.seen && (v.sheet || v.faction == FACTION_PLAYER) ? RU_ALIVE : 0) | (v.kneel ? RU_KNEEL : 0);
+		r.sheet = v.sheet;
+		r.pad[0] = r.pad[1] = 0;
+		far_write(FAR(Q->page + 1, TL_RUNITS) + (uint16_t)i * sizeof r, &r, sizeof r);
+	}
+	for (uint16_t i = 0; i < BI_MAX; i++) {
+		bitem_t b;
+		far_read(bi_at(i), &b, sizeof b);
+		if (b.owner != BI_GROUND || !b.z || !floorless(b.x, b.y, b.z)) continue;
+		while (b.z && floorless(b.x, b.y, b.z)) b.z--;
+		far_write(bi_at(i), &b, sizeof b);
+	}
+}
+
 static void detonate_all(int16_t tx, int16_t ty, uint8_t tz)
 {
 	ex_ndet = 0;
@@ -395,6 +431,7 @@ static void detonate_all(int16_t tx, int16_t ty, uint8_t tz)
 		if (!expl[si]) continue;
 		detonate(tx - R_MAX + (int16_t)(si % SIDE), ty - R_MAX + (int16_t)(si / SIDE), tz, expl[si]);
 	}
+	if (ex_ndet) gravity();
 	bv_redraw();                             // вид — заново (снесённые части)
 }
 

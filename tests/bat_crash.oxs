@@ -1,7 +1,7 @@
 # Сбитый НЛО (BattlescapeGenerator::explodePowerSources; bexpl.c ex_crash): отладочный бой, признак
 # крушения (scr_battle mis_crash — его даёт bat_mission с геоскейпа) и пересборка карты (G): объект
 # UFO_POWER_SOURCE с шансом 75 % взрывается при сборке, без экрана (HE 180 + 0..70, радиус 10).
-# Взорвалось источников — счётчик памяти банка 39 #8D:3962 (ГСЧ сценария воспроизводим).
+# Взорвалось источников — счётчик памяти банка 39 #8D:3D62 (ГСЧ сценария воспроизводим).
 # Снимки — tmp/shots/bat_crash/. Запуск: powershell -File tools\run.ps1 -Script tests\bat_crash.oxs -Headless
 waitmark 1 600
 poke _alien_off 1
@@ -13,6 +13,6 @@ wait 150
 poke scr_battle$mis_crash 1
 key g
 wait 900
-expect 8D:3962 1
+expect 8D:3D62 1
 shot tmp/shots/bat_crash/0.png
 exit 0

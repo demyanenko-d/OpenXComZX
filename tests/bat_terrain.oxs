@@ -2,7 +2,7 @@
 # (_bi_dbg 4), взвод на 0, запись гранаты (0, вторая рабочая страница #2D00) — на землю у корабля
 # (9, 15, 0), конец хода — взрыв: части с 2 · броня ≤ мощности луча в клетке сносятся, на их место —
 # Die_MCD (песок выжжен), стены корабля (броня выше) целы. Клеток с разрушениями — счётчик ex_ndet
-# памяти банка 39 (#8D:3930). Снимки — tmp/shots/bat_terrain/.
+# памяти банка 39 (#8D:3D30). Снимки — tmp/shots/bat_terrain/.
 # Запуск: powershell -File tools\run.ps1 -Script tests\bat_terrain.oxs -Headless
 waitmark 1 600
 poke _alien_off 1
@@ -37,8 +37,8 @@ pokew _cursor_x 256
 pokew _cursor_y 152
 click L
 waitmark 249 900
-peek 8D:3930 1
-expect 8D:3930 52
+peek 8D:3D30 1
+expect 8D:3D30 52
 key ENTER
 waitmark 249 3000
 key ENTER
