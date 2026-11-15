@@ -374,8 +374,8 @@ static void detonate(int16_t x, int16_t y, uint8_t z, uint16_t e)
 		}
 		if (!changed) continue;
 		ex_ndet++;
+		// вид — одной пересборкой в detonate_all (bv_cell на каждую клетку стоил ~4 кадра)
 		far_write(a, c, 4);
-		bv_cell((uint8_t)cx, (uint8_t)cy, cz);
 		vis_cell(Q->cells, (uint8_t)cx, (uint8_t)cy, cz, Q->page);
 	}
 }
