@@ -5,8 +5,9 @@
 // итогу (:412-433) и OK. Очки — prepareDebriefing (:1153-1210, 1650-1771): убитый отрядом пришелец
 // — его value, оглушённый и подобранный — value · 2, труп и предметы пришельцев — их recoveryPoints
 // (только если поле осталось за отрядом), погибший боец — минус value, отряд не вернулся — корабль
-// потерян. Чего нет: второй страницы (рост характеристик бойцов), частей НЛО на карте, мирных,
-// пропавших без вести снаружи корабля, последствий для кампании (гибель солдат, трофеи на базу,
+// потерян; мирный житель: убит пришельцами (или бой проигран) — минус value, отрядом — минус
+// value + 2·(value/3), спасён — value. Чего нет: второй страницы (рост характеристик бойцов),
+// частей НЛО на карте, пропавших без вести снаружи корабля, последствий для кампании (гибель солдат, трофеи на базу,
 // судьба НЛО и места миссии), очков региону и стране.
 #include <stdint.h>
 #include <string.h>
@@ -28,29 +29,33 @@
 #include "bdeb.h"
 #include "bact.h"
 
-#define DS_MAX 8
+#define DS_MAX 10
 typedef struct { uint16_t str; uint8_t qty; int16_t score; } dstat_t;
 // Память банка (tools/build.ps1 ram = #B000)
-static dstat_t __at(0xB000) ds[DS_MAX];  // строки в порядке _stats оригинала
-static uint8_t __at(0xB030) ds_n;
-static uint16_t __at(0xB031) d_title;
-static int16_t __at(0xB033) d_total;
-static uint8_t __at(0xB035) d_page;      // 1 — окно повышений (PromotionsState) вместо разбора
-static uint8_t __at(0xB036) d_prom;      // повышенных в этой миссии
+static dstat_t __at(0xB000) ds[DS_MAX];  // строки в порядке _stats оригинала (до #B032)
+static uint8_t __at(0xB040) ds_n;
+static uint16_t __at(0xB041) d_title;
+static int16_t __at(0xB043) d_total;
+static uint8_t __at(0xB045) d_page;      // 1 — окно повышений (PromotionsState) вместо разбора
+static uint8_t __at(0xB046) d_prom;      // повышенных в этой миссии
 static const uint16_t rank_str[6] = { STR_ROOKIE, STR_SQUADDIE, STR_SERGEANT, STR_CAPTAIN, STR_COLONEL, STR_COMMANDER };
 
 static const uint16_t ds_str[DS_MAX] = {
 	STR_ALIENS_KILLED, STR_ALIEN_CORPSES_RECOVERED, STR_LIVE_ALIENS_RECOVERED,
-	STR_ALIEN_ARTIFACTS_RECOVERED, STR_XCOM_OPERATIVES_KILLED, STR_XCOM_OPERATIVES_MISSING_IN_ACTION,
-	STR_XCOM_CRAFT_LOST, 0,
+	STR_ALIEN_ARTIFACTS_RECOVERED, STR_CIVILIANS_KILLED_BY_ALIENS, STR_CIVILIANS_KILLED_BY_XCOM_OPERATIVES,
+	STR_CIVILIANS_SAVED, STR_XCOM_OPERATIVES_KILLED, STR_XCOM_OPERATIVES_MISSING_IN_ACTION,
+	STR_XCOM_CRAFT_LOST,
 };
 #define D_KILLED 0
 #define D_CORPSE 1
 #define D_LIVE   2
 #define D_ART    3
-#define D_XKIA   4
-#define D_MIA    5
-#define D_CRAFT  6
+#define D_CIV_A  4
+#define D_CIV_X  5
+#define D_CIV_OK 6
+#define D_XKIA   7
+#define D_MIA    8
+#define D_CRAFT  9
 
 // Запись i — упавший в бою предмет (BI_DROP) и не труп: 1 — да, сама запись — в *b
 static uint8_t dropped(const debreq_t *q, uint16_t i, bitem_t *b, const rtab_t *ti)
@@ -256,8 +261,18 @@ void deb_start(const debreq_t *q) __banked
 	uint8_t success = !q->aborted && alive_x;
 	for (uint8_t i = 0; i < q->n; i++) {
 		far_read(UNITS_FAR + (uint16_t)i * sizeof u, &u, sizeof u);
+		uint8_t f = u.faction;                   // сравнения — с копиями (SDCC 4.5)
+		if (f == FACTION_NEUTRAL) {              // мирный (:1199-1205, :1291-1302)
+			int16_t value = u.type < tu.n ? (int16_t)rtab_word(&tu, u.type, offsetof(r_units_t, value)) : 0;
+			if (u.alive || u.hp) {               // жив (оглушённый — тоже): бой проигран — погиб
+				if (success) add_stat(D_CIV_OK, value);
+				else add_stat(D_CIV_A, -value);
+			} else if (u.done) add_stat(D_CIV_X, -value - 2 * (value / 3));   // убит отрядом
+			else add_stat(D_CIV_A, -value);
+			continue;
+		}
 		if (u.alive) continue;
-		if (u.faction == FACTION_HOSTILE) {
+		if (f == FACTION_HOSTILE) {
 			int16_t value = u.type < tu.n ? (int16_t)rtab_word(&tu, u.type, offsetof(r_units_t, value)) : 0;
 			if (!u.hp) {                             // убит (killedBy FACTION_PLAYER)
 				add_stat(D_KILLED, value);

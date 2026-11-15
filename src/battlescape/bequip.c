@@ -239,7 +239,7 @@ uint8_t be_aliens(uint8_t page, uint8_t nb, uint8_t first) __banked
 	rtab_get(&td, dep, &d);
 	for (uint8_t k = 0; k < na; k++) {
 		unit_t a;
-		far_read(t2 + TL_AUNITS + (uint16_t)k * sizeof a, &a, sizeof a);
+		far_read(FAR(page + 2, TV_AUNITS) + (uint16_t)k * sizeof a, &a, sizeof a);
 		if (a.type >= tu.n) continue;
 		rtab_get(&tu, a.type, &ur);
 		uint8_t lv = a.ilevel, n;
@@ -248,6 +248,7 @@ uint8_t be_aliens(uint8_t page, uint8_t nb, uint8_t first) __banked
 			for (uint8_t i = 0; i < n; i++) alien_item(first + k, lst[i]);
 		}
 		if (ur.living_weapon_item != 0xFFFF) { alien_item(first + k, ur.living_weapon_item); continue; }
+		if (a.dset == 0xFF) continue;            // мирный житель: только встроенное (deployCivilians)
 		uint8_t p = 0, cnt = (uint8_t)d.item_sets.n;   // itemSets записи dset: записи до неё — мимо
 		for (uint8_t e = 0; e <= a.dset && p < cnt; e++) {
 			uint16_t nl;

@@ -147,11 +147,13 @@ static uint16_t alien_make(unit_t *a, uint16_t type, uint8_t rank, uint8_t diff,
 		a->fly = ar.movement_type == 1;
 		sheet = ar.sheet;
 	}
-	const uint8_t *g = res_game() == 2 ? growth_tftd : growth_ufo;
-	const uint8_t *m = res_game() == 2 ? aim_tftd : aim_ufo;
-	for (uint8_t i = 0; i < 11; i++) st[i] += (uint8_t)((uint16_t)g[i] * coef * st[i] / 100);
-	st[5] = (uint8_t)((uint16_t)st[5] * m[diff] / 100);                  // firing
-	for (uint8_t i = 0; i < 5; i++) a->armor[i] = (uint8_t)((uint16_t)a->armor[i] * m[diff] / 100);
+	if (diff != 0xFF) {                      // мирным — без поправки (adjustStats — только addAlien)
+		const uint8_t *g = res_game() == 2 ? growth_tftd : growth_ufo;
+		const uint8_t *m = res_game() == 2 ? aim_tftd : aim_ufo;
+		for (uint8_t i = 0; i < 11; i++) st[i] += (uint8_t)((uint16_t)g[i] * coef * st[i] / 100);
+		st[5] = (uint8_t)((uint16_t)st[5] * m[diff] / 100);                  // firing
+		for (uint8_t i = 0; i < 5; i++) a->armor[i] = (uint8_t)((uint16_t)a->armor[i] * m[diff] / 100);
+	}
 	a->tu = a->tu_max = st[0];
 	a->en = a->en_max = st[1];
 	a->hp = a->hp_max = st[2];
@@ -168,8 +170,8 @@ uint8_t aliens_deploy(const adreq_t *r, uint8_t nsold, uint8_t sx, uint8_t sy) _
 {
 	adep_t *q = &adq;
 	unit_t *u = du;
-	// юнитов миссии — до MAX_BUNITS, пришельцев — сколько помещается в TL_AUNITS (иначе запись
-	// затирала кадры рук и TL_HANDPG: колония TFTD — 34 пришельца при шести бойцах)
+	// юнитов миссии — до MAX_BUNITS, пришельцев и мирных — сколько помещается в TV_AUNITS
+	// (колония TFTD — 34 пришельца при шести бойцах)
 	uint8_t n = nsold, max = nsold + TL_AMAX < MAX_BUNITS ? nsold + TL_AMAX : MAX_BUNITS;
 	q->deploy = r->deploy; q->race = r->race; q->ufo = r->ufo; q->page = r->page;
 	far_read(FAR(q->page + 1, TL_UNITS), du, (uint16_t)nsold * sizeof(unit_t));   // отряд: занятые клетки
@@ -247,8 +249,39 @@ uint8_t aliens_deploy(const adreq_t *r, uint8_t nsold, uint8_t sx, uint8_t sy) _
 			n++;
 		}
 	}
-	dbg_puts(" aliens "); dbg_dec(n - n0); dbg_puts("\n");
-	if (n > n0) far_write(FAR(q->page + 1, TL_AUNITS), du + n0, (uint16_t)(n - n0) * sizeof(unit_t));
+	dbg_puts(" aliens "); dbg_dec(n - n0);
+	// Мирные жители (deployCivilians, BattlescapeGenerator.cpp:1836; addCivilian :1251): от половины
+	// до civilians развёртывания, тип — случайный из civilianTypes террейна, узел — ранга 0, лицом
+	// куда попало; узла нет — жителя нет (запасного места placeUnitNearFriend пока нет).
+	// Характеристики — без поправки сложности, предметы — только встроенные (dset #FF)
+	if (d.civilians) {
+		res_t cr;
+		uint16_t civ[4];
+		uint8_t ct = 0;
+		if (res_find(RES_CIVTYPES, &cr) && r->terrain < far_byte(cr.phys)) {
+			far_t p = cr.phys + 1 + r->terrain * 9;
+			ct = far_byte(p);
+			far_read(p + 1, civ, 8);
+		}
+		uint8_t num = ct ? (uint8_t)rng_range(d.civilians / 2, d.civilians) : 0, nc = n;		for (uint8_t k = 0; k < num && n < max; k++) {
+			unit_t *a = &u[n];
+			uint16_t res = alien_make(a, civ[rng_range(0, ct - 1)], 0, 0xFF, 0);
+			a->faction = FACTION_NEUTRAL;
+			int16_t s = spawn_node(u, n, 0, a->size, a->fly, sx, sy);
+			if (s < 0) continue;
+			const snode_t *p = &sn[s];
+			a->x = p->x; a->y = p->y; a->z = p->z; a->node = p->idx;
+			a->dir = (uint8_t)rng_range(0, 7);
+			a->sheet = sheet_of(q, res, a->size);
+			a->dset = 0xFF;
+			a->ilevel = nil ? far_byte(il.phys + 1 + mon * 10 + rng_range(0, 9)) : 0;
+			a->seen = 0;
+			n++;
+		}
+		dbg_puts(" civilians "); dbg_dec(n - nc); dbg_puts(" of "); dbg_dec(num);
+	}
+	dbg_puts("\n");
+	if (n > n0) far_write(FAR(q->page + 2, TV_AUNITS), du + n0, (uint16_t)(n - n0) * sizeof(unit_t));
 	far_write(FAR(q->page + 1, TL_ADEP), &dep, 2);
 	n0 = n - n0;
 	far_write(FAR(q->page + 1, TL_ANUM), &n0, 1);

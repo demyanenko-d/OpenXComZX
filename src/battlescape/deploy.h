@@ -1,5 +1,5 @@
 // Расстановка пришельцев (deploy.c, банк 34): отряд берёт из рабочей страницы (loader.h TL_UNITS),
-// пришельцев кладёт туда же (TL_AUNITS) — память банка экрана боя отсюда не видна.
+// пришельцев и мирных кладёт в третью (TV_AUNITS) — память банка экрана боя отсюда не видна.
 #ifndef DEPLOY_H
 #define DEPLOY_H
 
@@ -17,8 +17,10 @@ typedef struct {
 	uint8_t shp[ASH_MAX], shn[ASH_MAX];
 } adep_t;
 
-typedef struct { uint16_t deploy, race; uint8_t ufo, page; } adreq_t;   // поля — как в adep_t
-// Поставить пришельцев к отряду из nsold бойцов; вернёт их число (записи — TL_AUNITS).
+// поля — как в adep_t; terrain — террейн карты (его civilianTypes, ресурс CIVTYPES)
+typedef struct { uint16_t deploy, race; uint8_t ufo, page; uint16_t terrain; } adreq_t;
+// Поставить пришельцев к отряду из nsold бойцов, за ними — мирных жителей (civilians
+// развёртывания, FACTION_NEUTRAL); вернёт число тех и других (записи — TV_AUNITS).
 // sx, sy — размер карты. Листы брони грузятся в страницы пула — отдать aliens_free.
 uint8_t aliens_deploy(const adreq_t *r, uint8_t nsold, uint8_t sx, uint8_t sy) __banked;
 void aliens_free(void) __banked;

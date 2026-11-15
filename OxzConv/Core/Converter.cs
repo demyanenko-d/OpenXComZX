@@ -636,6 +636,20 @@ namespace OxzConv
 			pak.Add(ids.Id("GLOBEDET"), ResType.Blob, det.data);
 			parts.Add("GLOBEDET: " + det.info);
 			pak.Add(ids.Id("ITEMLEVELS"), ResType.Blob, RulesSchema.ItemLevels(sections));
+			if (battle != null)
+			{
+				// civilianTypes террейнов (RuleTerrain::getCivilianTypes): u8 террейнов, по террейну —
+				// u8 n (до 4) и 4 x u16 номер units (#FFFF — нет); порядок — TERRAINS
+				var civ = new List<byte> { (byte)battle.Terrains.Count };
+				foreach (var tr in battle.Terrains)
+				{
+					var l = tr.Civilians.Select(c => rs.Find("units", c)).Where(i => i >= 0).Take(4).ToList();
+					if (tr.Civilians.Count > 4) rs.Warnings.Add($"terrains.{tr.Name}.civilianTypes: {tr.Civilians.Count} > 4");
+					civ.Add((byte)l.Count);
+					for (int k = 0; k < 4; k++) { int v = k < l.Count ? l[k] : 0xFFFF; civ.Add((byte)v); civ.Add((byte)(v >> 8)); }
+				}
+				pak.Add(ids.Id("CIVTYPES"), ResType.Blob, civ.ToArray());
+			}
 			var vars = RulesSchema.Vars(sections, rs);
 			pak.Add(RulesSchema.ResBase - 1, ResType.Table, vars, vars.Length);
 			if (cutTable != null)                         // заставки: таблица и палитры слайдов (Cutscenes)

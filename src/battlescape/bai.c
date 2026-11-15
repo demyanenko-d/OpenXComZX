@@ -649,9 +649,11 @@ static uint8_t ai_step(const aictx_t *c)
 	}
 	while (ai_a < c->n) {
 		u_get(ai_a, &u);
-		if (!u.alive || u.faction != FACTION_HOSTILE || ai_a < c->nsold) { next_alien(); continue; }
+		uint8_t f = u.faction;                       // сравнения — с копиями (SDCC 4.5)
+		if (!u.alive || f == FACTION_PLAYER || ai_a < c->nsold) { next_alien(); continue; }
 		if (!ai_moved && !ai_atk && !ai_aim && hide_check(c, &u)) cells(&u);   // начал действовать
-		if (attack(c, &u)) {                         // стрелял — в следующем такте думает снова
+		// мирные (ход FACTION_NEUTRAL — после пришельцев: они за ними в списке) только патрулируют
+		if (f == FACTION_HOSTILE && attack(c, &u)) {                         // стрелял — в следующем такте думает снова
 			if (ai_aim) return AI_SEE | AI_HIT;
 			uint8_t rf = ai_react(c, ai_a);          // после выстрела — ответ отряда
 			u_get(ai_a, &u);

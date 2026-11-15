@@ -84,6 +84,7 @@ void ba_morale(uint8_t victim, uint8_t m, uint8_t n) __banked
 		else mor_add(&x, 20);
 		if (vf == FACTION_HOSTILE && mf == FACTION_PLAYER) ba_exp(m, EXP_KILLS);   // addKillCount
 		u_set(m, &x);
+		if (mf == FACTION_PLAYER && vf != FACTION_PLAYER) { v.done = 1; u_set(victim, &v); }   // killedBy
 	}
 	if (v.faction == FACTION_NEUTRAL) return;
 	for (uint8_t i = 0; i < n; i++) {

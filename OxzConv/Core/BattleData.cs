@@ -60,6 +60,7 @@ namespace OxzConv
 			public int Kind;                    // 0 обычный, 1 карта корабля X-COM, 2 карта НЛО
 			public List<string> Sets = new List<string>();
 			public List<Block> Blocks = new List<Block>();
+			public List<string> Civilians = new List<string>();   // civilianTypes (юниты units)
 		}
 
 		// Команды mapScript в порядке MapScript.h:45 — движок разбирает их по этим номерам
@@ -117,6 +118,9 @@ namespace OxzConv
 					};
 					if (blk.Name != null) t.Blocks.Add(blk);
 				}
+				var civ = Y.List(Y.Get(o, "civilianTypes"));                 // RuleTerrain.cpp:34, :79
+				if (civ != null) foreach (var c in civ) t.Civilians.Add(Y.Str(c));
+				else t.Civilians.AddRange(new[] { "MALE_CIVILIAN", "FEMALE_CIVILIAN" });
 				if (t.Sets.Count != 0 && t.Blocks.Count != 0) Terrains.Add(t);
 			}
 

@@ -31,7 +31,8 @@ typedef struct {
 	uint8_t en_rec;            // энергии за ход (BattleUnit::recoverTimeUnits)
 	uint8_t sol;               // запись солдата кампании (имя, звание, снаряжение), #FF — нет
 	uint8_t hand;              // активная рука: 1 — правая (BattleUnit::_activeHand)
-	uint8_t done;              // «больше не выбирать» в этот ход (_dontReselect, кнопка NextStop)
+	uint8_t done;              // «больше не выбирать» в этот ход (_dontReselect, кнопка NextStop);
+	                           //   у погибшего не-бойца — 1, если убил X-COM (BattleUnit::killedBy)
 	uint8_t h_stand, h_kneel;  // рост стоя и на колене (standHeight, kneelHeight) — воксели
 	uint16_t armor_rule;       // правило armors: маски вокселей, модификаторы урона (#FFFF — нет)
 	uint8_t dset;              // пришелец: запись data развёртывания (её itemSets), #FF — нет

@@ -48,6 +48,7 @@ namespace OxzConv
 			S("KNEELBTN", 0x01AC);   // кадры кнопки «присесть» OpenXcom (extraSprites KneelButton; только UFO)
 			S("BULLETS", 0x01AD);
 			S("ITEMLEVELS", 0x01AE); // alienItemLevels: уровни предметов пришельцев по месяцам (RULES.PAK)    // частицы пуль OpenXcom (extraSprites Projectiles): 385 кадров 4x3 и их тени
+			S("CIVTYPES", 0x01AF);   // civilianTypes террейнов: какие юниты — мирные жители (RULES.PAK)
 			// карты боя (BATTLE.PAK): готовые поля и их тайлсеты — пока нет генератора карт (Core/Battle.cs)
 			S("BATMAP0", 0x01C0); S("BATMAP1", 0x01C1); S("BATMAP2", 0x01C2);
 			S("BATTILE0", 0x01C8); S("BATTILE1", 0x01C9); S("BATTILE2", 0x01CA);

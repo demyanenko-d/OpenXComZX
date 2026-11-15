@@ -335,6 +335,7 @@ namespace OxzConv
 						"расстановка: [alienRank, lowQty, highQty, dQty, extraQty, percentageOutsideUfo] x n (DeploymentData)"),
 					Fn("itemSets", "nums", (e, k, rs) => ItemSets(rs, Y.Get(e, "data"), $"alienDeployments.{k}.itemSets"),
 						"по записи data: [уровней, ([n, предметы] x уровней)] (DeploymentData::itemSets)"),
+					F("civilians", "u8", "0", comment: "мирных жителей до (deployCivilians: от половины до стольких)"),
 				},
 			});
 

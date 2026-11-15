@@ -59,6 +59,7 @@ uint8_t bat_load(bload_t *q) __banked
 	mapgen_set_extra(q->craft != 0xFFFF ? q->craft : mapgen_find_kind(1),
 			 q->ufo != 0xFFFF ? q->ufo : mapgen_find_kind(2));
 	if (!mapgen_run(terrain, mods, levels)) return 0;
+	q->terrain = terrain;                // каким террейном собрана (мирные жители — deploy.c)
 	tiles_req_t r;
 	mapgen_sets(r.set, r.tset, &r.ns);
 	mapgen_used(r.used);                 // какие части реально попали на карту

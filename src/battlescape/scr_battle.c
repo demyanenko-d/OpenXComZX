@@ -537,8 +537,9 @@ static uint8_t load_gen(uint16_t terrain)
 		ar.race = mis_race != 0xFF ? mis_race : 0xFFFF;
 		ar.ufo = mis_ufo != 0xFFFF || mis_deploy == 0xFFFF;
 		ar.page = pf_page;
+		ar.terrain = q.terrain;
 		uint8_t na = aliens_deploy(&ar, nsold, q.sx, q.sy);
-		far_read(FAR(pf_page + 1, TL_AUNITS), units + nsold, (uint16_t)na * sizeof(unit_t));
+		far_read(FAR(pf_page + 2, TV_AUNITS), units + nsold, (uint16_t)na * sizeof(unit_t));
 		nunits = nsold + na;
 	}
 	vis_build(q.cells, q.sx, q.sy, q.sz, pf_page);   // маска обзора (vision.c)
@@ -666,6 +667,7 @@ static void end_turn(void)
 	if (fuses() || battle_end(0)) return;   // пришельцев или отряда нет — разбор
 	bt_side = FACTION_HOSTILE;
 	side_prepare(FACTION_HOSTILE);
+	side_prepare(FACTION_NEUTRAL);       // ход мирных — следом за пришельцами (bai.c)
 	panic_roll(FACTION_HOSTILE);         // prepareNewTurn
 	for (uint8_t i = 0; i < nsold; i++) ru_put(i);
 	hide_aliens();                       // setVisible(false) не своим, обзор заново

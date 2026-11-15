@@ -32,8 +32,7 @@
 #define ASH_MAX   6            // до #2B00
 #define TL_BIGW   11264        // 256 байт: MCD.Big_Wall части по номеру (Pathfinding::bigWallTypes)
 #define TL_BITEMS 11520        // предметы боя: bitem_t (bitems.h), BI_MAX по 10 байт (до #3700)
-#define TL_AUNITS 14080        // пришельцы от расстановки (deploy.c): unit_t, до 28 записей (до #3C40)
-#define TL_AMAX   28           //   больше не помещается: следом TL_HARMS, TL_UHS, TL_HANDPG
+                               // 14080..15423 свободно (были пришельцы — теперь TV_AUNITS)
 // Оружие в руках бойцов X-COM (UnitSprite::drawRoutine0): кадры листа 232..263 — руки, держащие
 // предмет; у бойца i — два байта слотов кадров предмета (правая, левая): 0 — пусто, иначе
 // номер слота + 1, бит 7 — двуручное; кадры предметов HANDOB по слотам — по 8 направлений,
@@ -42,7 +41,7 @@
 #define TL_UHS    15680        // MAX_UNITS x 2 байта: слоты предметов в руках
 #define TL_HANDPG 15704        // страница пикселей кадров предметов (PG_NONE — нет)
 #define TL_ADEP   15706        // 2 байта: развёртывание пришельцев (deploy.c) — их предметы (bequip.c)
-#define TL_ANUM   15708        // пришельцев в TL_AUNITS
+#define TL_ANUM   15708        // пришельцев и мирных в TV_AUNITS
 #define TL_HAND   15712        // кадры предметов: слот s, направление d — запись s * 8 + d (до #4000)
 #define HAND_MAX  10
 
@@ -72,6 +71,10 @@
 #define FL_MAX    12
 #define TV_FLKEY  10048
 #define TV_FLN    10072
+// Пришельцы и мирные от расстановки (deploy.c): unit_t, до TL_AMAX записей (до #2F80); вторая
+// страница полна — было 28 мест, террор TFTD (22 пришельца и до 16 мирных) не помещался
+#define TV_AUNITS 10240
+#define TL_AMAX   40
 
 typedef struct {
 	uint16_t set[TL_SETS];     // ресурсы MCDSET наборов миссии

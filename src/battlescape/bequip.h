@@ -15,7 +15,7 @@ typedef struct {
 uint8_t be_auto(const beq_t *q) __banked;
 
 // Предметы пришельцев (deployAliens): itemSets записи развёртывания на их уровне, встроенное и
-// живое оружие; юниты — TL_AUNITS (номера с first), развёртывание — TL_ADEP, число — TL_ANUM.
+// живое оружие; юниты — TV_AUNITS третьей страницы (номера с first), развёртывание — TL_ADEP, число — TL_ANUM.
 // nb — занято записей bitem_t; вернёт новое число
 uint8_t be_aliens(uint8_t page, uint8_t nb, uint8_t first) __banked;
 
